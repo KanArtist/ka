@@ -3,6 +3,7 @@ package scenario
 import (
 	"fmt"
 	"math/rand/v2"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -46,6 +47,11 @@ func TestS5ConcurrentChaos(t *testing.T) {
 	machines, perMachine, agents, steps := 6, 2, 20, 12
 	if testing.Short() {
 		machines, perMachine, agents, steps = 3, 2, 8, 6
+		if runtime.GOOS == "windows" {
+			// Starting git processes is slow on Windows; keep the
+			// contention (2 processes per clone) with fewer operations.
+			machines, agents, steps = 2, 6, 5
+		}
 	}
 	testkit.GitEnv(t)
 	r := testkit.NewRemote(t, map[string]string{

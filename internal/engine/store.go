@@ -118,15 +118,39 @@ func (s *Store) storePath(repoRel string) (string, bool) {
 }
 
 // lock takes the per-clone write lock (flock on Unix, LockFileEx on Windows).
+// LockTimeout bounds how long a write waits for another process's write to
+// the same clone (which may include push retries over a slow network).
+var LockTimeout = 2 * time.Minute
+
 func (s *Store) lock(ctx context.Context) (func(), error) {
 	fl := flock.New(filepath.Join(s.gitDir, "ka.lock"))
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	ok, err := fl.TryLockContext(ctx, 20*time.Millisecond)
-	if err != nil || !ok {
-		return nil, Errf(CodeGitBusy, "another ka process is writing to this store; retry", "could not lock %s: %v", s.Name, err)
+	// A blocking lock waits in the OS's queue, so a waiter cannot be starved
+	// by other writers the way polling can.
+	got := make(chan error, 1)
+	go func() { got <- fl.Lock() }()
+	timer := time.NewTimer(LockTimeout)
+	defer timer.Stop()
+	select {
+	case err := <-got:
+		if err != nil {
+			return nil, Errf(CodeGitBusy, "check permissions on the .git directory", "could not lock %s: %v", s.Name, err)
+		}
+		return func() { fl.Unlock() }, nil
+	case <-ctx.Done():
+		go func() {
+			if <-got == nil {
+				fl.Unlock()
+			}
+		}()
+		return nil, ctx.Err()
+	case <-timer.C:
+		go func() {
+			if <-got == nil {
+				fl.Unlock()
+			}
+		}()
+		return nil, Errf(CodeGitBusy, "another ka process has been writing to this store for "+LockTimeout.String()+"; retry", "timed out waiting for the write lock on %s", s.Name)
 	}
-	return func() { fl.Unlock() }, nil
 }
 
 func (s *Store) upstream(ctx context.Context) (remote, branch string) {
