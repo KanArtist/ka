@@ -1,0 +1,3 @@
+* text=auto eol=lf
+# Conformance fixtures are byte-exact: some are deliberately CRLF or carry a BOM.
+spec/v1/conformance/** -text

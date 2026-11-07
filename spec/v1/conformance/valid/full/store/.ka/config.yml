@@ -1,0 +1,20 @@
+fields:
+  estimate:
+    type: enum
+    values:
+      - S
+      - M
+      - L
+  points:
+    type: integer
+  reviewed:
+    type: boolean
+  tracking:
+    type: url
+  areas:
+    type: list
+labels:
+  closed: true
+  known:
+    - cache
+    - compile

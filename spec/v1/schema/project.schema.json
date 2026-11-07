@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kanartist.dev/spec/v1/schema/project.schema.json",
+  "title": "KanArtist projects/<key>/project.yml, spec v1 §5.2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "key"
+  ],
+  "properties": {
+    "key": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,31}$"
+    },
+    "prefix": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9]{0,9}$"
+    },
+    "name": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "archived": {
+      "type": "boolean"
+    },
+    "repos": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9-]{0,31}$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "forge"
+        ],
+        "properties": {
+          "forge": {
+            "type": "string",
+            "pattern": "^https?://\\S+$"
+          },
+          "default_branch": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "config": {
+      "$ref": "config.schema.json"
+    },
+    "moved_to_store": {
+      "type": "string"
+    }
+  }
+}

@@ -1,0 +1,6 @@
+description: "A child store overriding a locked path, and deleting a mapping that contains one, are config_locked errors."
+stores:
+  - jk
+expect:
+  - config_locked jk/.ka/config.yml
+  - config_locked jk/.ka/config.yml

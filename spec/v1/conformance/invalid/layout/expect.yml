@@ -1,0 +1,12 @@
+description: "Layout rules: directory names, prefixes, required files and stray entries."
+stores:
+  - store
+expect:
+  - id_dir_mismatch store/projects/jk/tickets/JK-9XW2D/ticket.md
+  - id_prefix_mismatch store/projects/jk/tickets/GYG-K2M7P/ticket.md
+  - ticket_missing_file store/projects/jk/tickets/JK-NOMD5
+  - stray_file store/projects/jk/tickets/JK-3F9KA/NOTES.md
+  - comment_filename store/projects/jk/tickets/JK-3F9KA/comments/2026-11-07-note.md
+  - project_key_mismatch store/projects/gyg/project.yml
+  - project_missing_file store/projects/orphan/project.yml
+  - stray_file store/projects/jk/README.md

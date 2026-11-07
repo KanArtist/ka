@@ -1,0 +1,5 @@
+description: "A parent that cannot be resolved is an error."
+stores:
+  - store
+expect:
+  - config_parent_unavailable store/.ka/store.yml

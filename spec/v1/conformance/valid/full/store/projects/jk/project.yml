@@ -1,0 +1,8 @@
+key: jk
+prefix: JK
+name: JumpKick
+description: A build tool
+repos:
+  jk:
+    forge: https://github.com/example/jk
+    default_branch: main

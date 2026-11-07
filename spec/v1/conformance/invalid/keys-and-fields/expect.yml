@@ -1,0 +1,8 @@
+description: "Unknown keys are errors (a typo must not silently drop a field); required fields must be present."
+stores:
+  - store
+expect:
+  - unknown_key store/projects/jk/tickets/JK-7QK3M/ticket.md
+  - missing_field store/projects/jk/tickets/JK-K2M7P/ticket.md
+  - missing_field store/projects/jk/tickets/JK-K2M7P/ticket.md
+  - missing_field store/projects/jk/tickets/JK-K2M7P/ticket.md

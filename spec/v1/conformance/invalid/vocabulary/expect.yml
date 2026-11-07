@@ -1,0 +1,10 @@
+description: "Config-dependent vocabularies: status, kind, closed labels, declared custom fields and their types."
+stores:
+  - store
+expect:
+  - unknown_status store/projects/jk/tickets/JK-7QK3M/ticket.md
+  - unknown_kind store/projects/jk/tickets/JK-7QK3M/ticket.md
+  - unknown_label store/projects/jk/tickets/JK-7QK3M/ticket.md
+  - invalid_field_value store/projects/jk/tickets/JK-7QK3M/ticket.md
+  - unknown_field store/projects/jk/tickets/JK-7QK3M/ticket.md
+  - invalid_field_value store/projects/jk/tickets/JK-7QK3M/ticket.md

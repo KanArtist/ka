@@ -1,0 +1,4 @@
+description: "Config layering: the project store extends org, appends a kind, deletes an inherited field, and the project closes its labels. org locks workflow but nobody overrides it."
+stores:
+  - org
+  - jk

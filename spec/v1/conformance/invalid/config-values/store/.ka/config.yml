@@ -1,0 +1,15 @@
+workflow:
+  statuses:
+    - name: open
+      category: todo
+    - name: done
+      category: completed
+  initial: new
+fields:
+  size:
+    type: enum
+  Bad:
+    type: string
+labls:
+  closed: true
+id_suffix_length: 4

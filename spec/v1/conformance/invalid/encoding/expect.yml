@@ -1,0 +1,6 @@
+description: "CRLF line endings and a byte-order mark are errors."
+stores:
+  - store
+expect:
+  - crlf store/projects/jk/tickets/JK-7QK3M/ticket.md
+  - bom store/projects/jk/tickets/JK-7QK3M/comments/20261107T120000Z-4F2A.md

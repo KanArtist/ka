@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kanartist.dev/spec/v1/schema/board.schema.json",
+  "title": "KanArtist boards/<name>.yml, spec v1 §5.5",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "name"
+  ],
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "filter": {
+      "type": "string"
+    },
+    "group_by": {
+      "type": "string"
+    },
+    "sort": {
+      "type": "string"
+    },
+    "swimlanes": {
+      "type": "string"
+    },
+    "columns": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "card_fields": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

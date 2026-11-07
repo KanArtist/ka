@@ -1,0 +1,10 @@
+fields:
+  legacy_id:
+    type: string
+  estimate:
+    type: enum
+    values:
+      - S
+      - M
+locked:
+  - workflow

@@ -1,0 +1,13 @@
+humans:
+  bsant:
+    name: Bryan Sant
+    emails:
+      - bryan@example.com
+    aliases:
+      - bryan.sant
+agents:
+  agent/claude:
+    name: Claude Code
+roles:
+  maintainers:
+    - bsant

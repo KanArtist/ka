@@ -1,0 +1,13 @@
+description: "Values with the wrong type or format."
+stores:
+  - store
+expect:
+  - invalid_value store/projects/jk/tickets/JK-7QK3M/ticket.md
+  - invalid_value store/projects/jk/tickets/JK-7QK3M/ticket.md
+  - invalid_value store/projects/jk/tickets/JK-7QK3M/ticket.md
+  - invalid_value store/projects/jk/tickets/JK-7QK3M/ticket.md
+  - invalid_value store/projects/jk/tickets/JK-7QK3M/ticket.md
+  - invalid_value store/projects/jk/tickets/JK-7QK3M/ticket.md
+  - invalid_value store/projects/jk/tickets/JK-7QK3M/ticket.md
+  - invalid_value store/projects/jk/tickets/JK-ILOU1/ticket.md
+  - invalid_value store/projects/jk/tickets/JK-ILOU1/ticket.md

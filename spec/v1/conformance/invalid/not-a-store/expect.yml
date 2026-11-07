@@ -1,0 +1,5 @@
+description: "A directory without .ka/store.yml is not a store."
+stores:
+  - store
+expect:
+  - invalid_store store/.ka/store.yml

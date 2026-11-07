@@ -1,0 +1,16 @@
+description: "Warnings and info: non-canonical files, placeholders, low-entropy IDs, unknown repos, secrets, size limits, stale claims, archived projects."
+stores:
+  - store
+now: 2026-11-07T13:00:00Z
+expect:
+  - non_canonical store/projects/jk/tickets/JK-7QK3M/ticket.md
+  - low_entropy_id store/projects/jk/tickets/JK-AAAA1/ticket.md
+  - placeholder_text store/projects/jk/tickets/JK-AAAA1/ticket.md
+  - placeholder_text store/projects/jk/tickets/JK-K2M7P/ticket.md
+  - placeholder_text store/projects/jk/tickets/JK-3F9KA/ticket.md
+  - unknown_repo store/projects/jk/tickets/JK-4GQ8M/ticket.md
+  - secret_suspect store/projects/jk/tickets/JK-5HR9N/ticket.md
+  - stale_claim store/projects/jk/tickets/JK-6JS0P/ticket.md
+  - comment_too_large store/projects/jk/tickets/JK-6JS0P/comments/20261107T120000Z-4F2A.md
+  - file_too_large store/projects/jk/tickets/JK-6JS0P/files/big.log
+  - archived_project store/projects/old/tickets/OLD-7TV1Q/ticket.md

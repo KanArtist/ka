@@ -1,0 +1,5 @@
+spec: 1
+name: jk
+extends:
+  - url: ../org
+  - url: ../security

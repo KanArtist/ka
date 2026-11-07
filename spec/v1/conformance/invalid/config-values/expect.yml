@@ -1,0 +1,10 @@
+description: "Invalid config: unknown categories and keys, enum fields without values, bad names, out-of-range values."
+stores:
+  - store
+expect:
+  - config_invalid store/.ka/config.yml
+  - config_invalid store/.ka/config.yml
+  - config_invalid store/.ka/config.yml
+  - config_invalid store/.ka/config.yml
+  - config_invalid store/.ka/config.yml
+  - unknown_key store/.ka/config.yml

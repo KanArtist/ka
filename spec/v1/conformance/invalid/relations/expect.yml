@@ -1,0 +1,9 @@
+description: "Relations: missing targets, self references, cycles in parent and blocked_by, and references to projects outside the workspace."
+stores:
+  - store
+expect:
+  - dangling_ref store/projects/jk/tickets/JK-7QK3M/ticket.md
+  - external_ref store/projects/jk/tickets/JK-7QK3M/ticket.md
+  - self_ref store/projects/jk/tickets/JK-7QK3M/ticket.md
+  - cycle store/projects/jk/tickets/JK-7QK3M/ticket.md
+  - cycle store/projects/jk/tickets/JK-3F9KA/ticket.md

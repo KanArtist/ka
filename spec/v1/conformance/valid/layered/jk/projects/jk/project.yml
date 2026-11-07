@@ -1,0 +1,6 @@
+key: jk
+config:
+  labels:
+    closed: true
+    known:
+      - infra

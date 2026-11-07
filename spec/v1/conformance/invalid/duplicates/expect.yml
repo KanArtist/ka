@@ -1,0 +1,7 @@
+description: "Project keys and prefixes are unique across the workspace."
+stores:
+  - a
+  - b
+expect:
+  - duplicate_project b/projects/jk/project.yml
+  - duplicate_prefix b/projects/jkx/project.yml

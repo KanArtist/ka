@@ -1,0 +1,10 @@
+description: "Comment rules: required fields by type, misplaced fields, dangling answers, timestamps that disagree with the file name."
+stores:
+  - store
+expect:
+  - missing_field store/projects/jk/tickets/JK-7QK3M/comments/20261107T120000Z-4F2A.md
+  - answer_dangling store/projects/jk/tickets/JK-7QK3M/comments/20261107T120100Z-9KQ1.md
+  - invalid_value store/projects/jk/tickets/JK-7QK3M/comments/20261107T120200Z-AB12.md
+  - comment_time_mismatch store/projects/jk/tickets/JK-7QK3M/comments/20261107T120300Z-CD34.md
+  - invalid_value store/projects/jk/tickets/JK-7QK3M/comments/20261107T120400Z-EF56.md
+  - missing_field store/projects/jk/tickets/JK-7QK3M/comments/20261107T120500Z-GH78.md

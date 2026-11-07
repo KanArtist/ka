@@ -1,0 +1,53 @@
+# KanArtist Store Spec v1: built-in data-config defaults.
+# This is the bottom layer of every project's config chain (spec §6).
+# A copy lives at spec/v1/defaults.yml; a test keeps the two identical.
+id_suffix_length: 5
+workflow:
+  statuses:
+    - name: triage
+      category: triage
+    - name: backlog
+      category: backlog
+    - name: ready
+      category: unstarted
+    - name: in_progress
+      category: started
+    - name: blocked
+      category: started
+      blocked: true
+    - name: review
+      category: started
+    - name: done
+      category: completed
+    - name: canceled
+      category: canceled
+  initial: backlog
+kinds:
+  - feature
+  - bug
+  - chore
+  - research
+  - design
+  - refactor
+  - perf
+labels:
+  closed: false
+fields: {}
+claims:
+  stale_after: 24h
+comments:
+  max_bytes: 65536
+  progress_min_interval: 2m
+attachments:
+  max_bytes: 5242880
+template:
+  sections:
+    - Problem
+    - Approach
+    - Non-goals
+    - Notes
+locked: []
+runtime:
+  sync:
+    push: immediate
+    fetch_interval: 15s

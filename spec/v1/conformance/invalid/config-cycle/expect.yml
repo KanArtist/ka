@@ -1,0 +1,5 @@
+description: "extends must not form a cycle."
+stores:
+  - a
+expect:
+  - config_cycle b/.ka/store.yml

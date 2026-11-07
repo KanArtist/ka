@@ -1,0 +1,10 @@
+description: "YAML outside the profile: anchors, duplicate keys, tags, syntax errors; documents without (closed) frontmatter."
+stores:
+  - store
+expect:
+  - yaml_feature store/projects/jk/tickets/JK-AAA11/ticket.md
+  - duplicate_key store/projects/jk/tickets/JK-BBB22/ticket.md
+  - yaml_feature store/projects/jk/tickets/JK-CCC33/ticket.md
+  - yaml_syntax store/projects/jk/tickets/JK-DDD44/ticket.md
+  - frontmatter_missing store/projects/jk/tickets/JK-EEE55/ticket.md
+  - frontmatter_missing store/projects/jk/tickets/JK-FFF66/ticket.md

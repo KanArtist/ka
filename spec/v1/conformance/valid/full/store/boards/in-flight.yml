@@ -1,0 +1,5 @@
+name: In flight
+filter: "category:started"
+group_by: status
+card_fields:
+  - assignee

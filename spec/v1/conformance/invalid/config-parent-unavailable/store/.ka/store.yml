@@ -1,0 +1,4 @@
+spec: 1
+name: store
+extends:
+  - url: git@example.com:org/ka-org.git

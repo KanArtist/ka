@@ -1,0 +1,5 @@
+description: "Stores using a newer spec version are rejected."
+stores:
+  - store
+expect:
+  - spec_unsupported store/.ka/store.yml

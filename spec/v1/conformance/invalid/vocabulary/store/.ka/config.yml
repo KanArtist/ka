@@ -1,0 +1,12 @@
+labels:
+  closed: true
+  known:
+    - cache
+fields:
+  estimate:
+    type: enum
+    values:
+      - S
+      - M
+  points:
+    type: integer

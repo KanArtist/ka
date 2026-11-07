@@ -1,0 +1,6 @@
+locked:
+  - workflow
+  - fields.security
+fields:
+  security:
+    type: boolean

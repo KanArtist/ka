@@ -1,0 +1,217 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kanartist.dev/spec/v1/schema/comment.schema.json",
+  "title": "KanArtist comment frontmatter, spec v1 §7.2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "type",
+    "author",
+    "created"
+  ],
+  "properties": {
+    "type": {
+      "enum": [
+        "note",
+        "progress",
+        "question",
+        "answer",
+        "decision",
+        "resolution",
+        "approval",
+        "system"
+      ]
+    },
+    "author": {
+      "type": "string",
+      "pattern": "^((agent|role)/)?[a-z0-9][a-z0-9._-]{0,63}$"
+    },
+    "on_behalf_of": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+    },
+    "session": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+    },
+    "created": {
+      "type": "string",
+      "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\dZ$"
+    },
+    "to": {
+      "type": "string",
+      "pattern": "^((agent|role)/)?[a-z0-9][a-z0-9._-]{0,63}$"
+    },
+    "answers": {
+      "type": "string",
+      "pattern": "^\\d{8}T\\d{6}Z-[0-9A-HJKMNP-TV-Z]{4}\\.md$"
+    },
+    "choice": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "approved": {
+      "type": "boolean"
+    },
+    "resolution": {
+      "enum": [
+        "done",
+        "canceled",
+        "duplicate",
+        "wontfix"
+      ]
+    },
+    "supersedes": {
+      "type": "string",
+      "pattern": "^\\d{8}T\\d{6}Z-[0-9A-HJKMNP-TV-Z]{4}\\.md$"
+    },
+    "retracts": {
+      "type": "string",
+      "pattern": "^\\d{8}T\\d{6}Z-[0-9A-HJKMNP-TV-Z]{4}\\.md$"
+    },
+    "options": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "answer"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "answers"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "approval"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "answers",
+          "approved"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "resolution"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "resolution"
+        ]
+      }
+    },
+    {
+      "if": {
+        "not": {
+          "properties": {
+            "type": {
+              "const": "question"
+            }
+          }
+        }
+      },
+      "then": {
+        "not": {
+          "required": [
+            "options"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "not": {
+          "properties": {
+            "type": {
+              "const": "answer"
+            }
+          }
+        }
+      },
+      "then": {
+        "not": {
+          "required": [
+            "choice"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "not": {
+          "properties": {
+            "type": {
+              "const": "approval"
+            }
+          }
+        }
+      },
+      "then": {
+        "not": {
+          "required": [
+            "approved"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "not": {
+          "properties": {
+            "type": {
+              "const": "resolution"
+            }
+          }
+        }
+      },
+      "then": {
+        "not": {
+          "required": [
+            "resolution"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "not": {
+          "properties": {
+            "type": {
+              "enum": [
+                "answer",
+                "approval"
+              ]
+            }
+          }
+        }
+      },
+      "then": {
+        "not": {
+          "required": [
+            "answers"
+          ]
+        }
+      }
+    }
+  ]
+}

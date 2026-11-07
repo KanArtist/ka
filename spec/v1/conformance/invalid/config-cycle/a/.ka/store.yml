@@ -1,0 +1,4 @@
+spec: 1
+name: a
+extends:
+  - url: ../b
