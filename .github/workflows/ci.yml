@@ -23,7 +23,12 @@ jobs:
       - name: gofmt
         if: runner.os == 'Linux'
         run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+      - run: git --version
       - run: go vet ./...
-      - run: go test -race ./...
+      # -short trims the multi-clone simulator (S5); the full run is below.
+      - run: go test -race -short ./...
+      - name: Full simulator and scenarios
+        if: runner.os == 'Linux'
+        run: go test -count=1 ./internal/scenario/
       - name: Build ka
         run: go build ./cmd/ka

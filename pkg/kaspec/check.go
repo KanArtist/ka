@@ -44,6 +44,16 @@ func (w *Workspace) Add(fsys fs.FS, key, label string) *Store {
 	return s
 }
 
+// AddLoaded adds an already loaded store (see Add).
+func (w *Workspace) AddLoaded(s *Store, key string) {
+	if _, ok := w.loaded[key]; ok {
+		return
+	}
+	w.loaded[key] = s
+	w.keyOf[s] = key
+	w.Stores = append(w.Stores, s)
+}
+
 // KeyOf returns the identity key of any store the workspace has loaded,
 // including parents pulled in through extends.
 func (w *Workspace) KeyOf(s *Store) string { return w.keyOf[s] }

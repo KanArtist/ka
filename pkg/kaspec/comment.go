@@ -19,14 +19,21 @@ var CommentKeys = []string{
 
 // Comment is one append-only comment file.
 type Comment struct {
-	Type, Author, OnBehalfOf, Session, Created, To string
-	Answers                                        string
-	Choice                                         *int64
-	Approved                                       *bool
-	Resolution, Supersedes, Retracts               string
-	Options                                        []string
-	Body                                           string
-	Lines                                          map[string]int
+	Type       string         `json:"type"`
+	Author     string         `json:"author,omitempty"`
+	OnBehalfOf string         `json:"on_behalf_of,omitempty"`
+	Session    string         `json:"session,omitempty"`
+	Created    string         `json:"created,omitempty"`
+	To         string         `json:"to,omitempty"`
+	Answers    string         `json:"answers,omitempty"`
+	Choice     *int64         `json:"choice,omitempty"`
+	Approved   *bool          `json:"approved,omitempty"`
+	Resolution string         `json:"resolution,omitempty"`
+	Supersedes string         `json:"supersedes,omitempty"`
+	Retracts   string         `json:"retracts,omitempty"`
+	Options    []string       `json:"options,omitempty"`
+	Body       string         `json:"body,omitempty"`
+	Lines      map[string]int `json:"-"`
 }
 
 // ParseComment parses a comment file.

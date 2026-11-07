@@ -509,6 +509,10 @@ This section is informative in version 1; `ka` follows it and the activity feed 
 - Structured trailers describe the change: `Ka-Op` (the operation, replayable during rebase),
   `Ka-Actor`, `Ka-On-Behalf-Of`, `Ka-Session`, `Ka-Spec`. Trailers are hints: readers derive what
   changed from the diff and use trailers only to enrich it.
+- `Ka-Op` is `<op> <json>`: the operation name (`create`, `update`, `claim`, `release`,
+  `transition`, `comment`, `check`) followed by a single-line JSON object holding everything needed
+  to apply it again, including its timestamp (`at`) and any generated comment filename. A tool
+  that replays an operation re-checks its preconditions against the new state first.
 
 ## 11. Writing by hand
 

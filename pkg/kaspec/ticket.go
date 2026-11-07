@@ -21,45 +21,54 @@ var TicketKeys = []string{
 
 // Claim records who holds a ticket.
 type Claim struct {
-	By      string
-	Session string
-	At      string
+	By      string `json:"by"`
+	Session string `json:"session,omitempty"`
+	At      string `json:"at"`
 }
 
 // AcceptanceItem is one acceptance criterion.
 type AcceptanceItem struct {
-	Text string
-	Done bool
+	Text string `json:"text"`
+	Done bool   `json:"done"`
 }
 
 // FieldValue is the value of a custom field: a scalar or a list of strings.
 type FieldValue struct {
-	Scalar string
-	Typed  bool // unquoted integer, boolean or date literal; emitted verbatim
-	List   []string
-	IsList bool
-	Line   int
+	Scalar string   `json:"v,omitempty"`
+	Typed  bool     `json:"typed,omitempty"` // unquoted integer, boolean or date literal; emitted verbatim
+	List   []string `json:"list,omitempty"`
+	IsList bool     `json:"is_list,omitempty"`
+	Line   int      `json:"-"`
 }
 
 // Ticket is the parsed content of ticket.md.
 type Ticket struct {
-	ID, Title, Status, Priority, Kind string
-	Labels                            []string
-	Assignee, Owner                   string
-	Claim                             *Claim
-	Parent                            string
-	BlockedBy, Related                []string
-	DuplicateOf                       string
-	Links                             []string
-	Acceptance                        []AcceptanceItem
-	Milestone, Due                    string
-	Fields                            map[string]FieldValue
-	MovedTo                           string
-	Created, CreatedBy, Updated       string
-	Body                              string
+	ID          string                `json:"id,omitempty"`
+	Title       string                `json:"title,omitempty"`
+	Status      string                `json:"status,omitempty"`
+	Priority    string                `json:"priority,omitempty"`
+	Kind        string                `json:"kind,omitempty"`
+	Labels      []string              `json:"labels,omitempty"`
+	Assignee    string                `json:"assignee,omitempty"`
+	Owner       string                `json:"owner,omitempty"`
+	Claim       *Claim                `json:"claim,omitempty"`
+	Parent      string                `json:"parent,omitempty"`
+	BlockedBy   []string              `json:"blocked_by,omitempty"`
+	Related     []string              `json:"related,omitempty"`
+	DuplicateOf string                `json:"duplicate_of,omitempty"`
+	Links       []string              `json:"links,omitempty"`
+	Acceptance  []AcceptanceItem      `json:"acceptance,omitempty"`
+	Milestone   string                `json:"milestone,omitempty"`
+	Due         string                `json:"due,omitempty"`
+	Fields      map[string]FieldValue `json:"fields,omitempty"`
+	MovedTo     string                `json:"moved_to,omitempty"`
+	Created     string                `json:"created,omitempty"`
+	CreatedBy   string                `json:"created_by,omitempty"`
+	Updated     string                `json:"updated,omitempty"`
+	Body        string                `json:"body,omitempty"`
 
 	// Lines maps frontmatter keys to their line numbers (for diagnostics).
-	Lines map[string]int
+	Lines map[string]int `json:"-"`
 }
 
 var (

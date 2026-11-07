@@ -4,9 +4,11 @@ import (
 	"io/fs"
 	"path"
 	"regexp"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 )
 
 // Parent is one entry of store.yml `extends`.
@@ -401,13 +403,44 @@ func (s *Store) loadProject(dirName string) {
 		}
 	}
 	tents, _ := fs.ReadDir(s.FS, dir+"/tickets")
-	for _, e := range tents {
-		tdir := dir + "/tickets/" + e.Name()
+	// Tickets are independent: read and parse them in parallel, then merge in
+	// directory order so results and diagnostics stay deterministic.
+	type loaded struct {
+		te    *TicketEntry
+		diags []Diagnostic
+	}
+	out := make([]loaded, len(tents))
+	var wg sync.WaitGroup
+	work := make(chan int)
+	for range min(runtime.GOMAXPROCS(0), max(len(tents), 1)) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range work {
+				te, ds := s.loadTicket(dir+"/tickets/"+tents[i].Name(), tents[i].Name())
+				out[i] = loaded{te, ds}
+			}
+		}()
+	}
+	for i, e := range tents {
 		if !e.IsDir() {
-			s.add(diag("stray_file", s.p(tdir), 0, "tickets live in tickets/<ID>/ticket.md", "unexpected file in tickets/"))
+			s.add(diag("stray_file", s.p(dir+"/tickets/"+e.Name()), 0, "tickets live in tickets/<ID>/ticket.md", "unexpected file in tickets/"))
 			continue
 		}
-		s.loadTicket(pr, tdir, e.Name())
+		work <- i
+	}
+	close(work)
+	wg.Wait()
+	for i, l := range out {
+		s.add(l.diags...)
+		if l.te == nil {
+			continue
+		}
+		if _, dup := pr.Tickets[tents[i].Name()]; dup {
+			s.add(diag("duplicate_id", s.p(l.te.Dir), 0, "", "duplicate ticket directory %q", tents[i].Name()))
+			continue
+		}
+		pr.Tickets[tents[i].Name()] = l.te
 	}
 	for id := range pr.Tickets {
 		pr.IDs = append(pr.IDs, id)
@@ -415,25 +448,26 @@ func (s *Store) loadProject(dirName string) {
 	sort.Strings(pr.IDs)
 }
 
-func (s *Store) loadTicket(pr *Project, tdir, name string) {
+// LoadTicket reads one ticket directory (relative to the store root).
+func (s *Store) LoadTicket(tdir string) (*TicketEntry, []Diagnostic) {
+	return s.loadTicket(tdir, path.Base(tdir))
+}
+
+func (s *Store) loadTicket(tdir, name string) (*TicketEntry, []Diagnostic) {
+	var diags []Diagnostic
+	add := func(ds ...Diagnostic) { diags = append(diags, ds...) }
 	tp := tdir + "/ticket.md"
 	data, ok := s.read(tp)
 	if !ok {
-		s.add(diag("ticket_missing_file", s.p(tdir), 0, "every ticket directory needs a ticket.md", "ticket directory has no ticket.md"))
-		return
+		add(diag("ticket_missing_file", s.p(tdir), 0, "every ticket directory needs a ticket.md", "ticket directory has no ticket.md"))
+		return nil, diags
 	}
 	t, ds := ParseTicket(s.p(tp), data)
-	s.add(ds...)
+	add(ds...)
 	te := &TicketEntry{Dir: tdir, Ticket: t, Raw: data}
-	key := name
 	if t != nil && t.ID != "" && t.ID != name {
-		s.add(diag("id_dir_mismatch", s.p(tp), lineOf(t, "id"), "the directory name must equal the ticket id", "ticket id %q does not match its directory %q", t.ID, name))
+		add(diag("id_dir_mismatch", s.p(tp), lineOf(t, "id"), "the directory name must equal the ticket id", "ticket id %q does not match its directory %q", t.ID, name))
 	}
-	if _, dup := pr.Tickets[key]; dup {
-		s.add(diag("duplicate_id", s.p(tdir), 0, "", "duplicate ticket directory %q", name))
-		return
-	}
-	pr.Tickets[key] = te
 
 	ents, _ := fs.ReadDir(s.FS, tdir)
 	for _, e := range ents {
@@ -445,15 +479,15 @@ func (s *Store) loadTicket(pr *Project, tdir, name string) {
 			for _, ce := range cents {
 				cp := rel + "/" + ce.Name()
 				if ce.IsDir() || !strings.HasSuffix(ce.Name(), ".md") {
-					s.add(diag("stray_file", s.p(cp), 0, "comments are <yyyymmddThhmmssZ>-<XXXX>.md files", "unexpected entry in comments/"))
+					add(diag("stray_file", s.p(cp), 0, "comments are <yyyymmddThhmmssZ>-<XXXX>.md files", "unexpected entry in comments/"))
 					continue
 				}
 				data, _ := s.read(cp)
 				if !CommentFileRe.MatchString(ce.Name()) {
-					s.add(diag("comment_filename", s.p(cp), 0, "name comments <yyyymmddThhmmssZ>-<4 base32 chars>.md, e.g. 20261107T130722Z-4F2A.md", "invalid comment filename %q", ce.Name()))
+					add(diag("comment_filename", s.p(cp), 0, "name comments <yyyymmddThhmmssZ>-<4 base32 chars>.md, e.g. 20261107T130722Z-4F2A.md", "invalid comment filename %q", ce.Name()))
 				}
 				c, ds := ParseComment(s.p(cp), data)
-				s.add(ds...)
+				add(ds...)
 				te.Comments = append(te.Comments, &CommentEntry{Name: ce.Name(), Path: cp, Comment: c, Raw: data})
 			}
 		case e.Name() == "files" && e.IsDir():
@@ -468,10 +502,11 @@ func (s *Store) loadTicket(pr *Project, tdir, name string) {
 				return nil
 			})
 		default:
-			s.add(diag("stray_file", s.p(rel), 0, "a ticket directory holds ticket.md, comments/ and files/", "unexpected entry in ticket directory"))
+			add(diag("stray_file", s.p(rel), 0, "a ticket directory holds ticket.md, comments/ and files/", "unexpected entry in ticket directory"))
 		}
 	}
 	slices.SortFunc(te.Comments, func(a, b *CommentEntry) int { return strings.Compare(a.Name, b.Name) })
+	return te, diags
 }
 
 func lineOf(t *Ticket, key string) int {

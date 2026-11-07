@@ -1,6 +1,6 @@
 # KanArtist (`ka`): PRD
 
-**Status:** draft v1 (all open decisions resolved 2026-11-07). M0 delivered: the Store Spec in [`spec/v1/`](../spec/v1/README.md) is now the normative reference for §7 and §9.3; where they differ, the spec wins.
+**Status:** draft v1 (all open decisions resolved 2026-11-07). M0 and M1 delivered: the Store Spec in [`spec/v1/`](../spec/v1/README.md) is the normative reference for §7 and §9.3 (where they differ, the spec wins); the engine, CLI and MCP stdio server are described in [`docs/engine.md`](engine.md).
 **Owner:** Bryan Sant
 **Created:** 2026-11-07
 **Supersedes:** `kanartist/docs/kanartist-prd.md` (the Python v0)
