@@ -96,8 +96,14 @@ homebrew_casks:
     directory: Casks
     homepage: https://github.com/JumpKickOSS/ka
     description: Git-native work tracker for AI agents and the humans who watch them
-    license: Apache-2.0
     binaries: [ka]
+    # The binary is not notarized; clear the quarantine flag so macOS runs it.
+    hooks:
+      post:
+        install_steps: |
+          on_macos do
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/ka"]
+          end
 
 scoops:
   - name: ka
