@@ -134,6 +134,47 @@ func (s *Service) CallerFor(actor, session string) Caller {
 	return c
 }
 
+// CallerAs builds a caller for an authenticated principal (remote mode,
+// PRD §15): a person acts as themselves; an agent (actor agent/<name>)
+// acts on the principal's behalf. principal may be a handle or an email.
+func (s *Service) CallerAs(principal, actor, session string) Caller {
+	p := s.ActorFor(principal)
+	if strings.HasPrefix(actor, "agent/") {
+		return Caller{Actor: actor, OnBehalfOf: p, Session: session}
+	}
+	return Caller{Actor: p, Session: session}
+}
+
+// ActorFor maps a name, alias or email to an actor handle through the actor
+// registry; anything else is returned as given.
+func (s *Service) ActorFor(nameOrEmail string) string {
+	v := strings.TrimSpace(nameOrEmail)
+	s.ix.mu.RLock()
+	defer s.ix.mu.RUnlock()
+	if _, ok := s.ix.actors.Humans[v]; ok {
+		return v
+	}
+	for _, h := range sortedKeys(s.ix.actors.Humans) {
+		hu := s.ix.actors.Humans[h]
+		for _, e := range hu.Emails {
+			if strings.EqualFold(e, v) {
+				return h
+			}
+		}
+		for _, a := range hu.Aliases {
+			if strings.EqualFold(a, v) {
+				return h
+			}
+		}
+	}
+	if local, _, ok := strings.Cut(v, "@"); ok {
+		if h := strings.Trim(actorClean.ReplaceAllString(strings.ToLower(local), "-"), "-._"); h != "" && kaspec.HumanRe.MatchString(h) {
+			return h
+		}
+	}
+	return v
+}
+
 // ---- reading -----------------------------------------------------------------
 
 func (s *Service) view() view { return view{ix: s.ix, now: s.Now()} }

@@ -17,11 +17,18 @@ import (
 
 // Caller headers, accepted on every operation.
 type CallerHeaders struct {
-	Actor   string `header:"X-Ka-Actor" doc:"Act as this actor; default: the daemon's human. Agents use agent/<name> and are recorded as acting on behalf of the human."`
+	Actor   string `header:"X-Ka-Actor" doc:"Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/<name> and are recorded as acting on behalf of that person."`
 	Session string `header:"X-Ka-Session" doc:"A session ID, recorded in the Ka-Session trailer."`
+	// Principal is set by the server after authentication (never by clients).
+	Principal string `header:"X-Ka-Principal" hidden:"true"`
 }
 
-func (s *Server) caller(h CallerHeaders) engine.Caller { return s.svc.CallerFor(h.Actor, h.Session) }
+func (s *Server) caller(h CallerHeaders) engine.Caller {
+	if h.Principal != "" {
+		return s.svc.CallerAs(h.Principal, h.Actor, h.Session)
+	}
+	return s.svc.CallerFor(h.Actor, h.Session)
+}
 
 type TicketID struct {
 	ID string `path:"id" doc:"A ticket ID, such as KA-6FVER." example:"KA-6FVER"`

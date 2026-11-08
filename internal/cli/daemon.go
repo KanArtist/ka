@@ -6,8 +6,11 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/JumpKickOSS/ka/internal/api"
@@ -36,8 +39,12 @@ func cmdDaemon(ctx context.Context, x *IO, args []string) int {
 }
 
 func daemonRun(ctx context.Context, x *IO, args []string) int {
-	fl, c := newFlags("daemon", "[run] [--listen ADDR] [-v]", x)
-	listen := fl.String("listen", api.DefaultAddr, "address to listen on (loopback only)")
+	fl, c := newFlags("daemon", "[run] [--listen ADDR] [--public-url URL] [--trusted-proxy CIDR]... [-v]", x)
+	listen := fl.String("listen", api.DefaultAddr, "address to listen on; a non-loopback address is remote mode and needs API tokens or --trusted-proxy")
+	publicURL := fl.String("public-url", "", "remote mode: the URL clients use (https://ka.example.com); only its host is accepted")
+	var proxies multi
+	fl.Var(&proxies, "trusted-proxy", "remote mode: a reverse proxy (CIDR or IP) trusted to assert the user in --proxy-user-header (repeatable)")
+	proxyHeader := fl.String("proxy-user-header", "X-Forwarded-User", "the header a trusted proxy sets to the user's handle or email")
 	verbose := fl.Bool("v", false, "log every request")
 	if _, err := parse(fl, args); err != nil {
 		return 2
@@ -56,8 +63,30 @@ func daemonRun(ctx context.Context, x *IO, args []string) int {
 		level = slog.LevelDebug
 	}
 	log := slog.New(slog.NewTextHandler(x.Err, &slog.HandlerOptions{Level: level}))
-	ln, err := api.Listen(*listen)
-	if err != nil {
+	var remote *api.Remote
+	var ln net.Listener
+	if !loopbackAddr(*listen) || *publicURL != "" || len(proxies) > 0 {
+		cidrs, err := api.ParseCIDRs(proxies)
+		if err != nil {
+			return fail(x, c, err)
+		}
+		remote = &api.Remote{Tokens: api.NewTokenStore(api.TokensPath()), TrustedProxies: cidrs, ProxyUserHeader: *proxyHeader}
+		if *publicURL != "" {
+			u, err := url.Parse(*publicURL)
+			if err != nil || u.Host == "" {
+				return fail(x, c, engine.Errf(engine.CodeInvalid, "pass a URL such as https://ka.example.com", "--public-url %q is not a URL", *publicURL))
+			}
+			remote.Hosts = []string{u.Hostname(), u.Host}
+		}
+		if !remote.Configured() {
+			return fail(x, c, engine.Errf(engine.CodeInvalid, "create a token with `ka token create --actor NAME` (stored hashed in "+api.TokensPath()+"), or pass --trusted-proxy",
+				"refusing remote mode on %s without authentication", *listen))
+		}
+		if ln, err = api.ListenRemote(*listen); err != nil {
+			return fail(x, c, err)
+		}
+		log.Info("remote mode", "tokens", remote.Tokens.Count(), "trusted_proxies", len(cidrs), "hosts", remote.Hosts)
+	} else if ln, err = api.Listen(*listen); err != nil {
 		return fail(x, c, err)
 	}
 	ctx, cancel := context.WithCancel(ctx)
@@ -69,7 +98,7 @@ func daemonRun(ctx context.Context, x *IO, args []string) int {
 	// Actors come from each client, not the daemon's environment.
 	mcpSrv := mcpserver.New(svc, mcpserver.Options{Presence: pres})
 	srv := api.New(svc, api.Options{Token: api.NewToken(), Version: Version, Logger: log, Shutdown: cancel,
-		Events: hub, MCP: mcpSrv.HTTPHandler(), Presence: pres})
+		Events: hub, MCP: mcpSrv.HTTPHandler(), Presence: pres, Remote: remote})
 	go func() {
 		t := time.NewTicker(time.Minute)
 		defer t.Stop()
@@ -83,7 +112,11 @@ func daemonRun(ctx context.Context, x *IO, args []string) int {
 		}
 	}()
 	addr := ln.Addr().String()
-	rt := &api.Runtime{Version: Version, PID: os.Getpid(), Addr: addr, URL: "http://" + addr, Workspace: svc.WS.Source,
+	local := addr
+	if h, p, err := net.SplitHostPort(addr); err == nil && net.ParseIP(h) != nil && net.ParseIP(h).IsUnspecified() {
+		local = net.JoinHostPort("127.0.0.1", p) // local clients use loopback
+	}
+	rt := &api.Runtime{Version: Version, PID: os.Getpid(), Addr: addr, URL: "http://" + local, Workspace: svc.WS.Source,
 		WorkspaceHash: api.WorkspaceHash(svc.WS.Source), Token: srv.Token(), Started: time.Now().UTC().Format(time.RFC3339)}
 	if err := api.WriteRuntime(rt); err != nil {
 		ln.Close()
@@ -178,5 +211,64 @@ func daemonOpenAPI(ctx context.Context, x *IO, args []string) int {
 		return 1
 	}
 	fmt.Fprintln(x.Out, string(doc))
+	return 0
+}
+
+func loopbackAddr(addr string) bool {
+	h, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return true // Listen reports the error
+	}
+	ip := net.ParseIP(h)
+	return h == "localhost" || (ip != nil && ip.IsLoopback())
+}
+
+// ka token: API tokens for remote mode (PRD §15), stored hashed outside git.
+func cmdToken(ctx context.Context, x *IO, args []string) int {
+	sub := ""
+	if len(args) > 0 {
+		sub, args = args[0], args[1:]
+	}
+	fl, c := newFlags("token "+sub, "create --actor NAME [--note TEXT] | ls | rm ID", x)
+	actor := fl.String("actor", "", "who the token acts as (a human handle; agents using it act on that person's behalf)")
+	note := fl.String("note", "", "what the token is for")
+	pos, err := parse(fl, args)
+	if err != nil {
+		return 2
+	}
+	ts := api.NewTokenStore(api.TokensPath())
+	switch sub {
+	case "create":
+		tok, t, err := ts.Create(*actor, *note)
+		if err != nil {
+			return fail(x, c, err)
+		}
+		if c.json {
+			return emit(x, c, map[string]any{"token": tok, "id": t.ID, "actor": t.Actor}, "")
+		}
+		fmt.Fprintf(x.Out, "%s\n", tok)
+		fmt.Fprintf(x.Err, "token %s for %s created; it is shown only now (only its hash is kept in %s)\n", t.ID, t.Actor, ts.Path)
+	case "ls", "":
+		list := ts.List()
+		var b strings.Builder
+		for _, t := range list {
+			fmt.Fprintf(&b, "%s  %-16s %s  %s\n", t.ID, t.Actor, t.Created, t.Note)
+		}
+		if len(list) == 0 {
+			b.WriteString("no API tokens (ka token create --actor NAME)\n")
+		}
+		return emit(x, c, list, strings.TrimRight(b.String(), "\n"))
+	case "rm":
+		if len(pos) != 1 {
+			return usageErr(x, fl, "token rm needs a token ID (ka token ls)")
+		}
+		if err := ts.Remove(pos[0]); err != nil {
+			return fail(x, c, err)
+		}
+		fmt.Fprintf(x.Out, "removed token %s\n", pos[0])
+	default:
+		fl.Usage()
+		return 2
+	}
 	return 0
 }

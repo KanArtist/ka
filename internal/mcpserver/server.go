@@ -114,6 +114,10 @@ func (s *Server) callerFor(ss *mcp.ServerSession, extra *mcp.RequestExtra) engin
 		if id := extra.Header.Get("X-Ka-Session"); id != "" {
 			session = sanitizeSession(id)
 		}
+		// Set by the daemon after authenticating a remote client.
+		if p := extra.Header.Get("X-Ka-Principal"); p != "" {
+			return s.svc.CallerAs(p, actor, session)
+		}
 	}
 	return s.svc.CallerFor(actor, session)
 }

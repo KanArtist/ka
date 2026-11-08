@@ -43,7 +43,7 @@ per-response nonce. Its API types are generated from `openapi.json`.
 
 ## Security (PRD §15, local mode)
 
-- The daemon listens on loopback only. Non-loopback addresses are refused until remote mode (M4).
+- By default the daemon listens on loopback only. A non-loopback `--listen` is remote mode (below).
 - Every API request (`/api/v1/…`, `/mcp`) needs the token: `Authorization: Bearer
   <token>`, or the `ka_token` cookie.
 - `GET /auth?token=…&next=/path` exchanges the token for an `HttpOnly`, `SameSite=Strict` cookie
@@ -51,6 +51,34 @@ per-response nonce. Its API types are generated from `openapi.json`.
 - The `Host` header must be `127.0.0.1`, `localhost` or `[::1]` with the daemon's port (DNS
   rebinding). A request with any other `Origin`, or with `Sec-Fetch-Site: cross-site`, is refused
   (CSRF).
+
+## Remote mode
+
+A daemon can serve a team from a server. Binding to a non-loopback address requires
+authentication; without it the daemon refuses to start.
+
+```bash
+ka token create --actor bsant --note "laptop"     # prints the token once; only its hash is kept
+ka daemon --listen 0.0.0.0:7711 --public-url https://ka.example.com
+```
+
+- **API tokens.** `ka token create|ls|rm` manage tokens in `tokens.json` in ka's config directory
+  (mode 0600, SHA-256 hashes, never in git). A request with `Authorization: Bearer ka_…` acts as
+  the token's actor. An agent using the token sends `X-Ka-Actor: agent/<name>` and is recorded as
+  acting on that person's behalf. New and removed tokens take effect without a restart.
+- **Trusted proxy.** Behind oauth2-proxy, Cloudflare Access or similar, pass `--trusted-proxy
+  CIDR` (repeatable) and, if needed, `--proxy-user-header` (default `X-Forwarded-User`). Requests
+  from those addresses act as the user in that header; an email maps to a handle through the actor
+  registry. The header is ignored from any other address.
+- **Host and Origin.** With `--public-url`, only its host is accepted; browser requests must come
+  from the same origin. Without it, any `Host` is accepted, and `Origin` must still match it.
+- **Browser sign-in.** `https://ka.example.com/auth?token=ka_…` sets the cookie (with `Secure`
+  behind TLS or `X-Forwarded-Proto: https`). Terminate TLS at a proxy; the daemon speaks HTTP.
+- The principal travels to handlers and the MCP server in `X-Ka-Principal`, which the daemon sets
+  itself and strips from every incoming request.
+- The local runtime token still works on the machine itself (`ka open`, the `ka mcp` bridge).
+- Write authority is "anyone authenticated can write, with the daemon's git credentials"; forge
+  branch protection still applies.
 
 ## Conventions
 

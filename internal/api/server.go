@@ -49,6 +49,8 @@ type Options struct {
 	MCP http.Handler
 	// Presence lists live agent sessions (GET /api/v1/presence).
 	Presence *presence.Tracker
+	// Remote enables remote mode: API tokens and trusted proxies (PRD §15).
+	Remote *Remote
 }
 
 // Server serves one workspace's service over HTTP.
@@ -160,11 +162,12 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Referrer-Policy", "no-referrer")
+	r.Header.Del(PrincipalHeader) // only the server sets it
 	if !s.hostAllowed(r.Host) {
-		writeProblem(w, newProblem(codeForbidden, "connect to 127.0.0.1 or localhost", "Host "+strconv.Quote(r.Host)+" is not allowed"))
+		writeProblem(w, newProblem(codeForbidden, "connect to 127.0.0.1 or localhost (or the daemon's --public-url)", "Host "+strconv.Quote(r.Host)+" is not allowed"))
 		return
 	}
-	if o := r.Header.Get("Origin"); o != "" && !s.originAllowed(o) {
+	if o := r.Header.Get("Origin"); o != "" && !s.originAllowed(o, r.Host) {
 		writeProblem(w, newProblem(codeForbidden, "", "cross-origin requests are not allowed (Origin "+strconv.Quote(o)+")"))
 		return
 	}
@@ -179,10 +182,18 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/healthz", "/auth":
 	default:
-		if !s.authorized(r) {
+		principal, ok := s.authenticate(r)
+		if !ok {
 			w.Header().Set("WWW-Authenticate", `Bearer realm="ka"`)
-			writeProblem(w, newProblem(codeUnauthorized, "send Authorization: Bearer <token> with the token from the daemon's runtime file, or open the UI with `ka open`", "missing or wrong token"))
+			fix := "send Authorization: Bearer <token> with the token from the daemon's runtime file, or open the UI with `ka open`"
+			if s.opts.Remote != nil {
+				fix = "send Authorization: Bearer <API token> (ka token create on the daemon's machine), or sign in through the proxy"
+			}
+			writeProblem(w, newProblem(codeUnauthorized, fix, "missing or wrong token"))
 			return
+		}
+		if principal != "" {
+			r.Header.Set(PrincipalHeader, principal)
 		}
 	}
 	w.Header().Set(SeqHeader, strconv.FormatUint(s.hub.Seq(), 10))
@@ -192,36 +203,78 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 func (s *Server) hostAllowed(host string) bool {
 	h, p, err := net.SplitHostPort(host)
 	if err != nil {
-		return false
+		h, p = host, ""
+	}
+	h = strings.ToLower(strings.Trim(h, "[]"))
+	if rm := s.opts.Remote; rm != nil {
+		if len(rm.Hosts) == 0 {
+			return true // any Host; Origin must still match it
+		}
+		for _, a := range rm.Hosts {
+			if strings.EqualFold(a, h) || strings.EqualFold(a, host) {
+				return true
+			}
+		}
 	}
 	if port, _ := strconv.Atoi(p); port != s.boundPort() {
 		return false
 	}
-	switch strings.ToLower(h) {
+	switch h {
 	case "127.0.0.1", "localhost", "::1":
 		return true
 	}
 	return false
 }
 
-func (s *Server) originAllowed(origin string) bool {
+func (s *Server) originAllowed(origin, reqHost string) bool {
 	u, err := url.Parse(origin)
-	if err != nil || u.Scheme != "http" || u.Path != "" && u.Path != "/" {
+	if err != nil || u.Path != "" && u.Path != "/" {
 		return false
 	}
-	return s.hostAllowed(u.Host)
+	if s.opts.Remote != nil {
+		return (u.Scheme == "https" || u.Scheme == "http") && strings.EqualFold(u.Host, reqHost) && s.hostAllowed(u.Host)
+	}
+	return u.Scheme == "http" && s.hostAllowed(u.Host)
 }
 
-func (s *Server) authorized(r *http.Request) bool {
-	tok := ""
+func bearerToken(r *http.Request) string {
 	if h := r.Header.Get("Authorization"); h != "" {
 		if t, ok := strings.CutPrefix(h, "Bearer "); ok {
-			tok = strings.TrimSpace(t)
+			return strings.TrimSpace(t)
 		}
-	} else if c, err := r.Cookie(CookieName); err == nil {
-		tok = c.Value
+		return ""
 	}
-	return s.tokenOK(tok)
+	if c, err := r.Cookie(CookieName); err == nil {
+		return c.Value
+	}
+	return ""
+}
+
+// authenticate checks a request's credentials. principal is the
+// authenticated actor in remote mode ("" for the local token, whose
+// requests act as the daemon's human).
+func (s *Server) authenticate(r *http.Request) (principal string, ok bool) {
+	tok := bearerToken(r)
+	if s.tokenOK(tok) {
+		return "", true
+	}
+	rm := s.opts.Remote
+	if rm == nil {
+		return "", false
+	}
+	if a, ok := rm.Tokens.Lookup(tok); ok {
+		return a, true
+	}
+	if len(rm.TrustedProxies) > 0 && rm.fromTrustedProxy(r) {
+		hdr := rm.ProxyUserHeader
+		if hdr == "" {
+			hdr = "X-Forwarded-User"
+		}
+		if u := strings.TrimSpace(r.Header.Get(hdr)); u != "" {
+			return u, true
+		}
+	}
+	return "", false
 }
 
 func (s *Server) tokenOK(tok string) bool {
@@ -236,7 +289,12 @@ func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
 // auth exchanges the local token for an HttpOnly cookie and redirects to
 // next (a path on this server). ka open sends the browser here.
 func (s *Server) auth(w http.ResponseWriter, r *http.Request) {
-	if !s.tokenOK(r.URL.Query().Get("token")) {
+	tok := r.URL.Query().Get("token")
+	valid := s.tokenOK(tok)
+	if !valid && s.opts.Remote != nil {
+		_, valid = s.opts.Remote.Tokens.Lookup(tok)
+	}
+	if !valid {
 		writeProblem(w, newProblem(codeUnauthorized, "run `ka open` again", "wrong or missing token"))
 		return
 	}
@@ -244,7 +302,8 @@ func (s *Server) auth(w http.ResponseWriter, r *http.Request) {
 	if !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") || strings.HasPrefix(next, "/\\") {
 		next = "/"
 	}
-	http.SetCookie(w, &http.Cookie{Name: CookieName, Value: s.opts.Token, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode})
+	secure := r.TLS != nil || (s.opts.Remote != nil && strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https"))
+	http.SetCookie(w, &http.Cookie{Name: CookieName, Value: tok, Path: "/", HttpOnly: true, Secure: secure, SameSite: http.SameSiteStrictMode})
 	w.Header().Set("Cache-Control", "no-store")
 	http.Redirect(w, r, next, http.StatusSeeOther)
 }
@@ -290,6 +349,15 @@ func Listen(addr string) (net.Listener, error) {
 		return net.Listen("tcp", "127.0.0.1:0")
 	}
 	return ln, err
+}
+
+// ListenRemote listens on any address, for remote mode. The caller must
+// have configured authentication (Remote.Configured).
+func ListenRemote(addr string) (net.Listener, error) {
+	if _, _, err := net.SplitHostPort(addr); err != nil {
+		return nil, fmt.Errorf("--listen %q: %v", addr, err)
+	}
+	return net.Listen("tcp", addr)
 }
 
 func isAddrInUse(err error) bool {

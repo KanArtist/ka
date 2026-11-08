@@ -357,3 +357,31 @@ func TestInteractivePrompts(t *testing.T) {
 		t.Fatalf("non-interactive new: %+v", r)
 	}
 }
+
+func TestTokensAndRemoteRefusal(t *testing.T) {
+	testkit.GitEnv(t)
+	dir := filepath.Join(t.TempDir(), "tickets")
+	ka(t, dir, "init", "--project", "demo", dir)
+	testkit.Git(t, dir, "add", "-A")
+	testkit.Git(t, dir, "commit", "-qm", "init")
+	// Remote mode without authentication is refused.
+	if r := ka(t, dir, "daemon", "run", "--listen", "0.0.0.0:0"); r.code == 0 || !strings.Contains(r.err, "without authentication") || !strings.Contains(r.err, "ka token create") {
+		t.Fatalf("remote without auth: %+v", r)
+	}
+	r := ka(t, dir, "token", "create", "--actor", "bob", "--note", "ci")
+	tok := strings.TrimSpace(r.out)
+	if r.code != 0 || !strings.HasPrefix(tok, "ka_") || !strings.Contains(r.err, "shown only now") {
+		t.Fatalf("create: %+v", r)
+	}
+	ls := ka(t, dir, "token", "ls")
+	if !strings.Contains(ls.out, "bob") || strings.Contains(ls.out, tok) {
+		t.Fatalf("ls must list the token without revealing it: %+v", ls)
+	}
+	id := strings.Fields(ls.out)[0]
+	if r := ka(t, dir, "token", "rm", id); r.code != 0 {
+		t.Fatalf("rm: %+v", r)
+	}
+	if r := ka(t, dir, "token", "ls"); !strings.Contains(r.out, "no API tokens") {
+		t.Fatalf("after rm: %+v", r)
+	}
+}
