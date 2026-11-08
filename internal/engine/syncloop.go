@@ -109,6 +109,7 @@ type pendingPush struct {
 type debouncer struct {
 	mu      sync.Mutex
 	pending map[*Store]*pendingPush
+	running map[*Store]int // debounced pushes under way
 	wg      sync.WaitGroup
 }
 
@@ -127,6 +128,7 @@ func (s *Service) schedulePush(st *Store) {
 	defer d.mu.Unlock()
 	if d.pending == nil {
 		d.pending = map[*Store]*pendingPush{}
+		d.running = map[*Store]int{}
 	}
 	now := time.Now()
 	wait := st.PushDelay
@@ -148,8 +150,12 @@ func (s *Service) schedulePush(st *Store) {
 		if d.pending[st] == p {
 			delete(d.pending, st)
 		}
+		d.running[st]++
 		d.mu.Unlock()
 		s.pushNow(context.Background(), st)
+		d.mu.Lock()
+		d.running[st]--
+		d.mu.Unlock()
 	})
 	d.pending[st] = p
 }
@@ -249,10 +255,12 @@ func (s *Service) FetchLoop(ctx context.Context) {
 	}
 }
 
+// debouncePending reports whether st has debounced commits not yet pushed:
+// a push is scheduled or under way.
 func (s *Service) debouncePending(st *Store) bool {
 	s.deb.mu.Lock()
 	defer s.deb.mu.Unlock()
-	return s.deb.pending[st] != nil
+	return s.deb.pending[st] != nil || s.deb.running[st] > 0
 }
 
 func (st *Store) fetchEvery() time.Duration {
