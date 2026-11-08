@@ -178,8 +178,8 @@ room the rest leaves. Over every ready ticket of the migrated `jk` store, the ma
 
 ## Not in M1
 
-- SSE, MCP over HTTP, presence and the web UI arrive in M2, as does proxying `ka mcp` to a daemon.
-  The daemon and REST API have landed ([api.md](api.md)).
+- MCP over HTTP, presence and the web UI arrive in M2, as does proxying `ka mcp` to a daemon.
+  The daemon, REST API and SSE events have landed ([api.md](api.md)).
 - `runtime.sync.push: debounce` is not implemented. Stores push immediately unless the workspace
   sets `push: manual`.
 - `ka watch`, `ka open`, `ka config explain`, `ka project move`, `ka migrate`, `ka hooks install`,

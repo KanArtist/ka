@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io/fs"
@@ -55,6 +56,10 @@ type Index struct {
 	blocks   map[string][]string
 	diags    []kaspec.Diagnostic
 	heads    map[*Store]*headStamp
+
+	// emit, when set, receives the tickets each refresh changed (with the
+	// write lock held), who caused it if known, and stores fully rebuilt.
+	emit func(changes []recChange, actor string, rebuilt []*Store)
 }
 
 // headStamp remembers the HEAD the index reflects, and the reflog's size and
@@ -118,12 +123,37 @@ func (ix *Index) catchUp() {
 			}
 		}
 		if paths == nil || len(paths) > 0 {
-			ix.refresh(s, paths)
+			actor := ""
+			if ix.emit != nil && prev != nil && prev.head != "" && cur.head != "" {
+				actor = commitsActor(s, prev.head, cur.head)
+			}
+			ix.refreshBy(s, paths, actor)
 		}
 		ix.mu.Lock()
 		ix.heads[s] = cur
 		ix.mu.Unlock()
 	}
+}
+
+// commitsActor names who made the commits in old..new when it is one actor:
+// the Ka-Actor trailer, else the git author's name.
+func commitsActor(s *Store, old, new string) string {
+	cs, err := s.git.Log(context.Background(), old+".."+new, false)
+	if err != nil || len(cs) == 0 {
+		return ""
+	}
+	actor := ""
+	for _, c := range cs {
+		a := c.Trailers["Ka-Actor"]
+		if a == "" {
+			a, _, _ = strings.Cut(c.Author, " <")
+		}
+		if actor != "" && a != actor {
+			return ""
+		}
+		actor = a
+	}
+	return actor
 }
 
 func (ix *Index) resolver(from *kaspec.Store, p kaspec.Parent) (fs.FS, string, string, error) {
@@ -285,18 +315,77 @@ func (ix *Index) derive() {
 
 // refresh reloads the given store-relative paths of one store; nil reloads
 // everything. Config, project and actor changes trigger a full rebuild.
-func (ix *Index) refresh(s *Store, paths []string) {
+func (ix *Index) refresh(s *Store, paths []string) { ix.refreshBy(s, paths, "") }
+
+// refreshBy is refresh with the actor who caused the change, for events.
+func (ix *Index) refreshBy(s *Store, paths []string, actor string) {
 	ix.mu.Lock()
 	defer ix.mu.Unlock()
+	if ix.emit == nil {
+		ix.reload(s, paths)
+		return
+	}
+	before := ix.tickets
+	touched, full := ix.reload(s, paths)
+	var changes []recChange
+	var rebuilt []*Store
+	if full {
+		if s != nil {
+			rebuilt = []*Store{s}
+		} else {
+			rebuilt = ix.stores
+		}
+		ids := make([]string, 0, len(ix.tickets))
+		for id, r := range ix.tickets {
+			if o := before[id]; o == nil || !sameRec(o, r) {
+				ids = append(ids, id)
+			}
+		}
+		for id := range before {
+			if _, ok := ix.tickets[id]; !ok {
+				ids = append(ids, id)
+			}
+		}
+		sort.Strings(ids)
+		for _, id := range ids {
+			changes = append(changes, recChange{id: id, old: before[id], new: ix.tickets[id]})
+		}
+	} else {
+		for _, tc := range touched {
+			if n := ix.tickets[tc.id]; tc.old != n && (tc.old == nil || n == nil || !sameRec(tc.old, n)) {
+				changes = append(changes, recChange{id: tc.id, old: tc.old, new: n})
+			}
+		}
+	}
+	if len(changes) > 0 || len(rebuilt) > 0 {
+		ix.emit(changes, actor, rebuilt)
+	}
+}
+
+func sameRec(a, b *Rec) bool {
+	if !bytes.Equal(a.Raw, b.Raw) || len(a.Comments) != len(b.Comments) {
+		return false
+	}
+	for i := range a.Comments {
+		if a.Comments[i].Name != b.Comments[i].Name {
+			return false
+		}
+	}
+	return true
+}
+
+// reload does the work of refresh. It returns the tickets it reloaded with
+// their previous records, or full when it rebuilt everything.
+func (ix *Index) reload(s *Store, paths []string) (touched []recChange, full bool) {
 	if paths == nil {
 		ix.rebuild()
-		return
+		return nil, true
 	}
 	dirs := map[string]bool{}
 	for _, p := range paths {
 		if strings.HasPrefix(p, ".ka/") || strings.HasSuffix(p, "/project.yml") || strings.HasPrefix(p, "boards/") {
 			ix.rebuild()
-			return
+			return nil, true
 		}
 		parts := strings.Split(p, "/")
 		if len(parts) >= 4 && parts[0] == "projects" && parts[2] == "tickets" {
@@ -318,8 +407,9 @@ func (ix *Index) refresh(s *Store, paths []string) {
 		id := parts[3]
 		if pi == nil || pi.Store != s {
 			ix.rebuild()
-			return
+			return nil, true
 		}
+		touched = append(touched, recChange{id: id, old: ix.tickets[id]})
 		if _, err := os.Stat(filepath.Join(s.Root, filepath.FromSlash(dir), "ticket.md")); err != nil {
 			delete(ix.tickets, id)
 			if kp := ks.Projects[pi.Key]; kp != nil {
@@ -342,6 +432,7 @@ func (ix *Index) refresh(s *Store, paths []string) {
 		ix.put(pi, te)
 	}
 	ix.derive()
+	return touched, false
 }
 
 // projectFor maps a ticket ID to its project.

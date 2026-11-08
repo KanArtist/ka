@@ -223,6 +223,10 @@ func (s *Service) Sync(ctx context.Context, force bool) *SyncOut {
 	for _, st := range s.WS.Stores {
 		out.Stores = append(out.Stores, st.State(ctx))
 	}
+	s.syncStateEvents(out.Stores)
+	if len(out.Preserved) > 0 {
+		s.publish(Event{Type: EvConflictPreserved, At: s.now(), Data: map[string]any{"preserved": out.Preserved}})
+	}
 	week := s.Now().Add(-7 * 24 * time.Hour).UTC().Format("2006-01-02T15:04:05Z")
 	s.ix.mu.RLock()
 	for _, id := range sortedKeys(s.ix.tickets) {

@@ -39,16 +39,23 @@ type Options struct {
 	Logger  *slog.Logger
 	// Shutdown is called by POST /api/v1/daemon/shutdown.
 	Shutdown func()
+	// Events is the hub SSE clients read; New creates one (10,000 events)
+	// and connects it to the service when nil.
+	Events *engine.EventHub
+	// Heartbeat is the SSE keep-alive interval (default 15 s).
+	Heartbeat time.Duration
 }
 
 // Server serves one workspace's service over HTTP.
 type Server struct {
-	svc     *engine.Service
-	opts    Options
-	api     huma.API
-	mux     *http.ServeMux
-	log     *slog.Logger
-	started time.Time
+	svc       *engine.Service
+	opts      Options
+	api       huma.API
+	mux       *http.ServeMux
+	log       *slog.Logger
+	started   time.Time
+	hub       *engine.EventHub
+	heartbeat time.Duration
 
 	mu   sync.RWMutex
 	port int // the bound port, for Host and Origin checks
@@ -61,9 +68,20 @@ func New(svc *engine.Service, opts Options) *Server {
 	if opts.Logger == nil {
 		opts.Logger = slog.New(slog.DiscardHandler)
 	}
-	s := &Server{svc: svc, opts: opts, mux: http.NewServeMux(), log: opts.Logger, started: time.Now()}
+	if opts.Events == nil {
+		opts.Events = engine.NewEventHub(10000)
+		if svc != nil {
+			svc.SetEvents(opts.Events)
+		}
+	}
+	if opts.Heartbeat <= 0 {
+		opts.Heartbeat = 15 * time.Second
+	}
+	s := &Server{svc: svc, opts: opts, mux: http.NewServeMux(), log: opts.Logger, started: time.Now(), hub: opts.Events, heartbeat: opts.Heartbeat}
 	s.api = humago.New(s.mux, Config(opts.Version))
 	s.routes()
+	s.documentEvents()
+	s.mux.HandleFunc("GET /api/v1/events", s.events)
 	s.mux.HandleFunc("GET /healthz", s.healthz)
 	s.mux.HandleFunc("GET /auth", s.auth)
 	return s
@@ -155,6 +173,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	w.Header().Set(SeqHeader, strconv.FormatUint(s.hub.Seq(), 10))
 	s.mux.ServeHTTP(w, r)
 }
 

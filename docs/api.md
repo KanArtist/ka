@@ -2,7 +2,8 @@
 
 `ka daemon` serves one workspace over HTTP: REST under `/api/v1`, described by an OpenAPI 3.1
 document. It is the same `engine.Service` that `ka mcp` and the CLI use, so behavior cannot
-diverge (PRD §12.1). SSE, MCP over HTTP, presence and the web UI build on it (see the M2 tickets).
+diverge (PRD §12.1). Live changes stream from `GET /api/v1/events` (Server-Sent Events). MCP over
+HTTP, presence and the web UI build on it (see the M2 tickets).
 
 ## Running it
 
@@ -93,13 +94,65 @@ workspace. The daemon removes the file when it stops.
 | `POST /next` | Next | `ka_next` |
 | `GET /links/resolve?link=…` | ResolveLink | `ka_resolve_link` |
 | `GET /check`, `POST /fix` | Validate, Fix | `ka check`, `ka fix` |
+| `GET /events` (SSE) | SetEvents, WatchLocal | |
 | `GET /daemon`, `POST /daemon/shutdown` | | `ka daemon status`, `stop` |
 | `GET /openapi.json` | | `ka daemon openapi` |
 
 A test (`TestEveryServiceMethodHasAnEndpoint`) fails when a new exported `engine.Service` method
 has no endpoint. Another validates `openapi.json` against the official OpenAPI 3.1 schema.
 
+## Events (`GET /api/v1/events`)
+
+The daemon turns every change into a domain event (PRD §12.2), whatever caused it:
+
+- writes through the daemon;
+- commits by other processes sharing the clone (the CLI, another `ka mcp`), which the daemon
+  notices within 250 ms by watching `.git/logs/HEAD`;
+- upstream changes brought in by sync.
+
+The index diffs each reloaded ticket, before and after, so all three paths produce the same
+events. Payloads carry the ticket's new summary, so a client can update itself without
+refetching.
+
+| Event | Data |
+|---|---|
+| `ticket.created`, `ticket.removed` | `{ticket}` |
+| `ticket.updated` | `{ticket, changes: {field: {from, to}}, body_changed}` |
+| `ticket.moved` (status changed) | the same, plus `from`, `to`, `category` |
+| `claim.changed` | `{ticket, from, to}` (claims) |
+| `comment.created` | `{ticket: {id, title, status}, comment}` |
+| `question.opened`, `question.answered` | the same as `comment.created`, sent in addition to it |
+| `sync.state` | a store's `SyncState`, when it changes and after every sync |
+| `sync.conflict_preserved` | `{preserved: [paths]}` |
+| `store.changed` | config, projects or boards changed; refetch the schema |
+| `reset` | refetch your snapshot |
+| `presence.changed` | reserved (KA-PK41Y) |
+
+Every event has `id`, `type`, `at`, and, where they apply, `store`, `project`, `ticket` and
+`actor` (who caused it, when known: the operation's actor, a single committer's `Ka-Actor`, a
+comment's author or a claim's holder).
+
+```
+id: 1794105449411991
+event: comment.created
+data: {"id":1794105449411991,"type":"comment.created","ticket":"KA-ZXYN2","actor":"bsant",...}
+```
+
+- **IDs** are one monotonic sequence per daemon. They start at the daemon's start time in
+  microseconds, so IDs from an earlier daemon are always older than anything buffered.
+- **Replay.** The daemon keeps the last 10,000 events. Reconnect with `Last-Event-ID` (or
+  `?last_event_id=`) to get everything after that ID. If the ID is no longer buffered, the stream
+  starts with `reset`. Without an ID, the stream starts at the present.
+- **Snapshot, then subscribe.** Every API response carries `Ka-Event-Seq`, the last event ID at
+  that moment. Fetch a snapshot, then subscribe with `Last-Event-ID` set to its `Ka-Event-Seq`:
+  nothing is missed or duplicated.
+- **Filters:** `?types=ticket.*,comment.created&projects=jk,gyggly&tickets=JK-7QK3M`.
+- **Keep-alive:** a `: ping` comment every 15 seconds.
+
 ## Measured
 
-On the migrated `jk` store (3,648 tickets), warm `GET /tickets?q=…` requests take about 1 ms end
-to end over loopback, against the PRD's 20 ms target.
+- On the migrated `jk` store (3,648 tickets), warm `GET /tickets?q=…` requests take about 1 ms end
+  to end over loopback, against the PRD's 20 ms target.
+- An operation through the daemon reaches an SSE client in about 45 ms, including the commit and
+  push and with the race detector on, against the 250 ms target
+  (`TestEventsLatencyAndPayloads`).

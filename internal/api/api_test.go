@@ -39,8 +39,14 @@ func start(t *testing.T) *client {
 
 func serve(t *testing.T, svc *engine.Service) *client {
 	t.Helper()
+	return serveWith(t, svc, Options{})
+}
+
+func serveWith(t *testing.T, svc *engine.Service, opts Options) *client {
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
-	srv := New(svc, Options{Token: testToken, Version: "test", Shutdown: cancel})
+	opts.Token, opts.Version, opts.Shutdown = testToken, "test", cancel
+	srv := New(svc, opts)
 	ln, err := Listen("127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -241,7 +247,7 @@ func TestEveryServiceMethodHasAnEndpoint(t *testing.T) {
 	plumbing := map[string]string{
 		"Index": "internal", "Human": "GET /workspace (you)", "CallerFor": "X-Ka-Actor", "Reload": "internal",
 		"TicketPath": "GET /tickets/{id}/source", "BoardFilter": "GET /boards/{name}", "Projects": "GET /workspace",
-		"ETag": "ETag headers",
+		"ETag": "ETag headers", "SetEvents": "GET /events", "WatchLocal": "daemon",
 	}
 	endpoints := map[string]string{
 		"Search": "listTickets", "Get": "getTicket", "Create": "createTickets", "Update": "updateTickets", "Claim": "claimTicket",

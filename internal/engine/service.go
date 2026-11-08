@@ -32,6 +32,10 @@ type Service struct {
 	NoPush   bool          // commit locally only (ka --no-push)
 	PollStep time.Duration // ka_ask wait polling interval
 	human    string
+
+	events   EventSink
+	syncMu   sync.Mutex
+	lastSync map[string]string // store -> last published sync state
 }
 
 // New builds the service and its index.
@@ -404,15 +408,37 @@ func clip(s string, n int) string {
 
 // ---- writing -----------------------------------------------------------------
 
-func (s *Service) hooks(st *Store) hooks {
+func (s *Service) hooks(st *Store) hooks { return s.hooksBy(st, "") }
+
+// hooksBy attributes reloaded tickets to actor. A full reload follows a
+// fast-forward to upstream, whose changes are someone else's.
+func (s *Service) hooksBy(st *Store, actor string) hooks {
 	return hooks{
-		env:      func() applyEnv { return ixEnv{s.ix, st} },
-		reloaded: func(paths []string) { s.ix.refresh(st, paths) },
+		env: func() applyEnv { return ixEnv{s.ix, st} },
+		reloaded: func(paths []string) {
+			if paths == nil {
+				s.ix.refreshBy(st, nil, "")
+				return
+			}
+			s.ix.refreshBy(st, paths, actor)
+		},
 	}
 }
 
 func (s *Service) do(ctx context.Context, st *Store, o *Op, push bool) (*Result, error) {
-	return st.Do(ctx, s.hooks(st), o, push && !s.NoPush && st.PushMode != "manual")
+	res, err := st.Do(ctx, s.hooksBy(st, o.Actor), o, push && !s.NoPush && st.PushMode != "manual")
+	if err == nil {
+		s.syncEvents(st, res)
+	}
+	return res, err
+}
+
+func (s *Service) push(ctx context.Context, st *Store) (*Result, error) {
+	res, err := s.pushStore(ctx, st)
+	if err == nil {
+		s.syncEvents(st, res)
+	}
+	return res, err
 }
 
 func (s *Service) storeOf(id string) (*Store, *ProjectInfo, error) {
@@ -727,8 +753,8 @@ func (s *Service) createOp(c Caller, pi *ProjectInfo, in CreateIn) (*Op, error) 
 	return stamp(&Op{Op: "create", ID: id, New: t}, c, now), nil
 }
 
-// push publishes a store's local commits.
-func (s *Service) push(ctx context.Context, st *Store) (*Result, error) {
+// pushStore publishes a store's local commits.
+func (s *Service) pushStore(ctx context.Context, st *Store) (*Result, error) {
 	if s.NoPush || st.PushMode == "manual" {
 		remote, _ := st.upstream(ctx)
 		return &Result{HasRemote: remote != ""}, nil

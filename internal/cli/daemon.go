@@ -68,6 +68,7 @@ func daemonRun(ctx context.Context, x *IO, args []string) int {
 		return fail(x, c, fmt.Errorf("writing the runtime file: %v", err))
 	}
 	defer api.RemoveRuntime(rt)
+	go svc.WatchLocal(ctx, 250*time.Millisecond)
 	log.Info("ka daemon listening", "url", rt.URL, "workspace", rt.Workspace, "runtime", api.RuntimePath(rt.WorkspaceHash))
 	if err := srv.Serve(ctx, ln); err != nil {
 		return fail(x, c, err)
