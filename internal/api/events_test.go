@@ -355,3 +355,39 @@ func TestEventFilter(t *testing.T) {
 		t.Error("ticket filter is case-insensitive")
 	}
 }
+
+// POST /hooks/git makes the daemon fetch now; upstream changes arrive as
+// events without waiting for the fetch interval.
+func TestGitHookFetchesNow(t *testing.T) {
+	testkit.GitEnv(t)
+	r := testkit.NewRemote(t, nil)
+	c := serve(t, testkit.Service(t, r.Clone()))
+	c.svc.WS.Stores[0].FetchInterval = time.Hour
+	c.svc.Background = true
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go c.svc.FetchLoop(ctx)
+	s := c.subscribe("?types=ticket.created")
+
+	other := testkit.Service(t, r.Clone())
+	out, err := other.Create(context.Background(), other.CallerFor("alice", ""), []engine.CreateIn{{Title: "Pushed elsewhere"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := c.do("POST", "/api/v1/hooks/git", map[string]any{"ref": "refs/heads/main"}); r.status != 202 {
+		t.Fatalf("hook: %d %s", r.status, r.raw)
+	}
+	sent := time.Now()
+	m := s.next(5*time.Second, engine.EvTicketCreated)
+	if m.ev.Ticket != out.Created[0].ID || m.ev.Actor != "alice" {
+		t.Fatalf("event: %+v", m.ev)
+	}
+	t.Logf("webhook to event: %v", m.start.Sub(sent))
+	if d := m.start.Sub(sent); d > 2*time.Second {
+		t.Fatalf("webhook to event took %v (target 2 s)", d)
+	}
+	st := c.ok("GET", "/api/v1/stores", nil).m["stores"].([]any)[0].(map[string]any)
+	if str(st, "push_mode") != "immediate" || str(st, "fetch_interval") != "1h0m0s" {
+		t.Fatalf("store: %+v", st)
+	}
+}

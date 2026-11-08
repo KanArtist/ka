@@ -33,22 +33,20 @@ func (s *Service) WorkspaceInfo() *WorkspaceOut {
 // StoreOut is one store and its sync state.
 type StoreOut struct {
 	SyncState
-	Root     string `json:"root"`
-	URL      string `json:"url,omitempty"`
-	Managed  bool   `json:"managed"`
-	ReadOnly bool   `json:"read_only,omitempty"`
-	PushMode string `json:"push_mode"`
+	Root          string `json:"root"`
+	URL           string `json:"url,omitempty"`
+	Managed       bool   `json:"managed"`
+	ReadOnly      bool   `json:"read_only,omitempty"`
+	PushMode      string `json:"push_mode" doc:"immediate, manual or debounce:<delay>"`
+	FetchInterval string `json:"fetch_interval" doc:"How often the daemon fetches."`
 }
 
 // Stores lists the workspace's stores with their sync state.
 func (s *Service) Stores(ctx context.Context) []StoreOut {
 	out := make([]StoreOut, 0, len(s.WS.Stores))
 	for _, st := range s.WS.Stores {
-		pm := st.PushMode
-		if pm == "" {
-			pm = "immediate"
-		}
-		out = append(out, StoreOut{SyncState: st.State(ctx), Root: st.Root, URL: st.URL, Managed: st.Managed, ReadOnly: st.ReadOnly, PushMode: pm})
+		out = append(out, StoreOut{SyncState: st.State(ctx), Root: st.Root, URL: st.URL, Managed: st.Managed, ReadOnly: st.ReadOnly,
+			PushMode: st.PushSetting(), FetchInterval: st.fetchEvery().String()})
 	}
 	return out
 }

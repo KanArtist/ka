@@ -495,6 +495,15 @@ func (s *Server) adminRoutes() {
 		}) (*body[*engine.SyncOut], error) {
 			return &body[*engine.SyncOut]{s.svc.Sync(ctx, in.Body.Force)}, nil
 		})
+	op := post("gitHook", "/hooks/git", "Fetch now: for forge push webhooks, or a client that wants fresh data", "sync")
+	op.DefaultStatus = http.StatusAccepted
+	op.Description = "Queues an immediate fetch of one store (?store=) or all of them; the changes arrive as events. Any body is ignored."
+	reg(s, op, func(ctx context.Context, in *struct {
+		Store string `query:"store" doc:"The store's workspace name; default: every store."`
+	}) (*struct{}, error) {
+		s.svc.Kick(in.Store)
+		return &struct{}{}, nil
+	})
 	reg(s, get("resolveLink", "/links/resolve", "Resolve a code link to a local path and a forge URL (ka_resolve_link)", "workspace"),
 		func(ctx context.Context, in *struct {
 			Link string `query:"link" required:"true" example:"repo://jk/src/cache.go#L10"`
@@ -536,7 +545,7 @@ func (s *Server) adminRoutes() {
 			s.mu.RUnlock()
 			return &body[daemonInfo]{daemonInfo{s.opts.Version, os.Getpid(), addr, s.started.UTC().Format(time.RFC3339), s.svc.WS.Source}}, nil
 		})
-	op := post("shutdownDaemon", "/daemon/shutdown", "Stop the daemon (ka daemon stop)", "daemon")
+	op = post("shutdownDaemon", "/daemon/shutdown", "Stop the daemon (ka daemon stop)", "daemon")
 	op.DefaultStatus = http.StatusAccepted
 	reg(s, op, func(ctx context.Context, in *struct{}) (*struct{}, error) {
 		if s.opts.Shutdown == nil {

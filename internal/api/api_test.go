@@ -247,14 +247,14 @@ func TestEveryServiceMethodHasAnEndpoint(t *testing.T) {
 	plumbing := map[string]string{
 		"Index": "internal", "Human": "GET /workspace (you)", "CallerFor": "X-Ka-Actor", "Reload": "internal",
 		"TicketPath": "GET /tickets/{id}/source", "BoardFilter": "GET /boards/{name}", "Projects": "GET /workspace",
-		"ETag": "ETag headers", "SetEvents": "GET /events", "WatchLocal": "daemon",
+		"ETag": "ETag headers", "SetEvents": "GET /events", "WatchLocal": "daemon", "FetchLoop": "daemon", "Flush": "daemon",
 	}
 	endpoints := map[string]string{
 		"Search": "listTickets", "Get": "getTicket", "Create": "createTickets", "Update": "updateTickets", "Claim": "claimTicket",
 		"Release": "releaseTicket", "Transition": "transitionTicket", "Comment": "createComment", "CheckItems": "checkAcceptance",
 		"Ask": "askQuestion", "Answer": "answerQuestion", "Inbox": "getInbox", "Next": "next", "Schema": "getSchema",
 		"Sync": "sync", "ResolveLink": "resolveLink", "Validate": "check", "ReplaceTicket": "replaceTicketSource", "Fix": "fix",
-		"WorkspaceInfo": "getWorkspace", "Stores": "listStores", "Boards": "listBoards", "Actors": "listActors",
+		"WorkspaceInfo": "getWorkspace", "Stores": "listStores", "Boards": "listBoards", "Actors": "listActors", "Kick": "gitHook",
 	}
 	ops := map[string]bool{}
 	for _, item := range New(nil, Options{}).OpenAPI().Paths {

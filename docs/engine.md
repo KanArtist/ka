@@ -37,7 +37,8 @@ stores:
     url: git@github.com:JumpKickOSS/ka-org.git   # managed clone
   - name: jk
     path: ~/src/ka/repos/jk                      # attached checkout
-    push: manual                                 # optional: commit locally only
+    push: manual                                 # optional: immediate | manual | debounce:2s
+    fetch_interval: 30s                          # optional: how often the daemon fetches
 identity:
   actor: bsant
 repos:
@@ -105,6 +106,18 @@ rebases:
 
 The push is retried up to 8 times, with jittered exponential backoff. If every attempt fails, the
 commits stay local and the result says why.
+
+**Push modes and fetching** (PRD §10.1). A store pushes `immediate`ly by default. `manual` commits
+locally only. `debounce:2s` batches bursts: each write commits at once, and the push follows once
+the store has been quiet for the delay, or at most five delays after the first pending commit.
+Results say `push pending` until then. Only long-running processes (the daemon, `ka mcp`)
+debounce, and they flush pending pushes before exiting; a CLI command pushes immediately. Claims
+always push synchronously, and they carry any pending commits with them. The daemon fetches each
+store every `fetch_interval` (15 s by default), and immediately on `POST /api/v1/hooks/git`.
+
+Both settings come from the workspace's `stores:` entry when it sets them (the user wins). Otherwise
+they come from the store's recommendation, `runtime.sync.push` and `runtime.sync.fetch_interval` in
+`.ka/config.yml`, which follows `extends`.
 
 **The merge driver** (`ka merge-driver %O %A %B %P`, registered by `ka init` and
 `ka doctor --fix`; `.gitattributes` routes `ticket.md merge=ka`) merges frontmatter field by
@@ -182,8 +195,6 @@ room the rest leaves. Over every ready ticket of the migrated `jk` store, the ma
 - The web UI arrives in M2. The daemon, REST API, SSE events, MCP over HTTP, the `ka mcp` proxy
   and presence have landed ([api.md](api.md)). CLI commands still run in-process; the daemon
   notices their commits within 250 ms.
-- `runtime.sync.push: debounce` is not implemented. Stores push immediately unless the workspace
-  sets `push: manual`.
 - `ka watch`, `ka open`, `ka config explain`, `ka project move`, `ka migrate`, `ka hooks install`,
   `ka completion`, `ka check --ci` annotations and SARIF, and interactive prompts for missing
   arguments are not implemented. Each is a ticket in the `ka` store (`ka ls label:m1-follow-up`,

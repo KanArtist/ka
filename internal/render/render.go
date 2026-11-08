@@ -265,7 +265,11 @@ func Write(verb string, w *engine.WriteOut) string {
 	if w.NoChange {
 		s += " (no change)"
 	}
-	s += pushNote(w.Pushed, w.Local, w.PushError)
+	if w.PushPending {
+		s += ", push pending"
+	} else {
+		s += pushNote(w.Pushed, w.Local, w.PushError)
+	}
 	if len(w.Unblocked) > 0 {
 		s += "; unblocked " + strings.Join(w.Unblocked, ", ")
 	}
@@ -310,6 +314,9 @@ func Created(c *engine.CreateOut) string {
 		fmt.Fprintf(&b, "%s %s %s\n", r.ID, r.Status, r.Title)
 	}
 	note := strings.TrimPrefix(pushNote(c.Pushed, c.Local, ""), ", ")
+	if c.PushPending {
+		note = "push pending"
+	}
 	if note != "" {
 		b.WriteString(note + "\n")
 	}

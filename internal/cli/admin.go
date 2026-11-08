@@ -507,6 +507,8 @@ func cmdMCP(ctx context.Context, x *IO, args []string) int {
 		opt.Actor = c.as
 	}
 	mcpserver.Version = Version
+	svc.Background = true // debounced pushes, flushed below
+	defer svc.Flush(context.Background())
 	if err := mcpserver.New(svc, opt).RunIO(ctx, x.In, x.Out); err != nil && ctx.Err() == nil {
 		fmt.Fprintln(x.Err, "ka mcp:", err)
 		return 1

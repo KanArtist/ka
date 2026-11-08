@@ -76,6 +76,7 @@ workspace. The daemon removes the file when it stops.
 | `GET /workspace` | WorkspaceInfo | `ka workspace` |
 | `GET /stores`, `GET /sync` | Stores | `ka store ls` |
 | `POST /sync` | Sync | `ka_sync` |
+| `POST /hooks/git?store=` | Kick (fetch now) | forge webhooks |
 | `GET /schema`, `GET /projects`, `GET /projects/{key}` | Schema | `ka_schema` |
 | `GET /boards`, `GET /boards/{name}` | Boards, BoardFilter + Search | `ka://board/{name}` |
 | `GET /actors` | Actors | |
@@ -120,6 +121,15 @@ shares one index, its events and (soon) presence. `--as` / `$KA_ACTOR` and `$KA_
 (`$KA_NO_DAEMON`), the engine runs in-process, as in M1. `--offline`, `--no-push` and `--map`
 also force in-process mode, because they change how the engine behaves. The MCP scenario tests
 and token budgets run both ways (`TestScenariosViaDaemon`).
+
+## Fetching
+
+The daemon fetches every store with a remote every `fetch_interval` (15 s by default; see
+[engine.md](engine.md#sync-and-replay)) and integrates what it finds, so pushes from elsewhere
+arrive as events within one interval. `POST /api/v1/hooks/git` (optionally `?store=<name>`) makes
+it fetch at once. Point a forge's push webhook at it in remote mode (M4), or call it from a client
+that wants fresh data. In tests, a change pushed elsewhere reaches SSE clients about 25 ms after
+the hook.
 
 ## Presence (`GET /api/v1/presence`)
 

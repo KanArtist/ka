@@ -46,6 +46,7 @@ func daemonRun(ctx context.Context, x *IO, args []string) int {
 	if err != nil {
 		return fail(x, c, err)
 	}
+	svc.Background = true
 	if r := api.Discover(ctx, svc.WS.Source); r != nil {
 		return fail(x, c, engine.Errf(engine.CodeInvalid, "use it, or stop it with `ka daemon stop`",
 			"a daemon for this workspace is already running at %s (pid %d)", r.URL, r.PID))
@@ -90,6 +91,8 @@ func daemonRun(ctx context.Context, x *IO, args []string) int {
 	}
 	defer api.RemoveRuntime(rt)
 	go svc.WatchLocal(ctx, 250*time.Millisecond)
+	go svc.FetchLoop(ctx)
+	defer svc.Flush(context.Background()) // debounced pushes go out before exit
 	log.Info("ka daemon listening", "url", rt.URL, "workspace", rt.Workspace, "runtime", api.RuntimePath(rt.WorkspaceHash))
 	if err := srv.Serve(ctx, ln); err != nil {
 		return fail(x, c, err)

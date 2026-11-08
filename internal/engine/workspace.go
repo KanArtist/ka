@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/JumpKickOSS/ka/internal/gitx"
 	"github.com/JumpKickOSS/ka/pkg/kaspec"
@@ -35,7 +36,9 @@ type StoreSpec struct {
 	URL    string // remote; ka keeps a managed clone
 	Branch string
 	Path   string // attached checkout (store root)
-	Push   string // immediate | manual
+	Push   string // immediate | manual | debounce[:2s]
+	// FetchInterval overrides how often the daemon fetches this store.
+	FetchInterval string
 }
 
 // Pointer is a code repo's .ka.yml (PRD §9.4).
@@ -139,7 +142,7 @@ func ParseWorkspaceFile(p string) (*WorkspaceFile, error) {
 	}
 	if st := n.Map["stores"]; st != nil {
 		for i, it := range st.Items {
-			sp := StoreSpec{Name: str(it, "name"), URL: str(it, "url"), Branch: str(it, "branch"), Push: str(it, "push")}
+			sp := StoreSpec{Name: str(it, "name"), URL: str(it, "url"), Branch: str(it, "branch"), Push: str(it, "push"), FetchInterval: str(it, "fetch_interval")}
 			if p := str(it, "path"); p != "" {
 				sp.Path = absFrom(base, expandHome(p))
 			}
@@ -319,7 +322,18 @@ func Open(ctx context.Context, o OpenOptions) (*Workspace, error) {
 		}
 		s.URL, s.Managed, s.ReadOnly = sp.URL, managed, readOnly
 		if sp.Push != "" {
-			s.PushMode = sp.Push
+			mode, d, err := ParsePushMode(sp.Push)
+			if err != nil {
+				return nil, Errf(CodeInvalid, "fix stores[].push in the workspace file", "store %s: %v", name, err)
+			}
+			s.PushMode, s.PushDelay, s.pushSet = mode, d, true
+		}
+		if sp.FetchInterval != "" {
+			d, err := time.ParseDuration(sp.FetchInterval)
+			if err != nil || d < time.Second {
+				return nil, Errf(CodeInvalid, "use a duration of at least 1s, such as 15s", "store %s: fetch_interval %q", name, sp.FetchInterval)
+			}
+			s.FetchInterval, s.fetchSet = d, true
 		}
 		if s.URL == "" {
 			if r, _ := s.git.Upstream(ctx); r != "" {

@@ -36,6 +36,13 @@ type Service struct {
 	events   EventSink
 	syncMu   sync.Mutex
 	lastSync map[string]string // store -> last published sync state
+
+	// Background marks a long-running process (the daemon, ka mcp): it may
+	// debounce pushes and run the fetch loop. Call Flush before exiting.
+	Background bool
+	deb        debouncer
+	kick       chan string
+	kickOnce   sync.Once
 }
 
 // New builds the service and its index.
@@ -43,6 +50,7 @@ func New(ctx context.Context, ws *Workspace) (*Service, error) {
 	s := &Service{WS: ws, Now: time.Now, PollStep: 2 * time.Second}
 	s.ix = newIndex(ws.Stores)
 	s.human = s.detectHuman(ctx)
+	s.applyRuntime()
 	return s, nil
 }
 
@@ -426,7 +434,12 @@ func (s *Service) hooksBy(st *Store, actor string) hooks {
 }
 
 func (s *Service) do(ctx context.Context, st *Store, o *Op, push bool) (*Result, error) {
-	res, err := st.Do(ctx, s.hooksBy(st, o.Actor), o, push && !s.NoPush && st.PushMode != "manual")
+	deb := push && s.debounced(st)
+	res, err := st.Do(ctx, s.hooksBy(st, o.Actor), o, push && !deb && !s.NoPush && st.PushMode != "manual")
+	if err == nil && deb && res.HasRemote && res.Commit != "" {
+		res.PushPending = true
+		s.schedulePush(st)
+	}
 	if err == nil {
 		s.syncEvents(st, res)
 	}
@@ -468,6 +481,8 @@ type WriteOut struct {
 	Commit    string   `json:"commit,omitempty"`
 	Preserved []string `json:"preserved,omitempty"`
 	NoChange  bool     `json:"no_change,omitempty"`
+	// PushPending: committed; a debounced push follows within seconds.
+	PushPending bool `json:"push_pending,omitempty"`
 }
 
 func writeOut(id string, res *Result) *WriteOut {
@@ -475,6 +490,7 @@ func writeOut(id string, res *Result) *WriteOut {
 	if res != nil {
 		w.Pushed, w.Local, w.PushError, w.Commit, w.Preserved = res.Pushed, !res.HasRemote, res.PushError, short(res.Commit), res.Preserved
 		w.NoChange = res.Commit == ""
+		w.PushPending = res.PushPending
 	}
 	return w
 }
@@ -502,10 +518,12 @@ type CreateIn struct {
 
 // CreateOut lists created tickets.
 type CreateOut struct {
-	Created []Ref  `json:"created"`
-	Pushed  bool   `json:"pushed"`
-	Local   bool   `json:"local_only,omitempty"`
-	Error   *Error `json:"error,omitempty"` // first failure; earlier tickets were still created
+	Created []Ref `json:"created"`
+	Pushed  bool  `json:"pushed"`
+	Local   bool  `json:"local_only,omitempty"`
+	// PushPending: committed; a debounced push follows within seconds.
+	PushPending bool   `json:"push_pending,omitempty"`
+	Error       *Error `json:"error,omitempty"` // first failure; earlier tickets were still created
 }
 
 func (s *Service) resolveProject(key string) (*ProjectInfo, error) {
@@ -678,6 +696,7 @@ func (s *Service) Create(ctx context.Context, c Caller, ins []CreateIn) (*Create
 		if res != nil {
 			out.Pushed = out.Pushed && (res.Pushed || !res.HasRemote)
 			out.Local = out.Local && !res.HasRemote
+			out.PushPending = out.PushPending || res.PushPending
 			for i := range out.Created {
 				if n, ok := res.Renamed[out.Created[i].ID]; ok {
 					out.Created[i].ID = n
@@ -753,11 +772,16 @@ func (s *Service) createOp(c Caller, pi *ProjectInfo, in CreateIn) (*Op, error) 
 	return stamp(&Op{Op: "create", ID: id, New: t}, c, now), nil
 }
 
-// pushStore publishes a store's local commits.
+// pushStore publishes a store's local commits (or schedules a debounced push).
 func (s *Service) pushStore(ctx context.Context, st *Store) (*Result, error) {
-	if s.NoPush || st.PushMode == "manual" {
+	if s.NoPush || st.PushMode == "manual" || s.debounced(st) {
 		remote, _ := st.upstream(ctx)
-		return &Result{HasRemote: remote != ""}, nil
+		res := &Result{HasRemote: remote != ""}
+		if res.HasRemote && s.debounced(st) {
+			res.PushPending = true
+			s.schedulePush(st)
+		}
+		return res, nil
 	}
 	return st.Sync(ctx, s.hooks(st))
 }
@@ -807,7 +831,7 @@ func (s *Service) Update(ctx context.Context, c Caller, ins []UpdateIn) ([]*Writ
 		}
 		for _, w := range outs {
 			if res != nil {
-				w.Pushed, w.Local, w.PushError = res.Pushed, !res.HasRemote, res.PushError
+				w.Pushed, w.Local, w.PushError, w.PushPending = res.Pushed, !res.HasRemote, res.PushError, res.PushPending
 			}
 		}
 	}

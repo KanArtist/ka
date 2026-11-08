@@ -24,10 +24,16 @@ type Store struct {
 	URL      string // remote URL, when known
 	Managed  bool   // ka owns the clone
 	ReadOnly bool   // reached only through extends, or unsupported spec
-	PushMode string // immediate (default) or manual
-	git      *gitx.Repo
-	sub      string // store root relative to the repo toplevel, slash-separated, "" at the top
-	gitDir   string
+	PushMode string // immediate (default), manual or debounce
+	// PushDelay is the quiet period before a debounced push.
+	PushDelay time.Duration
+	// FetchInterval is how often a long-running process fetches (0: 15 s).
+	FetchInterval time.Duration
+	pushSet       bool // the workspace set push; store recommendations do not apply
+	fetchSet      bool
+	git           *gitx.Repo
+	sub           string // store root relative to the repo toplevel, slash-separated, "" at the top
+	gitDir        string
 
 	// Simulated clock and backoff for tests.
 	now   func() time.Time
@@ -55,6 +61,8 @@ type Result struct {
 	Replayed  int      `json:"replayed,omitempty"`
 	Preserved []string `json:"preserved,omitempty"`
 	PushError string   `json:"push_error,omitempty"`
+	// PushPending: committed locally; a debounced push follows shortly.
+	PushPending bool `json:"push_pending,omitempty"`
 	// Renamed maps IDs that collided with upstream during replay to their new IDs.
 	Renamed map[string]string `json:"renamed,omitempty"`
 }
@@ -667,7 +675,15 @@ func oneLine(s string) string {
 }
 
 // Sync fetches, integrates and pushes (ka sync).
-func (s *Store) Sync(ctx context.Context, h hooks) (*Result, error) {
+func (s *Store) Sync(ctx context.Context, h hooks) (*Result, error) { return s.sync(ctx, h, true) }
+
+// FetchOnly brings in upstream changes (replaying local commits on top) but
+// does not push: for manual and debounced stores in the fetch loop.
+func (s *Store) FetchOnly(ctx context.Context, h hooks) (*Result, error) {
+	return s.sync(ctx, h, false)
+}
+
+func (s *Store) sync(ctx context.Context, h hooks, push bool) (*Result, error) {
 	res := &Result{}
 	remote, branch := s.upstream(ctx)
 	res.HasRemote = remote != ""
@@ -692,6 +708,10 @@ func (s *Store) Sync(ctx context.Context, h hooks) (*Result, error) {
 	}
 	res.absorb(ir)
 	res.Preserved = append(res.Preserved, s.flushPreserved(ctx, h)...)
+	if !push {
+		res.Pushed = s.git.Head(ctx) == s.remoteHead(ctx, remote, branch)
+		return res, nil
+	}
 	if s.git.Head(ctx) != s.remoteHead(ctx, remote, branch) {
 		if err := s.pushLocked(ctx, h, res, ""); err != nil {
 			return res, err
