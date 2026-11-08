@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -82,5 +83,33 @@ func TestMCPProxiesToDaemon(t *testing.T) {
 				t.Fatal("ka mcp did not exit after the client closed")
 			}
 		})
+	}
+}
+
+// ka open --print, with a daemon running, prints the token exchange URL
+// for the ticket.
+func TestOpenPrintsAuthURL(t *testing.T) {
+	testkit.GitEnv(t)
+	t.Setenv("KA_RUNTIME_DIR", t.TempDir())
+	r := testkit.NewRemote(t, nil)
+	dir := r.Clone()
+	svc := testkit.Service(t, dir)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	srv := api.New(svc, api.Options{Token: "tok", Version: "test"})
+	ln, err := api.Listen("127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go srv.Serve(ctx, ln)
+	rt := &api.Runtime{PID: os.Getpid(), Addr: ln.Addr().String(), URL: "http://" + ln.Addr().String(), Workspace: svc.WS.Source,
+		WorkspaceHash: api.WorkspaceHash(svc.WS.Source), Token: "tok"}
+	if err := api.WriteRuntime(rt); err != nil {
+		t.Fatal(err)
+	}
+	res := ka(t, dir, "open", "jk-12345", "--print")
+	want := rt.URL + "/auth?next=%2Fticket%2FJK-12345&token=tok"
+	if res.code != 0 || strings.TrimSpace(res.out) != want {
+		t.Fatalf("open: %+v, want %s", res, want)
 	}
 }

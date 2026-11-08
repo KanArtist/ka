@@ -172,6 +172,10 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, newProblem(codeForbidden, "", "cross-site requests are not allowed"))
 		return
 	}
+	if isUIPath(r.URL.Path) {
+		s.serveUI(w, r)
+		return
+	}
 	switch r.URL.Path {
 	case "/healthz", "/auth":
 	default:

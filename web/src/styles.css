@@ -1,0 +1,198 @@
+/*
+ * KanArtist design tokens.
+ *
+ * The one loud idea is actor ink: agents act in verdigris, humans in ochre,
+ * everywhere an actor appears. Everything else is graphite and quiet, so the
+ * ink reads as information: who just did what.
+ */
+:root,
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #1b1e24;
+  --surface: #22262e;
+  --raised: #2c313b;
+  --line: #363c47;
+  --line-soft: #2a2f38;
+  --text: #d9dee7;
+  --text-strong: #f1f4f8;
+  --muted: #8a93a3;
+  --faint: #626b7a;
+
+  --ink-agent: #4fb6a6;
+  --ink-agent-wash: rgb(79 182 166 / 0.14);
+  --ink-human: #e0a458;
+  --ink-human-wash: rgb(224 164 88 / 0.14);
+
+  --st-backlog: #6f7887;
+  --st-unstarted: #a3abb9;
+  --st-started: #8c9eff;
+  --st-completed: #7cc47f;
+  --st-canceled: #626b7a;
+  --st-blocked: #e06c75;
+  --prio-0: #e06c75;
+  --prio-1: #e0a458;
+
+  --focus: #8c9eff;
+  --shadow-pop: 0 18px 50px rgb(0 0 0 / 0.45), 0 0 0 1px var(--line);
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --raised: #eceef2;
+  --line: #d8dce3;
+  --line-soft: #e6e9ee;
+  --text: #2a303b;
+  --text-strong: #12161d;
+  --muted: #687284;
+  --faint: #959dab;
+
+  --ink-agent: #1f8a7a;
+  --ink-agent-wash: rgb(31 138 122 / 0.12);
+  --ink-human: #b36f1c;
+  --ink-human-wash: rgb(179 111 28 / 0.12);
+
+  --st-backlog: #959dab;
+  --st-unstarted: #687284;
+  --st-started: #4b5fd6;
+  --st-completed: #3b8f40;
+  --st-canceled: #959dab;
+  --st-blocked: #c43d48;
+  --prio-0: #c43d48;
+  --prio-1: #b36f1c;
+
+  --focus: #4b5fd6;
+  --shadow-pop: 0 18px 50px rgb(20 26 38 / 0.18), 0 0 0 1px var(--line);
+}
+
+:root {
+  --font: 'Instrument Sans Variable', 'Instrument Sans', system-ui, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  /* A 1.2 scale from a 13px base: dense, like a tool you leave open. */
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-md: 13px;
+  --fs-lg: 15.6px;
+  --fs-xl: 18.7px;
+  --fs-2xl: 22.5px;
+
+  --r-sm: 4px;
+  --r-md: 6px;
+  --r-lg: 10px;
+
+  --rail: 208px;
+  --bar: 44px;
+  --row: 30px;
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+:root[data-density='comfortable'] {
+  --fs-md: 14px;
+  --row: 36px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font: 400 var(--fs-md) / 1.45 var(--font);
+  font-feature-settings: 'tnum' 1, 'cv11' 1;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+a {
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+
+.id {
+  font-family: var(--mono);
+  font-size: 0.92em;
+  letter-spacing: -0.01em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+kbd {
+  font: 500 var(--fs-xs) / 1 var(--font);
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: var(--r-sm);
+  padding: 2px 5px;
+  background: var(--surface);
+}
+
+::selection {
+  background: var(--ink-agent-wash);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
+  }
+}
+
+/* Status categories, shared by dots, chips and columns. */
+[data-cat] {
+  --cat: var(--st-unstarted);
+}
+[data-cat='triage'],
+[data-cat='backlog'] {
+  --cat: var(--st-backlog);
+}
+[data-cat='started'] {
+  --cat: var(--st-started);
+}
+[data-cat='completed'] {
+  --cat: var(--st-completed);
+}
+[data-cat='canceled'] {
+  --cat: var(--st-canceled);
+}
+.dot[data-cat] {
+  background: var(--cat);
+}

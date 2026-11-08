@@ -1,0 +1,4268 @@
+{
+  "components": {
+    "schemas": {
+      "ActorList": {
+        "additionalProperties": false,
+        "properties": {
+          "actors": {
+            "items": {
+              "$ref": "#/components/schemas/ActorOut"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "actors"
+        ],
+        "type": "object"
+      },
+      "ActorOut": {
+        "additionalProperties": false,
+        "properties": {
+          "aliases": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "emails": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "handle": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "roles": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "handle",
+          "kind"
+        ],
+        "type": "object"
+      },
+      "AnswerQuestionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "approved": {
+            "description": "For approvals: true approves, false rejects.",
+            "type": "boolean"
+          },
+          "choice": {
+            "description": "The chosen option's index.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "question": {
+            "description": "The question comment's filename; default: the newest open question.",
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AskOut": {
+        "additionalProperties": false,
+        "properties": {
+          "answer": {
+            "$ref": "#/components/schemas/CommentOut"
+          },
+          "answered": {
+            "type": "boolean"
+          },
+          "comment": {
+            "type": "string"
+          },
+          "commit": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "local_only": {
+            "type": "boolean"
+          },
+          "no_change": {
+            "type": "boolean"
+          },
+          "preserved": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "push_error": {
+            "type": "string"
+          },
+          "push_pending": {
+            "type": "boolean"
+          },
+          "pushed": {
+            "type": "boolean"
+          },
+          "question": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "unblocked": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "question",
+          "answered",
+          "id",
+          "pushed"
+        ],
+        "type": "object"
+      },
+      "AskQuestionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "question",
+              "approval"
+            ],
+            "type": "string"
+          },
+          "options": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "question": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "to": {
+            "description": "An actor or role; default: the ticket's owner.",
+            "type": "string"
+          },
+          "wait_seconds": {
+            "description": "Block until answered, up to this long.",
+            "format": "int64",
+            "maximum": 300,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "question"
+        ],
+        "type": "object"
+      },
+      "BatchCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "tickets": {
+            "items": {
+              "$ref": "#/components/schemas/CreateIn"
+            },
+            "minItems": 1,
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "tickets"
+        ],
+        "type": "object"
+      },
+      "BatchUpdateResult": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/Error",
+            "description": "The first failure; earlier updates were still applied."
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/WriteOut"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "results"
+        ],
+        "type": "object"
+      },
+      "BoardList": {
+        "additionalProperties": false,
+        "properties": {
+          "boards": {
+            "items": {
+              "$ref": "#/components/schemas/BoardOut"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "boards"
+        ],
+        "type": "object"
+      },
+      "BoardOut": {
+        "additionalProperties": false,
+        "properties": {
+          "card_fields": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "columns": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "filter": {
+            "type": "string"
+          },
+          "group_by": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sort": {
+            "type": "string"
+          },
+          "store": {
+            "type": "string"
+          },
+          "swimlanes": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "store"
+        ],
+        "type": "object"
+      },
+      "BoardTickets": {
+        "additionalProperties": false,
+        "properties": {
+          "board": {
+            "$ref": "#/components/schemas/BoardOut"
+          },
+          "tickets": {
+            "$ref": "#/components/schemas/SearchOut"
+          }
+        },
+        "required": [
+          "board",
+          "tickets"
+        ],
+        "type": "object"
+      },
+      "CheckAcceptanceRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CheckItem"
+            },
+            "minItems": 1,
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "CheckItem": {
+        "additionalProperties": false,
+        "properties": {
+          "done": {
+            "type": "boolean"
+          },
+          "index": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "done"
+        ],
+        "type": "object"
+      },
+      "CheckReport": {
+        "additionalProperties": false,
+        "properties": {
+          "diagnostics": {
+            "items": {
+              "$ref": "#/components/schemas/SpecDiagnostic"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "errors": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "warnings": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "errors",
+          "warnings",
+          "diagnostics"
+        ],
+        "type": "object"
+      },
+      "CheckResult": {
+        "additionalProperties": false,
+        "properties": {
+          "acceptance": {
+            "description": "Done/total, such as 2/3.",
+            "type": "string"
+          },
+          "comment": {
+            "type": "string"
+          },
+          "commit": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "local_only": {
+            "type": "boolean"
+          },
+          "no_change": {
+            "type": "boolean"
+          },
+          "preserved": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "push_error": {
+            "type": "string"
+          },
+          "push_pending": {
+            "type": "boolean"
+          },
+          "pushed": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
+          },
+          "unblocked": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "acceptance",
+          "id",
+          "pushed"
+        ],
+        "type": "object"
+      },
+      "Claim": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "type": "string"
+          },
+          "by": {
+            "type": "string"
+          },
+          "stale": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "by",
+          "at"
+        ],
+        "type": "object"
+      },
+      "ClaimOut": {
+        "additionalProperties": false,
+        "properties": {
+          "comment": {
+            "type": "string"
+          },
+          "commit": {
+            "type": "string"
+          },
+          "confirmed": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "local_only": {
+            "type": "boolean"
+          },
+          "no_change": {
+            "type": "boolean"
+          },
+          "preserved": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "push_error": {
+            "type": "string"
+          },
+          "push_pending": {
+            "type": "boolean"
+          },
+          "pushed": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
+          },
+          "unblocked": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "confirmed",
+          "id",
+          "pushed"
+        ],
+        "type": "object"
+      },
+      "ClaimTicketRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "steal": {
+            "description": "Take over a stale claim.",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "CommentList": {
+        "additionalProperties": false,
+        "properties": {
+          "comments": {
+            "items": {
+              "$ref": "#/components/schemas/CommentOut"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "comments"
+        ],
+        "type": "object"
+      },
+      "CommentOut": {
+        "additionalProperties": false,
+        "properties": {
+          "answers": {
+            "type": "string"
+          },
+          "approved": {
+            "type": "boolean"
+          },
+          "author": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "choice": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "created": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "options": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "resolution": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type",
+          "author",
+          "created"
+        ],
+        "type": "object"
+      },
+      "CreateCommentRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "retracts": {
+            "type": "string"
+          },
+          "supersedes": {
+            "description": "A decision comment's filename this one replaces.",
+            "type": "string"
+          },
+          "type": {
+            "description": "Default: note.",
+            "enum": [
+              "note",
+              "progress",
+              "decision"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "type": "object"
+      },
+      "CreateIn": {
+        "additionalProperties": false,
+        "properties": {
+          "acceptance": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "approach": {
+            "type": "string"
+          },
+          "assignee": {
+            "type": "string"
+          },
+          "blocked_by": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "body": {
+            "type": "string"
+          },
+          "fields": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "labels": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "links": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "owner": {
+            "type": "string"
+          },
+          "parent": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "string"
+          },
+          "problem": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "related": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "type": "object"
+      },
+      "CreateOut": {
+        "additionalProperties": false,
+        "properties": {
+          "created": {
+            "items": {
+              "$ref": "#/components/schemas/Ref"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "error": {
+            "$ref": "#/components/schemas/Error"
+          },
+          "local_only": {
+            "type": "boolean"
+          },
+          "push_pending": {
+            "type": "boolean"
+          },
+          "pushed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "created",
+          "pushed"
+        ],
+        "type": "object"
+      },
+      "DaemonInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "addr": {
+            "type": "string"
+          },
+          "pid": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "started": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "workspace": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "pid",
+          "addr",
+          "started",
+          "workspace"
+        ],
+        "type": "object"
+      },
+      "Detail": {
+        "additionalProperties": false,
+        "properties": {
+          "acceptance": {
+            "type": "string"
+          },
+          "acceptance_items": {
+            "items": {
+              "$ref": "#/components/schemas/SpecAcceptanceItem"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "assignee": {
+            "type": "string"
+          },
+          "blocked": {
+            "type": "boolean"
+          },
+          "blocked_by": {
+            "items": {
+              "$ref": "#/components/schemas/Ref"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "blocks": {
+            "items": {
+              "$ref": "#/components/schemas/Ref"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "body": {
+            "type": "string"
+          },
+          "children": {
+            "items": {
+              "$ref": "#/components/schemas/Ref"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "claim": {
+            "$ref": "#/components/schemas/Claim"
+          },
+          "comment_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "comments": {
+            "items": {
+              "$ref": "#/components/schemas/CommentOut"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "created": {
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "decisions": {
+            "items": {
+              "$ref": "#/components/schemas/CommentOut"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "fields": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "labels": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "links": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "open_questions": {
+            "items": {
+              "$ref": "#/components/schemas/CommentOut"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "owner": {
+            "type": "string"
+          },
+          "parent": {
+            "type": "string"
+          },
+          "parent_ref": {
+            "$ref": "#/components/schemas/Ref"
+          },
+          "path": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "recent_comments": {
+            "items": {
+              "$ref": "#/components/schemas/CommentOut"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "related": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "store": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updated": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "store",
+          "path",
+          "id",
+          "title",
+          "status",
+          "project"
+        ],
+        "type": "object"
+      },
+      "Error": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "data": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "fix": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "type": "object"
+      },
+      "ErrorDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "location": {
+            "description": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
+            "type": "string"
+          },
+          "message": {
+            "description": "Error message text",
+            "type": "string"
+          },
+          "value": {
+            "description": "The value at the given location"
+          }
+        },
+        "type": "object"
+      },
+      "FixCategory": {
+        "additionalProperties": false,
+        "properties": {
+          "commit": {
+            "type": "string"
+          },
+          "files": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "files"
+        ],
+        "type": "object"
+      },
+      "FixOut": {
+        "additionalProperties": false,
+        "properties": {
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/FixCategory"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "categories"
+        ],
+        "type": "object"
+      },
+      "FixRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "dry_run": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "InboxItem": {
+        "additionalProperties": false,
+        "properties": {
+          "comment": {
+            "$ref": "#/components/schemas/CommentOut"
+          },
+          "id": {
+            "type": "string"
+          },
+          "question": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "comment"
+        ],
+        "type": "object"
+      },
+      "InboxOut": {
+        "additionalProperties": false,
+        "properties": {
+          "answers": {
+            "items": {
+              "$ref": "#/components/schemas/InboxItem"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/InboxItem"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "answers",
+          "questions"
+        ],
+        "type": "object"
+      },
+      "LinkOut": {
+        "additionalProperties": false,
+        "properties": {
+          "line": {
+            "type": "string"
+          },
+          "link": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "link"
+        ],
+        "type": "object"
+      },
+      "NextIn": {
+        "additionalProperties": false,
+        "properties": {
+          "peek": {
+            "type": "boolean"
+          },
+          "project": {
+            "type": "string"
+          },
+          "query": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "NextOut": {
+        "additionalProperties": false,
+        "properties": {
+          "claimed": {
+            "type": "boolean"
+          },
+          "confirmed": {
+            "type": "boolean"
+          },
+          "push_error": {
+            "type": "string"
+          },
+          "remaining": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "ticket": {
+            "$ref": "#/components/schemas/Detail"
+          }
+        },
+        "required": [
+          "claimed",
+          "confirmed",
+          "remaining"
+        ],
+        "type": "object"
+      },
+      "PresenceList": {
+        "additionalProperties": false,
+        "properties": {
+          "sessions": {
+            "description": "Live agent sessions on this daemon, most recently active first. Ephemeral: never written to git.",
+            "items": {
+              "$ref": "#/components/schemas/Session"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "sessions"
+        ],
+        "type": "object"
+      },
+      "Problem": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "description": "The ka error code, the same as in MCP and the CLI (not_found, claim_lost, unknown_status, ...).",
+            "type": "string"
+          },
+          "data": {
+            "additionalProperties": {},
+            "description": "Structured details, such as the index of the failing item in a batch.",
+            "type": "object"
+          },
+          "detail": {
+            "description": "What went wrong.",
+            "type": "string"
+          },
+          "errors": {
+            "description": "Request validation failures.",
+            "items": {
+              "$ref": "#/components/schemas/ErrorDetail"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "fix": {
+            "description": "What to do about it.",
+            "type": "string"
+          },
+          "status": {
+            "description": "The HTTP status.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "title": {
+            "description": "The HTTP status text.",
+            "type": "string"
+          },
+          "type": {
+            "description": "Always about:blank; use code.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "title",
+          "code"
+        ],
+        "type": "object"
+      },
+      "ProjectList": {
+        "additionalProperties": false,
+        "properties": {
+          "projects": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectSchema"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "projects"
+        ],
+        "type": "object"
+      },
+      "ProjectSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "archived": {
+            "type": "boolean"
+          },
+          "fields": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SpecFieldDef"
+            },
+            "type": "object"
+          },
+          "initial": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "kinds": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "labels": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "labels_open": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "prefix": {
+            "type": "string"
+          },
+          "read_only": {
+            "type": "boolean"
+          },
+          "statuses": {
+            "items": {
+              "$ref": "#/components/schemas/SpecStatus"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "store": {
+            "type": "string"
+          },
+          "tickets": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "key",
+          "prefix",
+          "store",
+          "statuses",
+          "initial",
+          "kinds",
+          "labels_open",
+          "tickets"
+        ],
+        "type": "object"
+      },
+      "Ref": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "ReleaseTicketRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "force": {
+            "description": "Release someone else's claim.",
+            "type": "boolean"
+          },
+          "status": {
+            "description": "Move to this status as well.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "SchemaOut": {
+        "additionalProperties": false,
+        "properties": {
+          "agents": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "default_project": {
+            "type": "string"
+          },
+          "humans": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "priorities": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "projects": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectSchema"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "resolutions": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "roles": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "you": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "projects",
+          "priorities",
+          "resolutions",
+          "you"
+        ],
+        "type": "object"
+      },
+      "SearchOut": {
+        "additionalProperties": false,
+        "properties": {
+          "tickets": {
+            "items": {
+              "$ref": "#/components/schemas/Summary"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "total": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "tickets"
+        ],
+        "type": "object"
+      },
+      "Session": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "type": "string"
+          },
+          "calls": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "client": {
+            "description": "clientInfo name and version.",
+            "type": "string"
+          },
+          "connected": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "last_error": {
+            "description": "The error code of the last call, if it failed.",
+            "type": "string"
+          },
+          "last_method": {
+            "type": "string"
+          },
+          "last_seen": {
+            "type": "string"
+          },
+          "last_ticket": {
+            "type": "string"
+          },
+          "last_tool": {
+            "type": "string"
+          },
+          "on_behalf_of": {
+            "type": "string"
+          },
+          "transport": {
+            "description": "mcp-http (directly or through the ka mcp proxy).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "actor",
+          "transport",
+          "connected",
+          "last_seen",
+          "calls"
+        ],
+        "type": "object"
+      },
+      "SpecAcceptanceItem": {
+        "additionalProperties": false,
+        "properties": {
+          "done": {
+            "type": "boolean"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "done"
+        ],
+        "type": "object"
+      },
+      "SpecDiagnostic": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "fix": {
+            "type": "string"
+          },
+          "line": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "severity",
+          "path",
+          "message"
+        ],
+        "type": "object"
+      },
+      "SpecFieldDef": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "values": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "type": "object"
+      },
+      "SpecStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "blocked": {
+            "type": "boolean"
+          },
+          "category": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "category"
+        ],
+        "type": "object"
+      },
+      "StoreList": {
+        "additionalProperties": false,
+        "properties": {
+          "stores": {
+            "items": {
+              "$ref": "#/components/schemas/StoreOut"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "stores"
+        ],
+        "type": "object"
+      },
+      "StoreOut": {
+        "additionalProperties": false,
+        "properties": {
+          "ahead": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "attached": {
+            "type": "boolean"
+          },
+          "behind": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "branch": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "fetch_interval": {
+            "description": "How often the daemon fetches.",
+            "type": "string"
+          },
+          "head": {
+            "type": "string"
+          },
+          "managed": {
+            "type": "boolean"
+          },
+          "push_mode": {
+            "description": "immediate, manual or debounce:\u003cdelay\u003e",
+            "type": "string"
+          },
+          "read_only": {
+            "type": "boolean"
+          },
+          "remote": {
+            "type": "string"
+          },
+          "root": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "store": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "root",
+          "managed",
+          "push_mode",
+          "fetch_interval",
+          "store",
+          "ahead",
+          "behind",
+          "state",
+          "attached"
+        ],
+        "type": "object"
+      },
+      "Summary": {
+        "additionalProperties": false,
+        "properties": {
+          "acceptance": {
+            "type": "string"
+          },
+          "assignee": {
+            "type": "string"
+          },
+          "blocked": {
+            "type": "boolean"
+          },
+          "claim": {
+            "$ref": "#/components/schemas/Claim"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "labels": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "parent": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updated": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "status",
+          "project"
+        ],
+        "type": "object"
+      },
+      "SyncOut": {
+        "additionalProperties": false,
+        "properties": {
+          "conflicts": {
+            "items": {
+              "$ref": "#/components/schemas/InboxItem"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "preserved": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "renamed": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "stores": {
+            "items": {
+              "$ref": "#/components/schemas/SyncState"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "stores"
+        ],
+        "type": "object"
+      },
+      "SyncRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "force": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "SyncState": {
+        "additionalProperties": false,
+        "properties": {
+          "ahead": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "attached": {
+            "type": "boolean"
+          },
+          "behind": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "branch": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "head": {
+            "type": "string"
+          },
+          "remote": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "store": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "store",
+          "ahead",
+          "behind",
+          "state",
+          "attached"
+        ],
+        "type": "object"
+      },
+      "TicketPatch": {
+        "additionalProperties": false,
+        "properties": {
+          "add": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "description": "Values to add to labels, blocked_by, related, links or acceptance.",
+            "type": "object"
+          },
+          "body": {
+            "description": "The new markdown body. Requires If-Match.",
+            "type": "string"
+          },
+          "remove": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "description": "Values to remove.",
+            "type": "object"
+          },
+          "set": {
+            "additionalProperties": {},
+            "description": "Scalar and custom fields to set; null clears. Keys: title, status, priority, kind, assignee, owner, parent, duplicate_of, fields.\u003cname\u003e.",
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "TransitionTicketRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "resolution": {
+            "type": "string"
+          },
+          "status": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "summary": {
+            "description": "Required when closing; committed as a resolution comment.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
+      },
+      "UpdateIn": {
+        "additionalProperties": false,
+        "properties": {
+          "add": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "type": "object"
+          },
+          "body": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "if_match": {
+            "type": "string"
+          },
+          "remove": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "type": "object"
+          },
+          "set": {
+            "additionalProperties": {},
+            "type": "object"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "UpdateTicketsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "updates": {
+            "items": {
+              "$ref": "#/components/schemas/UpdateIn"
+            },
+            "minItems": 1,
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "updates"
+        ],
+        "type": "object"
+      },
+      "WorkspaceOut": {
+        "additionalProperties": false,
+        "properties": {
+          "default_project": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "projects": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "stores": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "you": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "stores",
+          "projects",
+          "you"
+        ],
+        "type": "object"
+      },
+      "WriteOut": {
+        "additionalProperties": false,
+        "properties": {
+          "comment": {
+            "type": "string"
+          },
+          "commit": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "local_only": {
+            "type": "boolean"
+          },
+          "no_change": {
+            "type": "boolean"
+          },
+          "preserved": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "push_error": {
+            "type": "string"
+          },
+          "push_pending": {
+            "type": "boolean"
+          },
+          "pushed": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
+          },
+          "unblocked": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "pushed"
+        ],
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "cookie": {
+        "description": "Set by GET /auth?token=… (ka open).",
+        "in": "cookie",
+        "name": "ka_token",
+        "type": "apiKey"
+      },
+      "token": {
+        "description": "The local token from the daemon's runtime file.",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "description": "The ka daemon's REST API. It is the same service layer as the MCP tools and the CLI; errors are problem+json with the same codes.",
+    "title": "KanArtist",
+    "version": "0.1.0-m1"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/actors": {
+      "get": {
+        "operationId": "listActors",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActorList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Humans and agents from the actor registries, with roles",
+        "tags": [
+          "workspace"
+        ]
+      }
+    },
+    "/api/v1/boards": {
+      "get": {
+        "operationId": "listBoards",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BoardList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Saved boards",
+        "tags": [
+          "workspace"
+        ]
+      }
+    },
+    "/api/v1/boards/{name}": {
+      "get": {
+        "operationId": "getBoard",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Maximum tickets; 0 means all.",
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "description": "Maximum tickets; 0 means all.",
+              "format": "int64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BoardTickets"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "A saved board and the tickets its filter matches",
+        "tags": [
+          "workspace"
+        ]
+      }
+    },
+    "/api/v1/check": {
+      "get": {
+        "operationId": "check",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckReport"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Validate every store against the Store Spec (ka check)",
+        "tags": [
+          "sync"
+        ]
+      }
+    },
+    "/api/v1/daemon": {
+      "get": {
+        "operationId": "getDaemon",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DaemonInfo"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "The daemon's version, PID and address",
+        "tags": [
+          "daemon"
+        ]
+      }
+    },
+    "/api/v1/daemon/shutdown": {
+      "post": {
+        "operationId": "shutdownDaemon",
+        "responses": {
+          "202": {
+            "description": "Accepted"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Stop the daemon (ka daemon stop)",
+        "tags": [
+          "daemon"
+        ]
+      }
+    },
+    "/api/v1/events": {
+      "get": {
+        "description": "Each SSE message has `id` (the event's sequence number), `event` (its type) and `data` (the Event as JSON). Reconnect with Last-Event-ID to replay what you missed; if it is too old you get a `reset` event and should refetch. Every API response carries Ka-Event-Seq, the last event ID at that moment. A `: ping` comment is sent every 15 s. Data payloads: TicketEvent (ticket.*), ClaimEvent (claim.changed), CommentEvent (comment.created, question.*), SyncState (sync.state), Change (presence.changed).",
+        "operationId": "events",
+        "parameters": [
+          {
+            "description": "Comma-separated event types; a trailing .* matches a prefix (ticket.*).",
+            "in": "query",
+            "name": "types",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Comma-separated project keys.",
+            "in": "query",
+            "name": "projects",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Comma-separated ticket IDs.",
+            "in": "query",
+            "name": "tickets",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Same as the Last-Event-ID header.",
+            "in": "query",
+            "name": "last_event_id",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Resume after this event.",
+            "in": "header",
+            "name": "Last-Event-ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "actor": {
+                        "description": "Who caused it, when known.",
+                        "type": "string"
+                      },
+                      "at": {
+                        "type": "string"
+                      },
+                      "data": {},
+                      "id": {
+                        "description": "Monotonic per daemon; also the SSE id.",
+                        "format": "int64",
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "project": {
+                        "type": "string"
+                      },
+                      "store": {
+                        "type": "string"
+                      },
+                      "ticket": {
+                        "type": "string"
+                      },
+                      "type": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "type",
+                      "at"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "An event stream. Event types: [ticket.created ticket.updated ticket.moved ticket.removed comment.created claim.changed question.opened question.answered sync.state sync.conflict_preserved store.changed presence.changed reset]"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "description": "The ka error code, the same as in MCP and the CLI (not_found, claim_lost, unknown_status, ...).",
+                      "type": "string"
+                    },
+                    "data": {
+                      "additionalProperties": {},
+                      "description": "Structured details, such as the index of the failing item in a batch.",
+                      "type": "object"
+                    },
+                    "detail": {
+                      "description": "What went wrong.",
+                      "type": "string"
+                    },
+                    "errors": {
+                      "description": "Request validation failures.",
+                      "items": {
+                        "$ref": "#/components/schemas/ErrorDetail"
+                      },
+                      "type": [
+                        "array",
+                        "null"
+                      ]
+                    },
+                    "fix": {
+                      "description": "What to do about it.",
+                      "type": "string"
+                    },
+                    "status": {
+                      "description": "The HTTP status.",
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "description": "The HTTP status text.",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Always about:blank; use code.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "title",
+                    "code"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Live domain events (Server-Sent Events)",
+        "tags": [
+          "events"
+        ]
+      }
+    },
+    "/api/v1/fix": {
+      "post": {
+        "operationId": "fix",
+        "parameters": [
+          {
+            "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+            "in": "header",
+            "name": "X-Ka-Actor",
+            "schema": {
+              "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A session ID, recorded in the Ka-Session trailer.",
+            "in": "header",
+            "name": "X-Ka-Session",
+            "schema": {
+              "description": "A session ID, recorded in the Ka-Session trailer.",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FixRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Repair timestamps, actor aliases and formatting; one commit per kind (ka fix)",
+        "tags": [
+          "sync"
+        ]
+      }
+    },
+    "/api/v1/hooks/git": {
+      "post": {
+        "description": "Queues an immediate fetch of one store (?store=) or all of them; the changes arrive as events. Any body is ignored.",
+        "operationId": "gitHook",
+        "parameters": [
+          {
+            "description": "The store's workspace name; default: every store.",
+            "explode": false,
+            "in": "query",
+            "name": "store",
+            "schema": {
+              "description": "The store's workspace name; default: every store.",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Accepted"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Fetch now: for forge push webhooks, or a client that wants fresh data",
+        "tags": [
+          "sync"
+        ]
+      }
+    },
+    "/api/v1/inbox": {
+      "get": {
+        "operationId": "getInbox",
+        "parameters": [
+          {
+            "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+            "in": "header",
+            "name": "X-Ka-Actor",
+            "schema": {
+              "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A session ID, recorded in the Ka-Session trailer.",
+            "in": "header",
+            "name": "X-Ka-Session",
+            "schema": {
+              "description": "A session ID, recorded in the Ka-Session trailer.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only answers newer than this: RFC 3339 or a duration such as 24h.",
+            "explode": false,
+            "in": "query",
+            "name": "since",
+            "schema": {
+              "description": "Only answers newer than this: RFC 3339 or a duration such as 24h.",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InboxOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Answers to the caller's questions and open questions for the caller (ka_inbox)",
+        "tags": [
+          "questions"
+        ]
+      }
+    },
+    "/api/v1/links/resolve": {
+      "get": {
+        "operationId": "resolveLink",
+        "parameters": [
+          {
+            "explode": false,
+            "in": "query",
+            "name": "link",
+            "required": true,
+            "schema": {
+              "examples": [
+                "repo://jk/src/cache.go#L10"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LinkOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Resolve a code link to a local path and a forge URL (ka_resolve_link)",
+        "tags": [
+          "workspace"
+        ]
+      }
+    },
+    "/api/v1/next": {
+      "post": {
+        "operationId": "next",
+        "parameters": [
+          {
+            "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+            "in": "header",
+            "name": "X-Ka-Actor",
+            "schema": {
+              "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A session ID, recorded in the Ka-Session trailer.",
+            "in": "header",
+            "name": "X-Ka-Session",
+            "schema": {
+              "description": "A session ID, recorded in the Ka-Session trailer.",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NextIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NextOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "The best ready ticket, claimed unless peek (ka_next)",
+        "tags": [
+          "tickets"
+        ]
+      }
+    },
+    "/api/v1/presence": {
+      "get": {
+        "operationId": "listPresence",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresenceList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Connected agent sessions and their last action (live state)",
+        "tags": [
+          "workspace"
+        ]
+      }
+    },
+    "/api/v1/projects": {
+      "get": {
+        "operationId": "listProjects",
+        "parameters": [
+          {
+            "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+            "in": "header",
+            "name": "X-Ka-Actor",
+            "schema": {
+              "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A session ID, recorded in the Ka-Session trailer.",
+            "in": "header",
+            "name": "X-Ka-Session",
+            "schema": {
+              "description": "A session ID, recorded in the Ka-Session trailer.",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Projects and their vocabularies",
+        "tags": [
+          "workspace"
+        ]
+      }
+    },
+    "/api/v1/projects/{key}": {
+      "get": {
+        "operationId": "getProject",
+        "parameters": [
+          {
+            "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+            "in": "header",
+            "name": "X-Ka-Actor",
+            "schema": {
+              "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A session ID, recorded in the Ka-Session trailer.",
+            "in": "header",
+            "name": "X-Ka-Session",
+            "schema": {
+              "description": "A session ID, recorded in the Ka-Session trailer.",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectSchema"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "One project and its vocabulary",
+        "tags": [
+          "workspace"
+        ]
+      }
+    },
+    "/api/v1/schema": {
+      "get": {
+        "operationId": "getSchema",
+        "parameters": [
+          {
+            "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+            "in": "header",
+            "name": "X-Ka-Actor",
+            "schema": {
+              "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A session ID, recorded in the Ka-Session trailer.",
+            "in": "header",
+            "name": "X-Ka-Session",
+            "schema": {
+              "description": "A session ID, recorded in the Ka-Session trailer.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Limit to one project.",
+            "explode": false,
+            "in": "query",
+            "name": "project",
+            "schema": {
+              "description": "Limit to one project.",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SchemaOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Projects, statuses, kinds, labels, fields, priorities and actors (ka_schema)",
+        "tags": [
+          "workspace"
+        ]
+      }
+    },
+    "/api/v1/search": {
+      "get": {
+        "operationId": "search",
+        "parameters": [
+          {
+            "description": "A ka query: project:jk kind:bug -label:infra is:ready sort:-updated words",
+            "explode": false,
+            "in": "query",
+            "name": "q",
+            "schema": {
+              "description": "A ka query: project:jk kind:bug -label:infra is:ready sort:-updated words",
+              "examples": [
+                "is:ready"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "Sort keys (priority, -updated, created, ...).",
+            "explode": false,
+            "in": "query",
+            "name": "sort",
+            "schema": {
+              "description": "Sort keys (priority, -updated, created, ...).",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Maximum results; 0 means the default (20), -1 means all.",
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "description": "Maximum results; 0 means the default (20), -1 means all.",
+              "format": "int64",
+              "minimum": -1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Include closed tickets when the query does not say.",
+            "explode": false,
+            "in": "query",
+            "name": "all",
+            "schema": {
+              "description": "Include closed tickets when the query does not say.",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Search tickets (the same as GET /tickets)",
+        "tags": [
+          "tickets"
+        ]
+      }
+    },
+    "/api/v1/stores": {
+      "get": {
+        "operationId": "listStores",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoreList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Stores with their sync state",
+        "tags": [
+          "workspace"
+        ]
+      }
+    },
+    "/api/v1/sync": {
+      "get": {
+        "operationId": "getSync",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoreList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Each store's sync state, without fetching",
+        "tags": [
+          "sync"
+        ]
+      },
+      "post": {
+        "operationId": "sync",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SyncRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Fetch, replay and push every store (ka_sync)",
+        "tags": [
+          "sync"
+        ]
+      }
+    },
+    "/api/v1/tickets": {
+      "get": {
+        "operationId": "listTickets",
+        "parameters": [
+          {
+            "description": "A ka query: project:jk kind:bug -label:infra is:ready sort:-updated words",
+            "explode": false,
+            "in": "query",
+            "name": "q",
+            "schema": {
+              "description": "A ka query: project:jk kind:bug -label:infra is:ready sort:-updated words",
+              "examples": [
+                "is:ready"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "Sort keys (priority, -updated, created, ...).",
+            "explode": false,
+            "in": "query",
+            "name": "sort",
+            "schema": {
+              "description": "Sort keys (priority, -updated, created, ...).",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Maximum results; 0 means the default (20), -1 means all.",
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "description": "Maximum results; 0 means the default (20), -1 means all.",
+              "format": "int64",
+              "minimum": -1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Include closed tickets when the query does not say.",
+            "explode": false,
+            "in": "query",
+            "name": "all",
+            "schema": {
+              "description": "Include closed tickets when the query does not say.",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Search tickets",
+        "tags": [
+          "tickets"
+        ]
+      },
+      "patch": {
+        "operationId": "updateTickets",
+        "parameters": [
+          {
+            "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+            "in": "header",
+            "name": "X-Ka-Actor",
+            "schema": {
+              "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A session ID, recorded in the Ka-Session trailer.",
+            "in": "header",
+            "name": "X-Ka-Session",
+            "schema": {
+              "description": "A session ID, recorded in the Ka-Session trailer.",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTicketsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchUpdateResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Change fields on several tickets: one commit each, one push (ka_update)",
+        "tags": [
+          "tickets"
+        ]
+      },
+      "post": {
+        "operationId": "createTicket",
+        "parameters": [
+          {
+            "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+            "in": "header",
+            "name": "X-Ka-Actor",
+            "schema": {
+              "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A session ID, recorded in the Ka-Session trailer.",
+            "in": "header",
+            "name": "X-Ka-Session",
+            "schema": {
+              "description": "A session ID, recorded in the Ka-Session trailer.",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateOut"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Create a ticket",
+        "tags": [
+          "tickets"
+        ]
+      }
+    },
+    "/api/v1/tickets/batch": {
+      "post": {
+        "operationId": "createTickets",
+        "parameters": [
+          {
+            "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+            "in": "header",
+            "name": "X-Ka-Actor",
+            "schema": {
+              "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A session ID, recorded in the Ka-Session trailer.",
+            "in": "header",
+            "name": "X-Ka-Session",
+            "schema": {
+              "description": "A session ID, recorded in the Ka-Session trailer.",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateOut"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Create several tickets: one commit each, one push (ka_create)",
+        "tags": [
+          "tickets"
+        ]
+      }
+    },
+    "/api/v1/tickets/{id}": {
+      "get": {
+        "operationId": "getTicket",
+        "parameters": [
+          {
+            "description": "A ticket ID, such as KA-6FVER.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "A ticket ID, such as KA-6FVER.",
+              "examples": [
+                "KA-6FVER"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "comments: every comment instead of the digest.",
+            "explode": false,
+            "in": "query",
+            "name": "include",
+            "schema": {
+              "description": "comments: every comment instead of the digest.",
+              "items": {
+                "enum": [
+                  "comments",
+                  "children",
+                  "relations"
+                ],
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Detail"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "description": "The blob SHA of ticket.md, for If-Match.",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "A ticket with relations and a comment digest",
+        "tags": [
+          "tickets"
+        ]
+      },
+      "patch": {
+        "description": "Field operations replay safely and need no precondition. Replacing the body requires If-Match with the ETag from GET.",
+        "operationId": "updateTicket",
+        "parameters": [
+          {
+            "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+            "in": "header",
+            "name": "X-Ka-Actor",
+            "schema": {
+              "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A session ID, recorded in the Ka-Session trailer.",
+            "in": "header",
+            "name": "X-Ka-Session",
+            "schema": {
+              "description": "A session ID, recorded in the Ka-Session trailer.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A ticket ID, such as KA-6FVER.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "A ticket ID, such as KA-6FVER.",
+              "examples": [
+                "KA-6FVER"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "The ETag of the version being edited; required when body is set.",
+            "in": "header",
+            "name": "If-Match",
+            "schema": {
+              "description": "The ETag of the version being edited; required when body is set.",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TicketPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WriteOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Change fields",
+        "tags": [
+          "tickets"
+        ]
+      }
+    },
+    "/api/v1/tickets/{id}/acceptance": {
+      "post": {
+        "operationId": "checkAcceptance",
+        "parameters": [
+          {
+            "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+            "in": "header",
+            "name": "X-Ka-Actor",
+            "schema": {
+              "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A session ID, recorded in the Ka-Session trailer.",
+            "in": "header",
+            "name": "X-Ka-Session",
+            "schema": {
+              "description": "A session ID, recorded in the Ka-Session trailer.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A ticket ID, such as KA-6FVER.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "A ticket ID, such as KA-6FVER.",
+              "examples": [
+                "KA-6FVER"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckAcceptanceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Mark acceptance items done or not done (ka_check)",
+        "tags": [
+          "tickets"
+        ]
+      }
+    },
+    "/api/v1/tickets/{id}/answers": {
+      "post": {
+        "operationId": "answerQuestion",
+        "parameters": [
+          {
+            "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+            "in": "header",
+            "name": "X-Ka-Actor",
+            "schema": {
+              "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A session ID, recorded in the Ka-Session trailer.",
+            "in": "header",
+            "name": "X-Ka-Session",
+            "schema": {
+              "description": "A session ID, recorded in the Ka-Session trailer.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A ticket ID, such as KA-6FVER.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "A ticket ID, such as KA-6FVER.",
+              "examples": [
+                "KA-6FVER"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnswerQuestionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WriteOut"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Answer a question, or approve or reject a request",
+        "tags": [
+          "questions"
+        ]
+      }
+    },
+    "/api/v1/tickets/{id}/claim": {
+      "post": {
+        "operationId": "claimTicket",
+        "parameters": [
+          {
+            "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+            "in": "header",
+            "name": "X-Ka-Actor",
+            "schema": {
+              "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A session ID, recorded in the Ka-Session trailer.",
+            "in": "header",
+            "name": "X-Ka-Session",
+            "schema": {
+              "description": "A session ID, recorded in the Ka-Session trailer.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A ticket ID, such as KA-6FVER.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "A ticket ID, such as KA-6FVER.",
+              "examples": [
+                "KA-6FVER"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClaimTicketRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaimOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Claim a ticket; always pushes (ka_claim)",
+        "tags": [
+          "tickets"
+        ]
+      }
+    },
+    "/api/v1/tickets/{id}/comments": {
+      "get": {
+        "operationId": "listComments",
+        "parameters": [
+          {
+            "description": "A ticket ID, such as KA-6FVER.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "A ticket ID, such as KA-6FVER.",
+              "examples": [
+                "KA-6FVER"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Every comment on a ticket, oldest first",
+        "tags": [
+          "tickets"
+        ]
+      },
+      "post": {
+        "operationId": "createComment",
+        "parameters": [
+          {
+            "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+            "in": "header",
+            "name": "X-Ka-Actor",
+            "schema": {
+              "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A session ID, recorded in the Ka-Session trailer.",
+            "in": "header",
+            "name": "X-Ka-Session",
+            "schema": {
+              "description": "A session ID, recorded in the Ka-Session trailer.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A ticket ID, such as KA-6FVER.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "A ticket ID, such as KA-6FVER.",
+              "examples": [
+                "KA-6FVER"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCommentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WriteOut"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Add a note, progress or decision comment (ka_comment)",
+        "tags": [
+          "tickets"
+        ]
+      }
+    },
+    "/api/v1/tickets/{id}/questions": {
+      "post": {
+        "operationId": "askQuestion",
+        "parameters": [
+          {
+            "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+            "in": "header",
+            "name": "X-Ka-Actor",
+            "schema": {
+              "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A session ID, recorded in the Ka-Session trailer.",
+            "in": "header",
+            "name": "X-Ka-Session",
+            "schema": {
+              "description": "A session ID, recorded in the Ka-Session trailer.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A ticket ID, such as KA-6FVER.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "A ticket ID, such as KA-6FVER.",
+              "examples": [
+                "KA-6FVER"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AskQuestionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AskOut"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Ask a human a question or for an approval (ka_ask)",
+        "tags": [
+          "questions"
+        ]
+      }
+    },
+    "/api/v1/tickets/{id}/release": {
+      "post": {
+        "operationId": "releaseTicket",
+        "parameters": [
+          {
+            "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+            "in": "header",
+            "name": "X-Ka-Actor",
+            "schema": {
+              "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A session ID, recorded in the Ka-Session trailer.",
+            "in": "header",
+            "name": "X-Ka-Session",
+            "schema": {
+              "description": "A session ID, recorded in the Ka-Session trailer.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A ticket ID, such as KA-6FVER.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "A ticket ID, such as KA-6FVER.",
+              "examples": [
+                "KA-6FVER"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReleaseTicketRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WriteOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Release a claim (ka_release)",
+        "tags": [
+          "tickets"
+        ]
+      }
+    },
+    "/api/v1/tickets/{id}/source": {
+      "get": {
+        "operationId": "getTicketSource",
+        "parameters": [
+          {
+            "description": "A ticket ID, such as KA-6FVER.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "A ticket ID, such as KA-6FVER.",
+              "examples": [
+                "KA-6FVER"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "contentEncoding": "base64",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "Content-Type": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "The raw ticket.md",
+        "tags": [
+          "tickets"
+        ]
+      },
+      "put": {
+        "description": "The edit is validated and recorded as an update of the changed fields. Requires If-Match. Closing a ticket this way is refused: use transition.",
+        "operationId": "replaceTicketSource",
+        "parameters": [
+          {
+            "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+            "in": "header",
+            "name": "X-Ka-Actor",
+            "schema": {
+              "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A session ID, recorded in the Ka-Session trailer.",
+            "in": "header",
+            "name": "X-Ka-Session",
+            "schema": {
+              "description": "A session ID, recorded in the Ka-Session trailer.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A ticket ID, such as KA-6FVER.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "A ticket ID, such as KA-6FVER.",
+              "examples": [
+                "KA-6FVER"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "text/markdown": {
+              "schema": {
+                "contentMediaType": "application/octet-stream",
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WriteOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Save an edited ticket.md",
+        "tags": [
+          "tickets"
+        ]
+      }
+    },
+    "/api/v1/tickets/{id}/transition": {
+      "post": {
+        "operationId": "transitionTicket",
+        "parameters": [
+          {
+            "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+            "in": "header",
+            "name": "X-Ka-Actor",
+            "schema": {
+              "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A session ID, recorded in the Ka-Session trailer.",
+            "in": "header",
+            "name": "X-Ka-Session",
+            "schema": {
+              "description": "A session ID, recorded in the Ka-Session trailer.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A ticket ID, such as KA-6FVER.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "A ticket ID, such as KA-6FVER.",
+              "examples": [
+                "KA-6FVER"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransitionTicketRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WriteOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Change status; closing requires a summary (ka_transition)",
+        "tags": [
+          "tickets"
+        ]
+      }
+    },
+    "/api/v1/workspace": {
+      "get": {
+        "operationId": "getWorkspace",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "The workspace: stores, projects, default project and the daemon's human",
+        "tags": [
+          "workspace"
+        ]
+      }
+    }
+  },
+  "security": [
+    {
+      "token": []
+    },
+    {
+      "cookie": []
+    }
+  ]
+}

@@ -1,0 +1,89 @@
+@if (api.unauthorized()) {
+  <main class="gate">
+    <h1>Open KanArtist from your terminal</h1>
+    <p>This page needs the daemon's local token. Run this where your tickets live, and the browser opens signed in:</p>
+    <pre><code>ka open</code></pre>
+  </main>
+} @else if (failed() && !live.loaded()) {
+  <main class="gate">
+    <h1>The daemon did not answer</h1>
+    <p>{{ failed() }}</p>
+    <p>Check that <code>ka daemon</code> is running (<code>ka daemon status</code>), then reload.</p>
+  </main>
+} @else {
+  <div class="shell">
+    <nav class="rail" aria-label="Views">
+      <div class="brand">
+        <svg viewBox="0 0 20 20" aria-hidden="true" class="mark">
+          <rect x="2" y="3" width="4.5" height="14" rx="1.5" />
+          <rect x="7.75" y="3" width="4.5" height="9" rx="1.5" />
+          <rect x="13.5" y="3" width="4.5" height="5.5" rx="1.5" class="ink" />
+        </svg>
+        <span class="ws">{{ live.workspace()?.name || live.workspace()?.projects?.[0] || 'KanArtist' }}</span>
+      </div>
+
+      <button class="jump" type="button" (click)="palette.set(true)">
+        <span>Jump to…</span><kbd>⌘K</kbd>
+      </button>
+
+      <a routerLink="/activity" routerLinkActive="on" class="nav">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 8h3l2-5 3 10 2-5h3" /></svg>
+        Activity
+      </a>
+      <a routerLink="/board" routerLinkActive="on" class="nav">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2.5" width="3.2" height="11" rx="1" /><rect x="6.4" y="2.5" width="3.2" height="7" rx="1" /><rect x="10.8" y="2.5" width="3.2" height="4.5" rx="1" /></svg>
+        Board
+      </a>
+      <a routerLink="/agents" routerLinkActive="on" class="nav">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="5" width="10" height="8" rx="2.2" /><path d="M8 2.5V5" /><circle cx="6.2" cy="9" r=".6" /><circle cx="9.8" cy="9" r=".6" /></svg>
+        Agents
+        @if (agentsLive()) {
+          <span class="count live" [attr.aria-label]="agentsLive() + ' connected'">{{ agentsLive() }}</span>
+        }
+      </a>
+      <a routerLink="/inbox" routerLinkActive="on" class="nav">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 9.5 4 3h8l2 6.5V13H2z" /><path d="M2 9.5h3.5l1 1.5h3l1-1.5H14" /></svg>
+        Inbox
+        @if (live.inboxCount()) {
+          <span class="count" [attr.aria-label]="live.inboxCount() + ' waiting for you'">{{ live.inboxCount() }}</span>
+        }
+      </a>
+
+      <div class="foot">
+        @if (live.you()) {
+          <span class="me"><ka-avatar [actor]="live.you()" [size]="18" /> {{ live.you() }}</span>
+        }
+        <button type="button" class="theme" (click)="prefs.toggleTheme()" [attr.aria-label]="prefs.theme() === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'">
+          @if (prefs.theme() === 'dark') {
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13 9.5A5.5 5.5 0 0 1 6.5 3a5.5 5.5 0 1 0 6.5 6.5z" /></svg>
+          } @else {
+            <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="3" /><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.4 1.4M11.6 11.6 13 13M3 13l1.4-1.4M11.6 4.4 13 3" /></svg>
+          }
+        </button>
+      </div>
+    </nav>
+
+    <header class="bar">
+      <div class="stores">
+        @for (s of live.stores(); track s.store) {
+          <span class="store" [title]="s.remote ? s.remote + '/' + s.branch + ' · push ' + s.push_mode : 'local store'">{{ s.store }}</span>
+        }
+      </div>
+      <span class="sync" [class]="syncLabel().cls" role="status">
+        <span class="pulse"></span>{{ syncLabel().text }}
+      </span>
+    </header>
+
+    <main class="main">
+      @if (live.loaded()) {
+        <router-outlet />
+      } @else {
+        <p class="loading">Loading the workspace…</p>
+      }
+    </main>
+  </div>
+
+  @if (palette()) {
+    <ka-palette (close)="palette.set(false)" />
+  }
+}

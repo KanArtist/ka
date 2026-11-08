@@ -65,6 +65,7 @@ func init() {
 		{"workspace", "", "show the resolved workspace", cmdWorkspace, false},
 		{"mcp", "", "serve MCP over stdio", cmdMCP, false},
 		{"daemon", "[run [--listen ADDR] [-v]] | status | stop | openapi", "serve the REST API on 127.0.0.1:7711", cmdDaemon, false},
+		{"open", "[ID] [--print]", "open the web UI (starting the daemon if needed)", cmdOpen, false},
 		{"agents-md", "[--project KEY]", "print the hand-writing protocol for AGENTS.md", cmdAgentsMD, false},
 		{"template", "[--project KEY]", "print a blank ticket", cmdTemplate, false},
 		{"version", "", "print the version", cmdVersion, false},

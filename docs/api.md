@@ -28,10 +28,23 @@ side. The file holds the version, PID, address, URL, workspace, and the random l
 Clients read it, then confirm with `GET /healthz` that the daemon is alive and serves the same
 workspace. The daemon removes the file when it stops.
 
+## The web UI and `ka open`
+
+`ka open` opens the web UI in your browser, starting the workspace's daemon in the background if it
+is not running. Its log goes next to the runtime file. `ka open JK-7QK3M` goes straight to a
+ticket, and `--print` prints the URL instead of opening a browser. The browser lands on `/auth`,
+which turns the token into a cookie.
+
+The UI is an Angular app in `web/`. Its production build is embedded in the binary, so the daemon
+serves it offline with no CDN. The UI's static files need no token, because they hold no workspace
+data; without the cookie, the app tells you to run `ka open`. Every UI page is sent with a strict
+Content-Security-Policy: scripts only from the daemon, and styles only from the daemon or with a
+per-response nonce. Its API types are generated from `openapi.json`.
+
 ## Security (PRD §15, local mode)
 
 - The daemon listens on loopback only. Non-loopback addresses are refused until remote mode (M4).
-- Every request except `GET /healthz` and `GET /auth` needs the token: `Authorization: Bearer
+- Every API request (`/api/v1/…`, `/mcp`) needs the token: `Authorization: Bearer
   <token>`, or the `ka_token` cookie.
 - `GET /auth?token=…&next=/path` exchanges the token for an `HttpOnly`, `SameSite=Strict` cookie
   and redirects to a local path. `ka open` will use it.
