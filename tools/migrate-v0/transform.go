@@ -225,11 +225,22 @@ func transform(t *v0Ticket, id string, refs *refMap, st *stats) transformed {
 	nt.Kind = kind
 
 	// labels
+	var relLabels []relLabel
 	for _, raw := range t.list("labels") {
 		// some v0 labels are two labels joined by a comma ("windows,cache")
 		for _, l := range strings.Split(raw, ",") {
 			l = strings.TrimSpace(l)
 			if l == "" {
+				continue
+			}
+			// v0 tooling sometimes wrote relations as labels:
+			// "parent:JK-4398" and "--depends-on JK-4360 JK-4361".
+			if rest, ok := strings.CutPrefix(l, "parent:"); ok {
+				relLabels = append(relLabels, relLabel{parent: strings.TrimSpace(rest), raw: l})
+				continue
+			}
+			if rest, ok := strings.CutPrefix(l, "--depends-on"); ok {
+				relLabels = append(relLabels, relLabel{deps: strings.Fields(rest), raw: l})
 				continue
 			}
 			if strings.ContainsRune(l, '\n') || utf8.RuneCountInString(l) > 64 {
@@ -269,6 +280,25 @@ func transform(t *v0Ticket, id string, refs *refMap, st *stats) transformed {
 		case nid == id:
 		default:
 			nt.BlockedBy = append(nt.BlockedBy, nid)
+		}
+	}
+	for _, rl := range relLabels {
+		if rl.parent != "" {
+			if nid, ok := refs.resolve(rl.parent); ok && nid != id && nt.Parent == "" {
+				nt.Parent = nid
+			} else {
+				nt.Labels = append(nt.Labels, rl.raw)
+			}
+		}
+		for _, dep := range rl.deps {
+			nid, ok := refs.resolve(dep)
+			switch {
+			case !ok:
+				st.droppedDeps = append(st.droppedDeps, fmt.Sprintf("%s -> %s", t.LegacyID, dep))
+			case nid == id:
+			default:
+				nt.BlockedBy = append(nt.BlockedBy, nid)
+			}
 		}
 	}
 	for _, l := range t.list("links") {
@@ -541,4 +571,11 @@ func headingKey(h string) string {
 		h = strings.TrimSpace(h[:i])
 	}
 	return h
+}
+
+// relLabel is a relation v0 recorded as a label.
+type relLabel struct {
+	parent string   // legacy id from "parent:<id>"
+	deps   []string // legacy ids from "--depends-on <id> <id>"
+	raw    string
 }

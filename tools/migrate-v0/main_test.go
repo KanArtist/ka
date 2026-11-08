@@ -60,7 +60,7 @@ func fixtureV0(t *testing.T) string {
 		return "---\nid: " + id + "\nproject: jk\ntitle: Ticket " + id + "\nstatus: done\npriority: P1\nkind: go-do\nassignee: Bryan Sant\nclaimed_at: 2026-09-01\ndepends_on: []\nlabels: [cache]\nlinks: []\ncreated: 2026-09-01\nupdated: 2026-09-02\n" + extra + "---\n\n"
 	}
 	write(t, root+"/projects/jk/tickets/JK-1001-first.md", strings.ReplaceAll(fm("JK-1001", "branch: \"\"\nsource: JK-1002 epic\n")+tmplBody, "\n", "\r\n"))
-	write(t, root+"/projects/jk/tickets/JK-1002-second.md", fm("JK-1002", "status_note: \"shipped in 0.5 — see JK-1001\"\n")+
+	write(t, root+"/projects/jk/tickets/JK-1002-second.md", strings.Replace(fm("JK-1002", "status_note: \"shipped in 0.5 — see JK-1001\"\n"), "labels: [cache]", `labels: [cache, "parent:JK-1001", "--depends-on JK-1001"]`, 1)+
 		"# JK-1002 — Ticket JK-1002\n\n## Problem\n\nIt broke.\n\n## Acceptance\n\n- [x] fixed\n- [ ] documented,\n  with a continuation line\n\n## Outcome (2026-09-02)\n\nFixed in abc123.\n\n```\n## not a heading\n```\n\n## Closed by audit (2026-09-03)\n\nVerified.\n")
 	// duplicate legacy id, in flight, with a depends_on and a bad escape
 	write(t, root+"/projects/jk/tickets/JK-1003-a.md", strings.Replace(fm("JK-1003", ""), "status: done", "status: in_progress", 1)+"## Problem\n\nA.\n")
@@ -123,6 +123,9 @@ func TestMigrateFixture(t *testing.T) {
 	}
 	if t1.Assignee != "bsant" || t1.Kind != "feature" || t1.Fields["source"].Scalar != t2.ID+" epic" {
 		t.Errorf("normalization: %+v", t1)
+	}
+	if t2.Parent != t1.ID || len(t2.BlockedBy) != 1 || t2.BlockedBy[0] != t1.ID || strings.Join(t2.Labels, ",") != "cache" {
+		t.Errorf("relation labels not converted: parent=%q blocked_by=%v labels=%v", t2.Parent, t2.BlockedBy, t2.Labels)
 	}
 	if _, ok := t1.Fields["branch"]; ok {
 		t.Error("empty extension fields must be dropped")
