@@ -131,7 +131,7 @@ func stagedStores(ctx context.Context, dir string, maps mapFlag) (*kaspec.Worksp
 		return nil, nil, err
 	}
 	cleanup := func() { os.RemoveAll(tmp) }
-	cmd := exec.CommandContext(ctx, "git", "checkout-index", "-a", "-f", "--prefix="+tmp+string(filepath.Separator))
+	cmd := exec.CommandContext(ctx, "git", "checkout-index", "-a", "-f", "--prefix="+filepath.ToSlash(tmp)+"/")
 	cmd.Dir = top
 	if out, err := cmd.CombinedOutput(); err != nil {
 		cleanup()

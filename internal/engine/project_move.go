@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/JumpKickOSS/ka/pkg/kaspec"
 )
 
 // MoveProjectOut reports a project move.
@@ -160,11 +162,7 @@ func (s *Service) MoveProject(ctx context.Context, c Caller, key, to string, dry
 		return nil, err
 	}
 	os.RemoveAll(srcDir)
-	tomb := "key: " + key + "\n"
-	if pi.Prefix != "" {
-		tomb += "prefix: " + pi.Prefix + "\n"
-	}
-	tomb += "moved_to_store: " + strconv.Quote(storeRef(dst)) + "\n"
+	tomb := kaspec.EmitYAML([]kaspec.KV{{K: "key", V: key}, {K: "prefix", V: pi.Prefix}, {K: "moved_to_store", V: storeRef(dst)}})
 	if err := os.MkdirAll(srcDir, 0o755); err != nil {
 		return nil, err
 	}

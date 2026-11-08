@@ -9,6 +9,7 @@ import (
 
 	"github.com/JumpKickOSS/ka/internal/engine"
 	"github.com/JumpKickOSS/ka/internal/testkit"
+	"github.com/JumpKickOSS/ka/pkg/kaspec"
 )
 
 // layered builds the S7 workspace: an org store (shared config, actors,
@@ -319,7 +320,8 @@ func TestProjectMove(t *testing.T) {
 	// A fresh clone of the jk store has only the tombstone.
 	jkClone := remotes["jk"].Clone()
 	tomb, err := os.ReadFile(filepath.Join(jkClone, "projects", "jk", "project.yml"))
-	if err != nil || !strings.Contains(string(tomb), "moved_to_store: \""+remotes["org"].Path+"\"") {
+	pf, _ := kaspec.ParseProjectFile("project.yml", tomb)
+	if err != nil || pf == nil || pf.MovedToStore != remotes["org"].Path {
 		t.Fatalf("tombstone: %s %v", tomb, err)
 	}
 	if _, err := os.Stat(filepath.Join(jkClone, "projects", "jk", "tickets")); err == nil {

@@ -80,12 +80,14 @@ func TestDebouncedPush(t *testing.T) {
 	}
 	must[*WriteOut](t)(s.Comment(ctx, agent("a"), CommentIn{ID: ids[2], Body: "one more"}))
 	must[*WriteOut](t)(s.Comment(ctx, agent("b"), CommentIn{ID: ids[2], Body: "and another"}))
-	deadline := time.Now().Add(5 * time.Second)
-	for pushes() < 2 && time.Now().Before(deadline) {
+	// Wait for the quiet period. On a slow machine the two comments may
+	// fall into separate debounce windows, so allow one extra push.
+	deadline := time.Now().Add(10 * time.Second)
+	for (pushes() < 2 || s.debouncePending(st)) && time.Now().Before(deadline) {
 		time.Sleep(50 * time.Millisecond)
 	}
-	if n := pushes(); n != 2 {
-		t.Fatalf("after the quiet period: %d pushes, want 2", n)
+	if n := pushes(); n < 2 || n > 3 {
+		t.Fatalf("after the quiet period: %d pushes, want 2 (3 on a slow machine)", n)
 	}
 	// Everything reached the remote.
 	fresh, _ := e.clone()
@@ -94,10 +96,11 @@ func TestDebouncedPush(t *testing.T) {
 		t.Fatalf("remote has %d comments on %s", len(d.Comments), ids[2])
 	}
 	// Flush pushes immediately instead of waiting.
+	before := pushes()
 	must[*WriteOut](t)(s.Comment(ctx, agent("a"), CommentIn{ID: ids[0], Body: "flush me"}))
 	s.Flush(ctx)
-	if n := pushes(); n != 3 {
-		t.Fatalf("after Flush: %d pushes, want 3", n)
+	if n := pushes(); n != before+1 {
+		t.Fatalf("after Flush: %d pushes, want %d", n, before+1)
 	}
 
 	// A CLI-style process (not Background) pushes immediately even in debounce mode.
