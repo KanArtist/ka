@@ -1,0 +1,105 @@
+<section class="board" #host>
+  <header class="head">
+    <h1>Board</h1>
+    <div class="controls">
+      <input class="filter" type="search" placeholder="Filter by title, ID or label" [value]="filter()" (input)="filter.set($any($event.target).value)" aria-label="Filter cards" />
+      @if (projects().length > 1) {
+        <select [value]="project()" (change)="project.set($any($event.target).value)" aria-label="Project">
+          <option value="">All projects</option>
+          @for (p of projects(); track p.key) {
+            <option [value]="p.key">{{ p.name || p.key }}</option>
+          }
+        </select>
+      }
+      <label class="sel">
+        <span>Swimlanes</span>
+        <select [value]="lane()" (change)="lane.set($any($event.target).value)">
+          <option value="none">None</option>
+          <option value="project">Project</option>
+          <option value="assignee">Assignee</option>
+          <option value="priority">Priority</option>
+          <option value="parent">Parent</option>
+        </select>
+      </label>
+      <label class="check"><input type="checkbox" [checked]="showCanceled()" (change)="showCanceled.set($any($event.target).checked)" /> Canceled</label>
+    </div>
+  </header>
+
+  <div class="grid" [style.--cols]="rows()[0]?.columns?.length || 1">
+    <div class="colheads" role="presentation">
+      @for (c of rows()[0]?.columns ?? []; track c.status) {
+        <div class="colhead" [attr.data-cat]="c.category">
+          <span class="dot" [attr.data-cat]="c.category"></span>
+          <span class="name">{{ c.status }}</span>
+          <span class="n">{{ columnTotals().get(c.status) ?? 0 }}</span>
+        </div>
+      }
+    </div>
+
+    @for (r of rows(); track r.key) {
+      @if (lane() !== 'none') {
+        <h2 class="lane" [class.agent]="r.agent">
+          @if (lane() === 'assignee' && r.key) {
+            <ka-avatar [actor]="r.key" [size]="16" />
+          }
+          <span>{{ r.label }}</span>
+          <span class="n">{{ r.count }}</span>
+        </h2>
+      }
+      <div class="cols">
+        @for (c of r.columns; track c.status) {
+          <ol class="col" [attr.aria-label]="c.status + (r.label ? ', ' + r.label : '')">
+            @for (t of c.cards; track t.id) {
+              <li class="card" [attr.data-card]="t.id" [class.blocked]="t.blocked" [class.marked]="moved().has(t.id)" [class.agentmark]="isAgent(moved().get(t.id))">
+                <a [routerLink]="[]" [queryParams]="{ peek: t.id }" queryParamsHandling="merge" class="hit" [attr.aria-label]="t.id + ' ' + t.title"></a>
+                <div class="line1">
+                  <span class="id">{{ t.id }}</span>
+                  @if (t.priority) {
+                    <span class="prio" [attr.data-p]="t.priority">{{ t.priority }}</span>
+                  }
+                  <span class="spacer"></span>
+                  @if (moved().get(t.id); as who) {
+                    <span class="mark" [title]="actorName(who) + ' just changed this'"><ka-avatar [actor]="who" [size]="16" /></span>
+                  } @else if (t.claim; as cl) {
+                    <span class="claim" [class.stale]="cl.stale" [title]="'Claimed by ' + cl.by + ' ' + exact(cl.at) + (cl.stale ? ' (stale)' : '')">
+                      <ka-avatar [actor]="cl.by" [size]="16" />{{ ago(cl.at, now()) }}
+                    </span>
+                  } @else if (t.assignee) {
+                    <ka-avatar [actor]="t.assignee" [size]="16" />
+                  }
+                </div>
+                <p class="title">{{ t.title }}</p>
+                @if (t.kind || t.labels?.length || t.acceptance || t.blocked) {
+                  <div class="line3">
+                    @if (t.blocked) {
+                      <span class="tag blocked">blocked</span>
+                    }
+                    @if (t.kind) {
+                      <span class="kind">{{ t.kind }}</span>
+                    }
+                    @for (l of t.labels ?? []; track l) {
+                      <span class="tag">{{ l }}</span>
+                    }
+                    <span class="spacer"></span>
+                    @if (acceptance(t); as a) {
+                      <span class="acc" [class.full]="a.done === a.total" [title]="'Acceptance ' + a.done + ' of ' + a.total">
+                        <span class="bar"><span [style.width.%]="(a.done / a.total) * 100"></span></span>{{ a.done }}/{{ a.total }}
+                      </span>
+                    }
+                  </div>
+                }
+              </li>
+            }
+            @if (c.hidden) {
+              <li class="more">
+                {{ c.hidden }} more {{ c.category === 'completed' || c.category === 'canceled' ? 'older than two weeks or below' : 'below' }}
+              </li>
+            }
+          </ol>
+        }
+      </div>
+    } @empty {
+      <p class="empty">No tickets match. Clear the filter, or file one with <code>ka new</code>.</p>
+    }
+  </div>
+</section>

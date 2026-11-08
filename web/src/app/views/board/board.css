@@ -1,0 +1,244 @@
+.board {
+  padding: 18px 24px 32px;
+  min-width: max-content;
+}
+.head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 12px;
+  position: sticky;
+  left: 24px;
+  width: calc(100vw - var(--rail) - 48px);
+}
+h1 {
+  margin: 0;
+  font-size: var(--fs-xl);
+  font-weight: 650;
+  color: var(--text-strong);
+}
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+.filter,
+select {
+  height: 26px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  padding: 0 8px;
+  font-size: var(--fs-sm);
+}
+.filter {
+  width: 220px;
+}
+.sel,
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+
+.grid {
+  --colw: 268px;
+}
+.colheads,
+.cols {
+  display: grid;
+  grid-template-columns: repeat(var(--cols), var(--colw));
+  gap: 10px;
+}
+.colheads {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--bg);
+  padding-bottom: 6px;
+}
+.colhead {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 28px;
+  padding: 0 6px;
+  border-bottom: 2px solid var(--cat);
+}
+.colhead .name {
+  font-weight: 600;
+  color: var(--text-strong);
+}
+.n {
+  color: var(--faint);
+  font-size: var(--fs-sm);
+}
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--cat);
+}
+.lane {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0 6px;
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--text);
+  position: sticky;
+  left: 24px;
+  width: max-content;
+}
+.lane.agent span:first-of-type {
+  color: var(--ink-agent);
+}
+.col {
+  list-style: none;
+  margin: 0;
+  padding: 2px 0 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 40px;
+}
+.card {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-md);
+  padding: 7px 9px 8px;
+  transition: border-color 160ms;
+}
+.card:hover {
+  border-color: var(--line);
+}
+.card:has(.hit:focus-visible) {
+  outline: 2px solid var(--focus);
+}
+.card.blocked {
+  box-shadow: inset 2px 0 0 var(--st-blocked);
+}
+.card.marked {
+  border-color: var(--ink-human);
+  box-shadow: 0 0 0 3px var(--ink-human-wash);
+}
+.card.marked.agentmark {
+  border-color: var(--ink-agent);
+  box-shadow: 0 0 0 3px var(--ink-agent-wash);
+}
+.hit {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+.hit:focus-visible {
+  outline: none;
+}
+.line1,
+.line3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.spacer {
+  flex: 1;
+}
+.prio {
+  font-size: var(--fs-xs);
+  font-weight: 650;
+  color: var(--muted);
+}
+.prio[data-p='P0'] {
+  color: var(--prio-0);
+}
+.prio[data-p='P1'] {
+  color: var(--prio-1);
+}
+.claim {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+.claim.stale {
+  color: var(--ink-human);
+}
+.mark {
+  display: inline-flex;
+  animation: markin 400ms var(--ease);
+}
+@keyframes markin {
+  from {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+}
+.title {
+  margin: 4px 0 6px;
+  color: var(--text-strong);
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.line3 {
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.kind {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  margin-right: 2px;
+}
+.tag {
+  font-size: var(--fs-xs);
+  line-height: 17px;
+  padding: 0 6px;
+  border-radius: 9px;
+  background: var(--raised);
+  color: var(--muted);
+}
+.tag.blocked {
+  color: var(--st-blocked);
+  background: color-mix(in srgb, var(--st-blocked) 14%, transparent);
+}
+.acc {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+.acc .bar {
+  width: 28px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--raised);
+  overflow: hidden;
+}
+.acc .bar span {
+  display: block;
+  height: 100%;
+  background: var(--st-started);
+}
+.acc.full .bar span {
+  background: var(--st-completed);
+}
+.more {
+  font-size: var(--fs-sm);
+  color: var(--faint);
+  padding: 2px 6px;
+}
+.empty {
+  color: var(--muted);
+  padding: 24px 0;
+}
