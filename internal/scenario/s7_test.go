@@ -266,3 +266,71 @@ func fileExists(p string) bool {
 	_, err := os.Stat(p)
 	return err == nil
 }
+
+// ka project move: jk moves from its own store into org. IDs stay, a gyggly
+// ticket blocked by a jk ticket still resolves, the source keeps a
+// tombstone, and a fresh clone of the workspace sees one home for jk.
+func TestProjectMove(t *testing.T) {
+	svc, remotes := layered(t)
+	me := svc.CallerFor("bsant", "")
+	jkt := seedTickets(t, svc, engine.CreateIn{Project: "jk", Title: "Cache layer", Status: "ready"})[0]
+	if _, err := svc.Comment(ctx, me, engine.CommentIn{ID: jkt, Body: "history stays with the ticket"}); err != nil {
+		t.Fatal(err)
+	}
+	gyt := seedTickets(t, svc, engine.CreateIn{Project: "gyggly", Title: "Needs the cache", Status: "ready", BlockedBy: []string{jkt}})[0]
+
+	dry, err := svc.MoveProject(ctx, me, "jk", "org", true)
+	if err != nil || dry.Tickets != 1 || dry.Files < 3 {
+		t.Fatalf("dry run: %+v %v", dry, err)
+	}
+	out, err := svc.MoveProject(ctx, me, "jk", "org", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.PushError != "" || len(out.Pushed) != 2 || out.Pushed[0] != "org" {
+		t.Fatalf("move: %+v", out)
+	}
+	if _, err := svc.MoveProject(ctx, me, "jk", "org", false); err == nil {
+		t.Fatal("moving into the store that already holds the project should fail")
+	}
+
+	check := func(svc *engine.Service) {
+		t.Helper()
+		sch, _ := svc.Schema(me, "jk")
+		if len(sch.Projects) != 1 || sch.Projects[0].Store != "org" {
+			t.Fatalf("jk's home: %+v", sch.Projects)
+		}
+		d, err := svc.Get(engine.GetIn{ID: jkt, Include: []string{"comments"}})
+		if err != nil || len(d.Comments) != 1 {
+			t.Fatalf("%s after the move: %+v %v", jkt, d, err)
+		}
+		g, _ := svc.Get(engine.GetIn{ID: gyt})
+		if !g.Blocked || len(g.BlockedBy) != 1 || g.BlockedBy[0].Title != "Cache layer" {
+			t.Fatalf("cross-store reference broke: %+v", g.BlockedBy)
+		}
+		for _, d := range svc.Validate(svc.Now()) {
+			if d.Code == "duplicate_project" || d.Code == "moved_project_has_tickets" {
+				t.Fatalf("after the move: %v", d)
+			}
+		}
+	}
+	check(svc)
+
+	// A fresh clone of the jk store has only the tombstone.
+	jkClone := remotes["jk"].Clone()
+	tomb, err := os.ReadFile(filepath.Join(jkClone, "projects", "jk", "project.yml"))
+	if err != nil || !strings.Contains(string(tomb), "moved_to_store: \""+remotes["org"].Path+"\"") {
+		t.Fatalf("tombstone: %s %v", tomb, err)
+	}
+	if _, err := os.Stat(filepath.Join(jkClone, "projects", "jk", "tickets")); err == nil {
+		t.Fatal("tickets left behind in the source store")
+	}
+	// Writes keep working, now in org.
+	if _, err := svc.Update(ctx, me, []engine.UpdateIn{{ID: jkt, Set: map[string]any{"priority": "P1"}}}); err != nil {
+		t.Fatal(err)
+	}
+	orgClone := remotes["org"].Clone()
+	if b, err := os.ReadFile(filepath.Join(orgClone, "projects", "jk", "tickets", jkt, "ticket.md")); err != nil || !strings.Contains(string(b), "priority: P1") {
+		t.Fatalf("write after the move did not land in org: %v", err)
+	}
+}

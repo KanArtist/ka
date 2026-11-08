@@ -84,6 +84,24 @@ The same report is `ka_schema {explain: true}` over MCP and `GET /api/v1/project
 A parent named by URL is cloned (read-only) even when it is not in the workspace; a parent named
 by a relative path (`../org`) is read from that checkout.
 
+## Moving a project between stores
+
+`ka project move KEY --to STORE [--dry-run]` re-homes a project (to split or combine stores,
+PRD §9.2). Both stores must be writable members of the workspace. It syncs both, then:
+
+1. copies `projects/KEY/` into the target and commits (`Ka-Moved-From:` trailer);
+2. replaces the project in the source with a tombstone `project.yml` (`moved_to_store:` the
+   target's URL) and commits (`Ka-Moved-To:`);
+3. pushes the target, then the source. If the target push fails the source is not pushed, so
+   nobody sees the tombstone without the copy.
+
+IDs and paths inside the project do not change, so `blocked_by`, `parent` and links from other
+stores keep resolving. Readers skip tombstones (they never count as a second home); a tombstone
+that still has tickets is reported as `moved_project_has_tickets`. Writing to a project whose
+store is missing from your workspace says where it went. A clone that wrote to the project
+before seeing the move has those operations rejected on replay and preserved as conflicts.
+Also `POST /api/v1/projects/{key}/move`.
+
 ## The index
 
 All tickets, comments, projects, configs and actors are loaded into memory, in parallel. The
@@ -233,7 +251,7 @@ room the rest leaves. Over every ready ticket of the migrated `jk` store, the ma
 - The web UI arrives in M2. The daemon, REST API, SSE events, MCP over HTTP, the `ka mcp` proxy
   and presence have landed ([api.md](api.md)). CLI commands still run in-process; the daemon
   notices their commits within 250 ms.
-- `ka watch`, `ka project move`, `ka migrate`, `ka hooks install`,
+- `ka watch`, `ka migrate`, `ka hooks install`,
   `ka completion`, `ka check --ci` annotations and SARIF, and interactive prompts for missing
   arguments are not implemented. Each is a ticket in the `ka` store (`ka ls label:m1-follow-up`,
   `label:m2`, `label:m3`, `label:later`).

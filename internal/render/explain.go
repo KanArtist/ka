@@ -44,3 +44,18 @@ func ConfigExplain(o *engine.ConfigExplainOut) string {
 	}
 	return strings.Join(lines, "\n")
 }
+
+// MoveProject renders `ka project move`.
+func MoveProject(o *engine.MoveProjectOut) string {
+	if o.DryRun {
+		return fmt.Sprintf("would move project %s (%d tickets, %d files) from %s to %s", o.Project, o.Tickets, o.Files, o.From, o.To)
+	}
+	s := fmt.Sprintf("moved project %s (%d tickets, %d files) from %s to %s\n%s: %s (project added)\n%s: %s (tombstone left)",
+		o.Project, o.Tickets, o.Files, o.From, o.To, o.To, o.ToCommit, o.From, o.FromCommit)
+	if o.PushError != "" {
+		s += "\npush failed: " + o.PushError + "\nfix: run ka sync once the remote is reachable (the source is pushed only after the target)"
+	} else if len(o.Pushed) > 0 {
+		s += "\npushed: " + strings.Join(o.Pushed, ", ")
+	}
+	return s
+}

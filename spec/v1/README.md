@@ -261,7 +261,7 @@ config:
 | `archived` | boolean | An archived project is read-only for writers. |
 | `repos` | mapping | Code repositories for links: name → `{forge (http(s) URL), default_branch}`. |
 | `config` | mapping | Project-level data config, the last layer of the chain (§6). |
-| `moved_to_store` | string | Tombstone: the project now lives in another store. |
+| `moved_to_store` | string | Tombstone: the project now lives in another store (its name or URL). A tombstoned project holds only `project.yml`; readers skip it, so it never counts as a second home. Written by `ka project move`. |
 
 ### 5.3 `.ka/config.yml`
 
@@ -480,6 +480,7 @@ implementations.
 | `id_dir_mismatch` | error | A ticket's `id` differs from its directory name. |
 | `id_prefix_mismatch` | error | A ticket's ID does not use its project's prefix. |
 | `duplicate_project` | error | Two stores in a workspace define the same project key. |
+| `moved_project_has_tickets` | warning | A project tombstone (`moved_to_store`) still has tickets; they are ignored. |
 | `duplicate_prefix` | error | Two projects use the same prefix. |
 | `duplicate_id` | error | Two tickets share an ID. |
 | `stray_file` | warning | An unexpected file or directory (§2). |

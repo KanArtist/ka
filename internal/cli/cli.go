@@ -64,6 +64,7 @@ func init() {
 		{"store", "ls | add URL|PATH [--name N] [--branch B] | rm NAME", "manage the stores in your workspace", cmdStore, false},
 		{"workspace", "", "show the resolved workspace", cmdWorkspace, false},
 		{"config", "explain [--project KEY] [KEY]", "show effective config and the layer that set each value", cmdConfig, false},
+		{"project", "move KEY --to STORE [--dry-run]", "move a project to another store (IDs unchanged)", cmdProject, false},
 		{"mcp", "", "serve MCP over stdio", cmdMCP, false},
 		{"daemon", "[run [--listen ADDR] [-v]] | status | stop | openapi", "serve the REST API on 127.0.0.1:7711", cmdDaemon, false},
 		{"open", "[ID] [--print]", "open the web UI (starting the daemon if needed)", cmdOpen, false},

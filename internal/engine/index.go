@@ -446,6 +446,16 @@ func (ix *Index) reload(s *Store, paths []string) (touched []recChange, full boo
 }
 
 // projectFor maps a ticket ID to its project.
+// movedTo returns where a project tombstoned in this workspace now lives.
+func (ix *Index) movedTo(key string) string {
+	for _, ks := range ix.ks {
+		if to := ks.Moved[key]; to != "" {
+			return to
+		}
+	}
+	return ""
+}
+
 func (ix *Index) projectFor(id string) (*ProjectInfo, bool) {
 	pfx, _, ok := kaspec.ParseID(id)
 	if !ok {

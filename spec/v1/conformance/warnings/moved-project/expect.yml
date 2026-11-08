@@ -1,0 +1,6 @@
+description: "A project tombstone (moved_to_store) is not a second home: no duplicate_project, and its leftover tickets are ignored with a warning."
+stores:
+  - a
+  - b
+expect:
+  - moved_project_has_tickets a/projects/jk/project.yml

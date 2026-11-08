@@ -137,6 +137,21 @@ func (s *Server) workspaceRoutes() {
 			}
 			return &body[engine.ConfigExplainOut]{*out}, nil
 		})
+	reg(s, post("moveProject", "/projects/{key}/move", "Move a project to another store (ka project move)", "workspace"),
+		func(ctx context.Context, in *struct {
+			CallerHeaders
+			Key  string `path:"key"`
+			Body struct {
+				To     string `json:"to" doc:"The target store's name or URL."`
+				DryRun bool   `json:"dry_run,omitempty"`
+			}
+		}) (*body[engine.MoveProjectOut], error) {
+			out, err := s.svc.MoveProject(ctx, s.caller(in.CallerHeaders), in.Key, in.Body.To, in.Body.DryRun)
+			if err != nil {
+				return nil, err
+			}
+			return &body[engine.MoveProjectOut]{*out}, nil
+		})
 	reg(s, get("listBoards", "/boards", "Saved boards", "workspace"),
 		func(ctx context.Context, in *struct{}) (*body[boardList], error) {
 			return &body[boardList]{boardList{s.svc.Boards()}}, nil

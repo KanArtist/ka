@@ -259,14 +259,17 @@ func ParseBoard(p string, data []byte) (*Board, []Diagnostic) {
 
 // Store is a loaded store.
 type Store struct {
-	Label     string // display name used as the diagnostic path prefix
-	FS        fs.FS
-	File      *StoreFile
-	Config    *Node // .ka/config.yml (nil when absent)
-	Actors    *Actors
-	Boards    map[string]*Board
-	Projects  map[string]*Project
-	Keys      []string // project keys, sorted
+	Label    string // display name used as the diagnostic path prefix
+	FS       fs.FS
+	File     *StoreFile
+	Config   *Node // .ka/config.yml (nil when absent)
+	Actors   *Actors
+	Boards   map[string]*Board
+	Projects map[string]*Project
+	Keys     []string // project keys, sorted
+	// Moved maps the key of a tombstoned project (moved_to_store) to the
+	// store it moved to. Tombstones are not in Projects or Keys.
+	Moved     map[string]string
 	Diags     []Diagnostic
 	ParentFor func(Parent) (*Store, error) // set by the workspace
 }
@@ -390,6 +393,17 @@ func (s *Store) loadProject(dirName string) {
 	}
 	if pf.Key != dirName {
 		s.add(diag("project_key_mismatch", s.p(pyml), 1, "make the key equal the directory name", "project key %q does not match its directory %q", pf.Key, dirName))
+	}
+	if pf.MovedToStore != "" {
+		if s.Moved == nil {
+			s.Moved = map[string]string{}
+		}
+		s.Moved[dirName] = pf.MovedToStore
+		if ents, _ := fs.ReadDir(s.FS, dir+"/tickets"); len(ents) > 0 {
+			s.add(diag("moved_project_has_tickets", s.p(pyml), 1, "the project lives in "+pf.MovedToStore+"; remove projects/"+dirName+"/tickets here",
+				"project %q moved to %s but still has tickets here; they are ignored", dirName, pf.MovedToStore))
+		}
+		return
 	}
 	pr := &Project{Key: dirName, Dir: dir, File: pf, Tickets: map[string]*TicketEntry{}}
 	s.Projects[dirName] = pr

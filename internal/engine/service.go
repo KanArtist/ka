@@ -567,7 +567,10 @@ func (s *Service) resolveProject(key string) (*ProjectInfo, error) {
 	if !ok {
 		keys := sortedKeys(s.ix.projects)
 		e := Errf(CodeUnknownProject, "projects: "+strings.Join(keys, ", "), "no project %q", key)
-		if n := nearest(key, keys); n != "" {
+		if to := s.ix.movedTo(strings.ToLower(key)); to != "" {
+			e.Message = fmt.Sprintf("project %q moved to store %s", key, to)
+			e.Fix = "add that store to your workspace: ka store add " + to
+		} else if n := nearest(key, keys); n != "" {
 			e.Fix = "did you mean " + n + "? projects: " + strings.Join(keys, ", ")
 		}
 		return nil, e
