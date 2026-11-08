@@ -43,9 +43,8 @@ sboms:
 signs:
   - cmd: cosign
     artifacts: checksum
-    signature: "${artifact}.sig"
-    certificate: "${artifact}.pem"
-    args: ["sign-blob", "--yes", "--output-signature=${signature}", "--output-certificate=${certificate}", "${artifact}"]
+    signature: "${artifact}.sigstore.json"
+    args: ["sign-blob", "--yes", "--bundle=${signature}", "${artifact}"]
 
 nfpms:
   - id: packages

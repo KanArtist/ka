@@ -16,9 +16,9 @@ A release contains:
   built with `CGO_ENABLED=0` and `-trimpath`, version stamped with `-X main.version`. The names
   carry no version, so `releases/latest/download/ka_linux_amd64.tar.gz` always works (the
   `actions/check` action uses it).
-- `checksums.txt`, signed keylessly with cosign (`checksums.txt.sig`, `.pem`), and an SPDX SBOM per
-  archive. Verify with:
-  `cosign verify-blob --certificate checksums.txt.pem --signature checksums.txt.sig --certificate-identity-regexp 'github.com/JumpKickOSS/ka' --certificate-oidc-issuer https://token.actions.githubusercontent.com checksums.txt`
+- `checksums.txt`, signed keylessly with cosign (a Sigstore bundle, `checksums.txt.sigstore.json`), and
+  an SPDX SBOM per archive. Verify with:
+  `cosign verify-blob --bundle checksums.txt.sigstore.json --certificate-identity-regexp 'github.com/JumpKickOSS/ka' --certificate-oidc-issuer https://token.actions.githubusercontent.com checksums.txt`
 - `.deb` and `.rpm` packages (depending on `git`).
 - `ghcr.io/jumpkickoss/ka:<version>` (and `latest`) for linux/amd64 and arm64, signed with cosign.
 - Homebrew cask (`JumpKickOSS/homebrew-tap`), Scoop manifest (`JumpKickOSS/scoop-bucket`) and a
