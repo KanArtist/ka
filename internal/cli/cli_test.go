@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/JumpKickOSS/ka/internal/testkit"
 )
@@ -99,5 +101,33 @@ func TestCLIWorkflow(t *testing.T) {
 	}
 	if !strings.Contains(log, "Ka-Actor: agent/claude") || !strings.Contains(log, "Ka-On-Behalf-Of: tester") {
 		t.Fatalf("trailers: %s", log)
+	}
+}
+
+// ka move without -m must not wait on stdin, even when stdin is a pipe
+// that stays open (as in agents' shells).
+func TestMoveDoesNotReadOpenStdin(t *testing.T) {
+	testkit.GitEnv(t)
+	dir := filepath.Join(t.TempDir(), "tickets")
+	ka(t, dir, "init", "--project", "demo", dir)
+	testkit.Git(t, dir, "add", "-A")
+	testkit.Git(t, dir, "commit", "-qm", "init")
+	r := ka(t, dir, "new", "-t", "Something", "--status", "ready", "--json")
+	var created struct{ Created []struct{ ID string } }
+	json.Unmarshal([]byte(r.out), &created)
+	pr, pw := io.Pipe()
+	defer pw.Close()
+	done := make(chan int, 1)
+	var out, errb bytes.Buffer
+	go func() {
+		done <- Run(context.Background(), &IO{Out: &out, Err: &errb, Dir: dir, In: pr}, []string{"move", created.Created[0].ID, "in_progress"})
+	}()
+	select {
+	case code := <-done:
+		if code != 0 {
+			t.Fatalf("move: %d %s", code, errb.String())
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("ka move blocked reading stdin")
 	}
 }

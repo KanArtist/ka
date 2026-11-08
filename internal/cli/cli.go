@@ -47,7 +47,7 @@ func init() {
 		{"edit", "ID [--set K=V]... [--add K=V]... [--remove K=V]...", "change fields (no flags: open $EDITOR)", cmdEdit, false},
 		{"claim", "ID [--steal]", "claim a ticket", cmdClaim, false},
 		{"release", "ID [--status S]", "release a claim", cmdRelease, false},
-		{"move", "ID STATUS [-m SUMMARY] [--resolution R]", "change status (closing needs -m)", cmdMove, false},
+		{"move", "ID STATUS [-m SUMMARY|-] [--resolution R]", "change status (closing needs -m; - reads stdin)", cmdMove, false},
 		{"comment", "ID [-m TEXT] [--type note|progress|decision]", "add a comment (text from -m or stdin)", cmdComment, false},
 		{"check-item", "ID INDEX|TEXT [--undo]", "mark an acceptance item done", cmdCheckItem, false},
 		{"ask", "ID -m QUESTION [--option O]... [--to WHO] [--approval] [--wait 5m]", "ask a human", cmdAsk, false},
@@ -229,6 +229,15 @@ func readText(x *IO, m string) string {
 	if m == "-" || (m == "" && x.In != nil && !isTTY(x.In)) {
 		b, _ := io.ReadAll(x.In)
 		return strings.TrimSpace(string(b))
+	}
+	return m
+}
+
+// readExplicit reads stdin only for "-": for optional text (ka move's
+// summary), an unset flag must never wait on an open pipe.
+func readExplicit(x *IO, m string) string {
+	if m == "-" {
+		return readText(x, m)
 	}
 	return m
 }

@@ -241,7 +241,7 @@ func cmdMove(ctx context.Context, x *IO, args []string) int {
 	if err != nil {
 		return fail(x, c, err)
 	}
-	out, err := svc.Transition(ctx, caller, engine.TransitionIn{ID: pos[0], Status: pos[1], Resolution: *res, Summary: readText(x, *m)})
+	out, err := svc.Transition(ctx, caller, engine.TransitionIn{ID: pos[0], Status: pos[1], Resolution: *res, Summary: readExplicit(x, *m)})
 	if err != nil {
 		return fail(x, c, err)
 	}
