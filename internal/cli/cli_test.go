@@ -153,3 +153,51 @@ func TestConfigExplain(t *testing.T) {
 		t.Fatalf("unknown key accepted: %+v", r)
 	}
 }
+
+func TestCheckCIFormats(t *testing.T) {
+	testkit.GitEnv(t)
+	dir := filepath.Join(t.TempDir(), "tickets")
+	ka(t, dir, "init", "--project", "demo", dir)
+	bad := "---\nid: DEMO-7QK3M\ntitle: Bad kind\nstatus: ready\nkind: nonsense\ncreated: 2026-11-07T12:00:00Z\nupdated: 2026-11-07T12:00:00Z\n---\n"
+	p := filepath.Join(dir, "projects", "demo", "tickets", "DEMO-7QK3M", "ticket.md")
+	os.MkdirAll(filepath.Dir(p), 0o755)
+	os.WriteFile(p, []byte(bad), 0o644)
+
+	t.Setenv("GITHUB_ACTIONS", "true")
+	t.Setenv("GITHUB_WORKSPACE", filepath.Dir(dir))
+	r := ka(t, dir, "check", "--ci", dir)
+	if r.code != 1 || !strings.Contains(r.out, "::error file=tickets/projects/demo/tickets/DEMO-7QK3M/ticket.md,line=5,title=ka check%3A unknown_kind::") {
+		t.Fatalf("github annotations: %+v", r)
+	}
+	sarif := filepath.Join(t.TempDir(), "ka.sarif")
+	r = ka(t, dir, "check", "--format", "sarif", "-o", sarif, dir)
+	if r.code != 1 || !strings.Contains(r.out, "1 error(s)") {
+		t.Fatalf("sarif run: %+v", r)
+	}
+	var log struct {
+		Version string `json:"version"`
+		Runs    []struct {
+			Results []struct {
+				RuleID    string `json:"ruleId"`
+				Level     string `json:"level"`
+				Locations []struct {
+					PhysicalLocation struct {
+						ArtifactLocation struct{ URI string } `json:"artifactLocation"`
+						Region           struct{ StartLine int } `json:"region"`
+					} `json:"physicalLocation"`
+				} `json:"locations"`
+			} `json:"results"`
+		} `json:"runs"`
+	}
+	data, _ := os.ReadFile(sarif)
+	if err := json.Unmarshal(data, &log); err != nil || log.Version != "2.1.0" || len(log.Runs[0].Results) != 1 {
+		t.Fatalf("sarif: %v\n%s", err, data)
+	}
+	res := log.Runs[0].Results[0]
+	if res.RuleID != "unknown_kind" || res.Level != "error" || res.Locations[0].PhysicalLocation.ArtifactLocation.URI != "tickets/projects/demo/tickets/DEMO-7QK3M/ticket.md" || res.Locations[0].PhysicalLocation.Region.StartLine != 5 {
+		t.Fatalf("sarif result: %+v", res)
+	}
+	if r = ka(t, dir, "check", "--format", "xml", dir); r.code != 2 {
+		t.Fatalf("bad format accepted: %+v", r)
+	}
+}

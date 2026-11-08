@@ -72,15 +72,32 @@ func newKaspecWorkspace(dirs []string, maps mapFlag) *kaspec.Workspace {
 }
 
 func cmdCheck(ctx context.Context, x *IO, args []string) int {
-	fl, c := newFlags("check", "[--strict] [--json] [STORE_DIR...]", x)
-	strict := fl.Bool("strict", false, "fail on warnings too (use in CI)")
-	ci := fl.Bool("ci", false, "same as --strict")
+	fl, c := newFlags("check", "[--strict] [--ci] [--format text|json|github|sarif] [-o FILE] [STORE_DIR...]", x)
+	strict := fl.Bool("strict", false, "fail on warnings too")
+	ci := fl.Bool("ci", false, "for CI: fail on warnings, and print GitHub annotations when run in GitHub Actions")
+	format := fl.String("format", "", "output: text (default), json, github (workflow annotations) or sarif (code scanning)")
+	output := fl.String("o", "", "write the report to this file instead of stdout (the summary still prints)")
 	nowFlag := fl.String("now", "", "evaluate stale claims as of this RFC 3339 time (default: now)")
 	pos, err := parse(fl, args)
 	if err != nil {
 		return 2
 	}
 	*strict = *strict || *ci
+	if c.json && *format == "" {
+		*format = "json"
+	}
+	if *format == "" {
+		*format = "text"
+		if *ci && os.Getenv("GITHUB_ACTIONS") == "true" {
+			*format = "github"
+		}
+	}
+	switch *format {
+	case "text", "json", "github", "sarif":
+	default:
+		fmt.Fprintf(x.Err, "ka: --format %q: use text, json, github or sarif\n", *format)
+		return 2
+	}
 	now := time.Now().UTC()
 	if *nowFlag != "" {
 		if now, err = time.Parse(time.RFC3339, *nowFlag); err != nil {
@@ -119,30 +136,59 @@ func cmdCheck(ctx context.Context, x *IO, args []string) int {
 			ws = svc.Index().Workspace()
 		}
 	}
-	if c.json {
+	out := x.Out
+	if *output != "" {
+		p := *output
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(x.Dir, p)
+		}
+		f, err := os.Create(p)
+		if err != nil {
+			return fail(x, c, err)
+		}
+		defer f.Close()
+		out = f
+	}
+	base := x.Dir
+	if gw := os.Getenv("GITHUB_WORKSPACE"); gw != "" {
+		base = gw
+	}
+	counts := map[kaspec.Severity]int{}
+	for _, d := range diags {
+		counts[d.Severity]++
+	}
+	tickets, comments := 0, 0
+	for _, s := range ws.Stores {
+		for _, pr := range s.Projects {
+			tickets += len(pr.Tickets)
+			for _, te := range pr.Tickets {
+				comments += len(te.Comments)
+			}
+		}
+	}
+	summary := fmt.Sprintf("checked %d store(s), %d ticket(s), %d comment(s): %d error(s), %d warning(s), %d info",
+		len(ws.Stores), tickets, comments, counts[kaspec.SevError], counts[kaspec.SevWarning], counts[kaspec.SevInfo])
+	switch *format {
+	case "json":
 		if diags == nil {
 			diags = []kaspec.Diagnostic{}
 		}
-		enc := json.NewEncoder(x.Out)
+		enc := json.NewEncoder(out)
 		enc.SetIndent("", "  ")
 		enc.Encode(diags)
-	} else {
-		counts := map[kaspec.Severity]int{}
+	case "sarif":
+		if err := writeSARIF(out, ws, diags, base, Version); err != nil {
+			return fail(x, c, err)
+		}
+	case "github":
+		writeGitHub(out, ws, diags, base)
+	default:
 		for _, d := range diags {
-			counts[d.Severity]++
-			fmt.Fprintln(x.Out, d.String())
+			fmt.Fprintln(out, d.String())
 		}
-		tickets, comments := 0, 0
-		for _, s := range ws.Stores {
-			for _, pr := range s.Projects {
-				tickets += len(pr.Tickets)
-				for _, te := range pr.Tickets {
-					comments += len(te.Comments)
-				}
-			}
-		}
-		fmt.Fprintf(x.Out, "checked %d store(s), %d ticket(s), %d comment(s): %d error(s), %d warning(s), %d info\n",
-			len(ws.Stores), tickets, comments, counts[kaspec.SevError], counts[kaspec.SevWarning], counts[kaspec.SevInfo])
+	}
+	if *format == "text" || *format == "github" || *output != "" {
+		fmt.Fprintln(x.Out, summary)
 	}
 	if kaspec.HasErrors(diags, *strict) {
 		return 1

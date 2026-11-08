@@ -48,3 +48,17 @@ jobs:
           npm run build
           git diff --exit-code -- . ../internal/api/ui
           test -z "$(git status --porcelain -- . ../internal/api/ui)" || (git status --porcelain -- . ../internal/api/ui && exit 1)
+
+  # The check action, run against a conformance store (builds ka with
+  # go install until there is a release to download).
+  action:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: ./actions/check
+        with:
+          path: spec/v1/conformance/valid/minimal/store
+          version: ${{ github.sha }}
