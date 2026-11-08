@@ -508,9 +508,18 @@ func (s *Server) adminRoutes() {
 		func(ctx context.Context, in *struct {
 			Limit  int    `query:"limit" minimum:"0" maximum:"500" doc:"Default 100."`
 			Before string `query:"before" doc:"Only entries older than this (RFC 3339): the last event's at, to page back."`
+			Ticket string `query:"ticket" doc:"Only this ticket's history (its timeline)."`
 		}) (*body[*engine.ActivityOut], error) {
-			out, err := s.svc.Activity(ctx, engine.ActivityIn{Limit: in.Limit, Before: in.Before})
+			out, err := s.svc.Activity(ctx, engine.ActivityIn{Limit: in.Limit, Before: in.Before, Ticket: in.Ticket})
 			return &body[*engine.ActivityOut]{out}, err
+		})
+	reg(s, get("getCommit", "/commits/{sha}", "A commit and its diff within the store: the change behind an activity entry", "events"),
+		func(ctx context.Context, in *struct {
+			SHA   string `path:"sha" doc:"A full or abbreviated commit hash."`
+			Store string `query:"store" doc:"The store's workspace name; default: search every store."`
+		}) (*body[*engine.CommitOut], error) {
+			out, err := s.svc.Commit(ctx, in.Store, in.SHA)
+			return &body[*engine.CommitOut]{out}, err
 		})
 	reg(s, get("resolveLink", "/links/resolve", "Resolve a code link to a local path and a forge URL (ka_resolve_link)", "workspace"),
 		func(ctx context.Context, in *struct {

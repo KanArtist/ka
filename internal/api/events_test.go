@@ -427,6 +427,27 @@ func TestActivityHistory(t *testing.T) {
 	if m := types["ticket.updated"]; str(m, "actor") != "tester" || m["data"].(map[string]any)["changes"].(map[string]any)["priority"] == nil {
 		t.Fatalf("updated: %+v", m)
 	}
+	// One ticket's timeline, and the diff behind an entry.
+	r2 := c.ok("GET", "/api/v1/activity?ticket="+id, nil)
+	for _, e := range r2.m["events"].([]any) {
+		if str(e.(map[string]any), "ticket") != id {
+			t.Fatalf("ticket timeline has %s", r2.raw)
+		}
+	}
+	if n := len(r2.m["events"].([]any)); n < 6 {
+		t.Fatalf("timeline: %d events", n)
+	}
+	sha := str(types["ticket.updated"], "commit")
+	d := c.ok("GET", "/api/v1/commits/"+sha, nil)
+	if !strings.Contains(str(d.m, "diff"), "+priority: P0") || str(d.m, "store") == "" {
+		t.Fatalf("commit diff: %s", d.raw)
+	}
+	if r := c.do("GET", "/api/v1/commits/zzzz", nil); r.status != 422 {
+		t.Fatalf("bad sha: %d", r.status)
+	}
+	if r := c.do("GET", "/api/v1/commits/abcdef0", nil); r.status != 404 {
+		t.Fatalf("unknown sha: %d", r.status)
+	}
 	// Paging back from the oldest entry ends.
 	last := evs[len(evs)-1].(map[string]any)
 	r = c.ok("GET", "/api/v1/activity?limit=50&before="+str(last, "at"), nil)

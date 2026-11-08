@@ -196,3 +196,75 @@ kbd {
 .dot[data-cat] {
   background: var(--cat);
 }
+
+/* Rendered markdown (ticket descriptions and comments), inserted with innerHTML,
+   so it is styled globally rather than per component. */
+.md {
+  max-width: 72ch;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.md.small {
+  font-size: var(--fs-md);
+  line-height: 1.55;
+  margin: 4px 0 2px 24px;
+  color: var(--text);
+}
+.md :first-child {
+  margin-top: 0;
+}
+.md :last-child {
+  margin-bottom: 0;
+}
+.md h1,
+.md h2,
+.md h3 {
+  font-size: var(--fs-lg);
+  margin: 1.3em 0 0.5em;
+  color: var(--text-strong);
+}
+.md p,
+.md ul,
+.md ol {
+  margin: 0.6em 0;
+}
+.md ul,
+.md ol {
+  padding-left: 1.4em;
+}
+.md code {
+  font-family: var(--mono);
+  font-size: 0.9em;
+  background: var(--raised);
+  padding: 1px 4px;
+  border-radius: var(--r-sm);
+}
+.md pre {
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-md);
+  padding: 10px 12px;
+  overflow: auto;
+}
+.md pre code {
+  background: none;
+  padding: 0;
+}
+.md a {
+  color: var(--focus);
+}
+.md blockquote {
+  margin: 0.6em 0;
+  padding-left: 12px;
+  border-left: 2px solid var(--line);
+  color: var(--muted);
+}
+.md table {
+  border-collapse: collapse;
+}
+.md th,
+.md td {
+  border: 1px solid var(--line-soft);
+  padding: 3px 8px;
+}
+

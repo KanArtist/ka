@@ -1,14 +1,15 @@
 import { ChangeDetectionStrategy, Component, HostListener, computed, effect, inject, signal } from '@angular/core';
-import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { Api } from './api/api';
 import { Live } from './live';
 import { Prefs } from './prefs';
 import { Avatar } from './ui/actor';
 import { Palette } from './ui/palette';
+import { Peek } from './views/peek/peek';
 
 @Component({
   selector: 'app-root',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, Palette, Avatar],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, Palette, Avatar, Peek],
   templateUrl: './app.html',
   styleUrl: './app.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -20,6 +21,8 @@ export class App {
   private router = inject(Router);
 
   protected readonly palette = signal(false);
+  /** The ticket in the side panel (?peek=ID), over whatever view is open. */
+  protected readonly peek = signal('');
   protected readonly failed = signal('');
   private pendingG = false;
   private gTimer?: ReturnType<typeof setTimeout>;
@@ -36,6 +39,14 @@ export class App {
   });
 
   constructor() {
+    const readPeek = () => {
+      const p = this.router.parseUrl(this.router.url).queryParams['peek'];
+      this.peek.set(typeof p === 'string' ? p.toUpperCase() : '');
+    };
+    readPeek(); // the initial navigation may already be done
+    this.router.events.subscribe((e) => {
+      if (e instanceof NavigationEnd) readPeek();
+    });
     this.live.start().catch((e) => this.failed.set(e?.message ?? String(e)));
     // The tab title carries the inbox count, so it shows from another tab.
     effect(() => {
@@ -46,6 +57,10 @@ export class App {
     });
   }
 
+  protected closePeek(): void {
+    void this.router.navigate([], peekParams(null));
+  }
+
   @HostListener('document:keydown', ['$event'])
   protected onKey(e: KeyboardEvent): void {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
@@ -54,6 +69,11 @@ export class App {
       return;
     }
     if (this.palette() || isTyping(e)) return;
+    if (e.key === 'Escape' && this.peek()) {
+      e.preventDefault();
+      this.closePeek();
+      return;
+    }
     if (e.key === '/') {
       e.preventDefault();
       this.palette.set(true);
@@ -74,6 +94,10 @@ export class App {
       this.gTimer = setTimeout(() => (this.pendingG = false), 900);
     }
   }
+}
+
+export function peekParams(id: string | null) {
+  return { queryParams: { peek: id }, queryParamsHandling: 'merge' as const };
 }
 
 function isTyping(e: KeyboardEvent): boolean {

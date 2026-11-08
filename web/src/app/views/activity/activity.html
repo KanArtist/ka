@@ -38,7 +38,7 @@
         </div>
         <div class="body">
           @if (g.ticket) {
-            <a class="ticket" [routerLink]="['/ticket', g.ticket]">
+            <a class="ticket" [routerLink]="[]" [queryParams]="{ peek: g.ticket }" queryParamsHandling="merge">
               <span class="dot" [attr.data-cat]="category(g) || null"></span>
               <span class="id">{{ g.ticket }}</span>
               <span class="title">{{ title(g) }}</span>

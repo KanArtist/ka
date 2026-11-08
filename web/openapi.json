@@ -623,6 +623,47 @@
         ],
         "type": "object"
       },
+      "CommitOut": {
+        "additionalProperties": false,
+        "properties": {
+          "author": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string"
+          },
+          "diff": {
+            "type": "string"
+          },
+          "sha": {
+            "type": "string"
+          },
+          "store": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "trailers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "sha",
+          "store",
+          "author",
+          "date",
+          "subject",
+          "diff"
+        ],
+        "type": "object"
+      },
       "CreateCommentRequest": {
         "additionalProperties": false,
         "properties": {
@@ -2180,6 +2221,16 @@
               "description": "Only entries older than this (RFC 3339): the last event's at, to page back.",
               "type": "string"
             }
+          },
+          {
+            "description": "Only this ticket's history (its timeline).",
+            "explode": false,
+            "in": "query",
+            "name": "ticket",
+            "schema": {
+              "description": "Only this ticket's history (its timeline).",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -2353,6 +2404,59 @@
         "summary": "Validate every store against the Store Spec (ka check)",
         "tags": [
           "sync"
+        ]
+      }
+    },
+    "/api/v1/commits/{sha}": {
+      "get": {
+        "operationId": "getCommit",
+        "parameters": [
+          {
+            "description": "A full or abbreviated commit hash.",
+            "in": "path",
+            "name": "sha",
+            "required": true,
+            "schema": {
+              "description": "A full or abbreviated commit hash.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The store's workspace name; default: search every store.",
+            "explode": false,
+            "in": "query",
+            "name": "store",
+            "schema": {
+              "description": "The store's workspace name; default: search every store.",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommitOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "A commit and its diff within the store: the change behind an activity entry",
+        "tags": [
+          "events"
         ]
       }
     },

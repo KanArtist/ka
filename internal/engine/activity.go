@@ -17,6 +17,7 @@ const EvCommit = "commit"
 type ActivityIn struct {
 	Limit  int    `json:"limit,omitempty"`  // default 100, at most 500
 	Before string `json:"before,omitempty"` // RFC 3339: only older entries
+	Ticket string `json:"ticket,omitempty"` // only this ticket's history
 }
 
 // ActivityOut is a page of history, newest first.
@@ -37,8 +38,20 @@ func (s *Service) Activity(ctx context.Context, in ActivityIn) (*ActivityOut, er
 	}
 	limit = min(limit, 500)
 	var all []Event
-	for _, st := range s.WS.Stores {
-		cs, err := st.git.Recent(ctx, limit+1, in.Before)
+	stores := s.WS.Stores
+	var paths []string
+	if in.Ticket != "" {
+		s.ix.mu.RLock()
+		r, err := s.rec(in.Ticket)
+		s.ix.mu.RUnlock()
+		if err != nil {
+			return nil, err
+		}
+		stores = []*Store{r.Store}
+		paths = []string{r.Store.repoPath(r.Dir)}
+	}
+	for _, st := range stores {
+		cs, err := st.git.Recent(ctx, limit+1, in.Before, paths...)
 		if err != nil {
 			continue // an empty repository has no HEAD yet
 		}
@@ -182,4 +195,63 @@ func commentEvent(base Event, ref Ref, o *Op) Event {
 	}
 	e.Data = CommentEvent{Ticket: ref, Comment: co}
 	return e
+}
+
+// CommitOut is one commit and its diff, limited to the store.
+type CommitOut struct {
+	SHA       string            `json:"sha"`
+	Store     string            `json:"store"`
+	Author    string            `json:"author"`
+	Date      string            `json:"date"`
+	Subject   string            `json:"subject"`
+	Trailers  map[string]string `json:"trailers,omitempty"`
+	Diff      string            `json:"diff"`
+	Truncated bool              `json:"truncated,omitempty"`
+}
+
+// maxDiff caps the diff a client is sent.
+const maxDiff = 256 << 10
+
+// Commit returns a commit's message and its diff within the store (the
+// change behind an activity entry).
+func (s *Service) Commit(ctx context.Context, store, sha string) (*CommitOut, error) {
+	if !isHexSHA(sha) {
+		return nil, Errf(CodeInvalid, "pass a commit hash from an event's commit field", "%q is not a commit hash", sha)
+	}
+	for _, st := range s.WS.Stores {
+		if store != "" && st.Name != store {
+			continue
+		}
+		c, err := st.git.CommitInfo(ctx, sha)
+		if err != nil {
+			continue
+		}
+		args := []string{"show", "--format=", "--no-color", "--no-ext-diff", "-M", c.SHA}
+		if st.sub != "" {
+			args = append(args, "--", st.sub)
+		}
+		diff, err := st.git.Run(ctx, args...)
+		if err != nil {
+			return nil, Errf(CodeGit, "", "git show %s: %v", short(c.SHA), err)
+		}
+		out := &CommitOut{SHA: c.SHA, Store: st.Name, Author: c.Author, Date: c.Date, Subject: c.Subject, Trailers: c.Trailers}
+		if len(diff) > maxDiff {
+			diff, out.Truncated = diff[:maxDiff], true
+		}
+		out.Diff = diff
+		return out, nil
+	}
+	return nil, Errf(CodeNotFound, "check the store and hash", "no commit %s in the workspace", sha)
+}
+
+func isHexSHA(s string) bool {
+	if len(s) < 4 || len(s) > 64 {
+		return false
+	}
+	for _, c := range s {
+		if !('0' <= c && c <= '9' || 'a' <= c && c <= 'f') {
+			return false
+		}
+	}
+	return true
 }

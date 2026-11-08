@@ -74,11 +74,18 @@
       </span>
     </header>
 
-    <main class="main">
-      @if (live.loaded()) {
-        <router-outlet />
-      } @else {
-        <p class="loading">Loading the workspace…</p>
+    <main class="main" [class.peeking]="!!peek()">
+      <div class="view">
+        @if (live.loaded()) {
+          <router-outlet />
+        } @else {
+          <p class="loading">Loading the workspace…</p>
+        }
+      </div>
+      @if (peek() && live.loaded()) {
+        <aside class="peek-panel" aria-label="Ticket">
+          <ka-peek [id]="peek()" (close)="closePeek()" />
+        </aside>
       }
     </main>
   </div>

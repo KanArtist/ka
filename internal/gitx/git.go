@@ -192,16 +192,33 @@ func (r *Repo) Log(ctx context.Context, revRange string, reverse bool, paths ...
 
 // Recent returns up to n commits reachable from HEAD, newest first,
 // optionally only those authored before a time (RFC 3339).
-func (r *Repo) Recent(ctx context.Context, n int, before string) ([]Commit, error) {
+func (r *Repo) Recent(ctx context.Context, n int, before string, paths ...string) ([]Commit, error) {
 	args := []string{"log", "--no-merges", "-n", strconv.Itoa(n), "--format=%H%x1f%an <%ae>%x1f%aI%x1f%B%x1e"}
 	if before != "" {
 		args = append(args, "--before="+before)
 	}
-	out, err := r.Run(ctx, append(args, "HEAD")...)
+	args = append(args, "HEAD")
+	if len(paths) > 0 {
+		args = append(append(args, "--"), paths...)
+	}
+	out, err := r.Run(ctx, args...)
 	if err != nil {
 		return nil, err
 	}
 	return parseLog(out), nil
+}
+
+// CommitInfo returns one commit's metadata and message.
+func (r *Repo) CommitInfo(ctx context.Context, rev string) (*Commit, error) {
+	out, err := r.Run(ctx, "log", "-1", "--format=%H%x1f%an <%ae>%x1f%aI%x1f%B%x1e", rev, "--")
+	if err != nil {
+		return nil, err
+	}
+	cs := parseLog(out)
+	if len(cs) == 0 {
+		return nil, fmt.Errorf("no commit %s", rev)
+	}
+	return &cs[0], nil
 }
 
 func parseLog(out string) []Commit {

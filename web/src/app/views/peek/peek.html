@@ -1,0 +1,205 @@
+<article class="peek" [class.panel]="panel()" [attr.aria-label]="'Ticket ' + id()">
+  <header class="top">
+    <span class="id">{{ id() }}</span>
+    @if (detail(); as d) {
+      <span class="status" [attr.data-cat]="category()"><span class="dot" [attr.data-cat]="category()"></span>{{ d.status }}</span>
+      @if (d.blocked) {
+        <span class="flag blocked">blocked</span>
+      }
+    }
+    <span class="spacer"></span>
+    @if (panel()) {
+      <button type="button" class="icon" (click)="expand()" aria-label="Open as a page" title="Open as a page">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9.5 2.5h4v4M13.5 2.5 8.5 7.5M6.5 13.5h-4v-4M2.5 13.5l5-5" /></svg>
+      </button>
+      <button type="button" class="icon" (click)="close.emit()" aria-label="Close" title="Close (Esc)">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 3.5l9 9M12.5 3.5l-9 9" /></svg>
+      </button>
+    }
+  </header>
+
+  @if (error(); as e) {
+    <div class="problem">
+      <p>{{ e.code === 'not_found' ? 'There is no ticket ' + id() + ' in this workspace.' : e.message }}</p>
+      @if (e.fix) {
+        <p class="muted">{{ e.fix }}</p>
+      }
+    </div>
+  } @else if (detail(); as d) {
+    <h1 class="title">{{ d.title }}</h1>
+
+    <div class="cols">
+      <div class="main">
+        @if (description()) {
+          <div class="md" [innerHTML]="description()"></div>
+        } @else {
+          <p class="muted">No description.</p>
+        }
+
+        @if (acceptance().items.length) {
+          <section>
+            <h2>Acceptance <span class="count">{{ acceptance().done }}/{{ acceptance().items.length }}</span></h2>
+            <ul class="checks">
+              @for (a of acceptance().items; track $index) {
+                <li [class.done]="a.done">
+                  <span class="box" role="img" [attr.aria-label]="a.done ? 'done' : 'not done'">
+                    @if (a.done) {
+                      <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 6.2 5 8.5l4.5-5" /></svg>
+                    }
+                  </span>
+                  <span>{{ a.text }}</span>
+                </li>
+              }
+            </ul>
+          </section>
+        }
+
+        @if (d.parent_ref || d.children?.length || d.blocked_by?.length || d.blocks?.length) {
+          <section>
+            <h2>Relations</h2>
+            <dl class="rels">
+              @if (d.parent_ref; as p) {
+                <dt>Parent</dt>
+                <dd><a class="rel" [routerLink]="[]" [queryParams]="{ peek: p.id }" queryParamsHandling="merge"><span class="dot" [attr.data-cat]="relCat(p.id) || null"></span><span class="id">{{ p.id }}</span>{{ p.title }}</a></dd>
+              }
+              @if (d.blocked_by?.length) {
+                <dt>Blocked by</dt>
+                <dd>
+                  @for (r of d.blocked_by; track r.id) {
+                    <a class="rel" [routerLink]="[]" [queryParams]="{ peek: r.id }" queryParamsHandling="merge"><span class="dot" [attr.data-cat]="relCat(r.id) || null"></span><span class="id">{{ r.id }}</span>{{ r.title || 'outside this workspace' }}</a>
+                  }
+                </dd>
+              }
+              @if (d.blocks?.length) {
+                <dt>Blocks</dt>
+                <dd>
+                  @for (r of d.blocks; track r.id) {
+                    <a class="rel" [routerLink]="[]" [queryParams]="{ peek: r.id }" queryParamsHandling="merge"><span class="dot" [attr.data-cat]="relCat(r.id) || null"></span><span class="id">{{ r.id }}</span>{{ r.title }}</a>
+                  }
+                </dd>
+              }
+              @if (d.children?.length) {
+                <dt>Children</dt>
+                <dd>
+                  @for (r of d.children; track r.id) {
+                    <a class="rel" [routerLink]="[]" [queryParams]="{ peek: r.id }" queryParamsHandling="merge"><span class="dot" [attr.data-cat]="relCat(r.id) || null"></span><span class="id">{{ r.id }}</span>{{ r.title }}</a>
+                  }
+                </dd>
+              }
+            </dl>
+          </section>
+        }
+
+        <section>
+          <h2>Timeline</h2>
+          <ol class="timeline">
+            @for (e of timeline(); track e.key) {
+              <li [class.comment]="!!e.comment" [class.agent]="isAgent(e.actor)">
+                <div class="row">
+                  <ka-actor [actor]="e.actor" [size]="18" />
+                  <span class="verb" [attr.data-tone]="e.tone || null">{{ e.verb }}</span>
+                  <span class="spacer"></span>
+                  @if (e.commit) {
+                    <button type="button" class="sha" (click)="toggleCommit(e)" [attr.aria-expanded]="openCommit() === e.key" title="Show the change">{{ e.commit }}</button>
+                  }
+                  <time [attr.datetime]="e.at" [title]="exact(e.at)">{{ ago(e.at, now()) }}</time>
+                </div>
+                @if (e.html) {
+                  <div class="md small" [innerHTML]="e.html"></div>
+                }
+                @if (e.comment?.options?.length) {
+                  <ol class="options">
+                    @for (o of e.comment!.options; track $index) {
+                      <li>{{ o }}</li>
+                    }
+                  </ol>
+                }
+                @if (openCommit() === e.key) {
+                  <div class="diff">
+                    @if (commit(); as c) {
+                      <p class="subject">{{ c.subject }}</p>
+                      <pre><code>@for (l of diffLines(c.diff); track $index) {<span [class]="l.cls">{{ l.text }}
+</span>}</code></pre>
+                      @if (c.truncated) {
+                        <p class="muted">The diff is longer than this; see the commit in git.</p>
+                      }
+                    } @else if (commitError()) {
+                      <p class="muted">{{ commitError() }}</p>
+                    } @else {
+                      <p class="muted">Loading the change…</p>
+                    }
+                  </div>
+                }
+              </li>
+            } @empty {
+              <li class="muted">Nothing has happened to this ticket yet.</li>
+            }
+          </ol>
+        </section>
+      </div>
+
+      <aside class="props" aria-label="Properties">
+        <dl>
+          <dt>Status</dt>
+          <dd><span class="dot" [attr.data-cat]="category()"></span>{{ d.status }}</dd>
+          @if (d.priority) {
+            <dt>Priority</dt>
+            <dd class="prio" [attr.data-p]="d.priority">{{ d.priority }}</dd>
+          }
+          @if (d.kind) {
+            <dt>Kind</dt>
+            <dd>{{ d.kind }}</dd>
+          }
+          <dt>Claim</dt>
+          <dd>
+            @if (d.claim; as c) {
+              <ka-actor [actor]="c.by" [size]="16" />
+              <span class="muted" [title]="exact(c.at)">{{ ago(c.at, now()) }}</span>
+              @if (c.stale) {
+                <span class="flag stale">stale</span>
+              }
+            } @else {
+              <span class="muted">Unclaimed</span>
+            }
+          </dd>
+          <dt>Assignee</dt>
+          <dd>
+            @if (d.assignee) {
+              <ka-actor [actor]="d.assignee" [size]="16" />
+            } @else {
+              <span class="muted">Anyone</span>
+            }
+          </dd>
+          @if (d.owner) {
+            <dt>Owner</dt>
+            <dd><ka-actor [actor]="d.owner" [size]="16" /></dd>
+          }
+          @if (d.labels?.length) {
+            <dt>Labels</dt>
+            <dd class="labels">
+              @for (l of d.labels; track l) {
+                <span class="label">{{ l }}</span>
+              }
+            </dd>
+          }
+          @for (f of fields(); track f[0]) {
+            <dt>{{ f[0] }}</dt>
+            <dd>{{ f[1] }}</dd>
+          }
+          <dt>Project</dt>
+          <dd>{{ d.project }} <span class="muted">in {{ d.store }}</span></dd>
+          @if (d.created_by) {
+            <dt>Created</dt>
+            <dd><ka-actor [actor]="d.created_by" [size]="16" /> <span class="muted" [title]="exact(d.created)">{{ ago(d.created, now()) }}</span></dd>
+          }
+          @if (d.updated) {
+            <dt>Updated</dt>
+            <dd class="muted" [title]="exact(d.updated)">{{ ago(d.updated, now()) }}</dd>
+          }
+        </dl>
+      </aside>
+    </div>
+  } @else {
+    <p class="loading muted">Loading {{ id() }}…</p>
+  }
+</article>

@@ -192,7 +192,46 @@
   grid-area: main;
   min-height: 0;
   min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  position: relative;
+}
+.view {
+  min-height: 0;
+  min-width: 0;
   overflow: auto;
+}
+.peek-panel {
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: min(760px, 62%);
+  background: var(--bg);
+  border-left: 1px solid var(--line);
+  box-shadow: -18px 0 40px rgb(0 0 0 / 0.22);
+  animation: slide 160ms var(--ease);
+  z-index: 5;
+}
+@keyframes slide {
+  from {
+    transform: translateX(16px);
+    opacity: 0;
+  }
+}
+@media (min-width: 1500px) {
+  .main.peeking {
+    grid-template-columns: minmax(0, 1fr) 760px;
+  }
+  .peek-panel {
+    position: static;
+    width: auto;
+    box-shadow: none;
+    animation: none;
+  }
+}
+@media (max-width: 720px) {
+  .peek-panel {
+    width: 100%;
+  }
 }
 .loading {
   padding: 24px;

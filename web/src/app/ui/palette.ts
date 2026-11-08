@@ -238,7 +238,12 @@ export class Palette {
   }
 
   private ticketItem(t: Summary): Item {
-    return { key: 't:' + t.id, kind: 'ticket', label: t.title, ticket: t, run: () => this.navigate(['/ticket', t.id]) };
+    return { key: 't:' + t.id, kind: 'ticket', label: t.title, ticket: t, run: () => this.peekTicket(t.id) };
+  }
+
+  private peekTicket(id: string): void {
+    this.close.emit();
+    void this.router.navigate([], { queryParams: { peek: id }, queryParamsHandling: 'merge' });
   }
 
   private navigate(path: string[]): void {

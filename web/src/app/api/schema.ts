@@ -89,6 +89,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/commits/{sha}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A commit and its diff within the store: the change behind an activity entry */
+        get: operations["getCommit"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/daemon": {
         parameters: {
             query?: never;
@@ -723,6 +740,18 @@ export interface components {
             to?: string;
             type: string;
         };
+        CommitOut: {
+            author: string;
+            date: string;
+            diff: string;
+            sha: string;
+            store: string;
+            subject: string;
+            trailers?: {
+                [key: string]: string;
+            };
+            truncated?: boolean;
+        };
         CreateCommentRequest: {
             body: string;
             retracts?: string;
@@ -1135,6 +1164,8 @@ export interface operations {
                 limit?: number;
                 /** @description Only entries older than this (RFC 3339): the last event's at, to page back. */
                 before?: string;
+                /** @description Only this ticket's history (its timeline). */
+                ticket?: string;
             };
             header?: never;
             path?: never;
@@ -1270,6 +1301,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CheckReport"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getCommit: {
+        parameters: {
+            query?: {
+                /** @description The store's workspace name; default: search every store. */
+                store?: string;
+            };
+            header?: never;
+            path: {
+                /** @description A full or abbreviated commit hash. */
+                sha: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommitOut"];
                 };
             };
             /** @description Error */
