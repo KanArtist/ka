@@ -50,3 +50,15 @@ func TestServesUI(t *testing.T) {
 	}
 	res.Body.Close()
 }
+
+func TestIsHashed(t *testing.T) {
+	for name, want := range map[string]bool{
+		"main-D54TUWJL.js": true, "chunk-Dwv1iin-.js": true, "chunk-B8_c6LW1.js": true, "styles-RIOS7O6L.css": true,
+		"media/instrument-sans-latin-wght-normal-Ab12Cd34.woff2": true,
+		"favicon.svg": false, "index.html": false, "3rdpartylicenses.txt": false,
+	} {
+		if got := isHashed(name); got != want {
+			t.Errorf("isHashed(%q) = %v", name, got)
+		}
+	}
+}

@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"net/http"
 	"path"
+	"regexp"
 	"strings"
 )
 
@@ -71,11 +72,12 @@ func (s *Server) serveUI(w http.ResponseWriter, r *http.Request) {
 
 // isHashed reports whether a file name carries a content hash
 // (main-6RWXTBIF.js), so it can be cached forever.
+// hashedName matches build outputs named by content (main-D54TUWJL.js,
+// chunk-Dwv1iin-.js, fonts): a name, a dash, an 8-character hash.
+var hashedName = regexp.MustCompile(`^.+-[A-Za-z0-9_-]{8}\.[a-z0-9]+$`)
+
 func isHashed(name string) bool {
-	base := path.Base(name)
-	i := strings.LastIndexByte(base, '-')
-	j := strings.LastIndexByte(base, '.')
-	return i > 0 && j > i+6
+	return hashedName.MatchString(path.Base(name))
 }
 
 func newNonce() string {

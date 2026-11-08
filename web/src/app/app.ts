@@ -108,7 +108,7 @@ export class App {
     }
     if (this.pendingG) {
       this.pendingG = false;
-      const to: Record<string, string> = { a: '/activity', b: '/board', t: '/table', d: '/docs', h: '/health', g: '/agents', i: '/inbox' };
+      const to: Record<string, string> = { a: '/activity', b: '/board', t: '/table', d: '/docs', h: '/health', s: '/settings', g: '/agents', i: '/inbox' };
       if (to[e.key]) {
         e.preventDefault();
         void this.router.navigate([to[e.key]]);
