@@ -81,15 +81,19 @@ docker_signs:
     artifacts: images
     args: ["sign", "--yes", "${artifact}"]
 
-# Package managers. Each needs its repository and a token secret (see
-# docs/releasing.md); with the token unset, the step is skipped.
+# Package managers. Homebrew and Scoop push with a per-repository deploy key
+# (TAP_SSH_KEY, SCOOP_SSH_KEY); winget opens a pull request with a token
+# (WINGET_GITHUB_TOKEN). Each step is skipped when its secret is unset, and
+# for prereleases. See docs/releasing.md.
 homebrew_casks:
   - name: ka
     repository:
       owner: JumpKickOSS
       name: homebrew-tap
-      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
-    skip_upload: '{{ if .Env.TAP_GITHUB_TOKEN }}false{{ else }}true{{ end }}'
+      git:
+        url: git@github.com:JumpKickOSS/homebrew-tap.git
+        private_key: "{{ .Env.TAP_SSH_KEY }}"
+    skip_upload: '{{ if or .Prerelease (not (isEnvSet "TAP_SSH_KEY")) }}true{{ else }}false{{ end }}'
     directory: Casks
     homepage: https://github.com/JumpKickOSS/ka
     description: Git-native work tracker for AI agents and the humans who watch them
@@ -101,8 +105,10 @@ scoops:
     repository:
       owner: JumpKickOSS
       name: scoop-bucket
-      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
-    skip_upload: '{{ if .Env.TAP_GITHUB_TOKEN }}false{{ else }}true{{ end }}'
+      git:
+        url: git@github.com:JumpKickOSS/scoop-bucket.git
+        private_key: "{{ .Env.SCOOP_SSH_KEY }}"
+    skip_upload: '{{ if or .Prerelease (not (isEnvSet "SCOOP_SSH_KEY")) }}true{{ else }}false{{ end }}'
     homepage: https://github.com/JumpKickOSS/ka
     description: Git-native work tracker for AI agents and the humans who watch them
     license: Apache-2.0
@@ -119,20 +125,20 @@ winget:
       owner: JumpKickOSS
       name: winget-pkgs
       branch: "ka-{{ .Version }}"
-      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+      token: "{{ .Env.WINGET_GITHUB_TOKEN }}"
       pull_request:
         enabled: true
         base:
           owner: microsoft
           name: winget-pkgs
           branch: master
-    skip_upload: '{{ if .Env.TAP_GITHUB_TOKEN }}false{{ else }}true{{ end }}'
+    skip_upload: '{{ if or .Prerelease (not (isEnvSet "WINGET_GITHUB_TOKEN")) }}true{{ else }}false{{ end }}'
 
 release:
   github:
     owner: JumpKickOSS
     name: ka
-  draft: true
+  draft: false
   prerelease: auto
 
 changelog:

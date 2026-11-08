@@ -1,7 +1,7 @@
 # Publishes a release when a v* tag is pushed: binaries, archives, checksums,
 # SBOMs, cosign signatures (keyless, through GitHub OIDC), the container image
-# on ghcr.io, deb/rpm, and Homebrew/Scoop/winget manifests when
-# TAP_GITHUB_TOKEN is set. The GitHub release is created as a draft to review.
+# on ghcr.io, deb/rpm, and Homebrew/Scoop/winget manifests when their secrets
+# are set. A tag with a suffix (v1.0.0-rc.1) is published as a prerelease.
 name: release
 on:
   push:
@@ -37,4 +37,6 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+          TAP_SSH_KEY: ${{ secrets.TAP_SSH_KEY }}
+          SCOOP_SSH_KEY: ${{ secrets.SCOOP_SSH_KEY }}
+          WINGET_GITHUB_TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
