@@ -185,8 +185,8 @@ func (s *Service) summary(v view, r *Rec) Summary {
 type SearchIn struct {
 	Query string   `json:"query,omitempty"`
 	Sort  []string `json:"sort,omitempty"`
-	Limit int      `json:"limit,omitempty"`
-	All   bool     `json:"all,omitempty"` // include closed tickets when the query does not say
+	Limit int      `json:"limit,omitempty"` // 0: 20; negative: all
+	All   bool     `json:"all,omitempty"`   // include closed tickets when the query does not say
 }
 
 // SearchOut is ka_search's output.
@@ -219,10 +219,13 @@ func (s *Service) Search(in SearchIn) (*SearchOut, error) {
 		keys = q.Sort
 	}
 	sortRecs(rs, keys)
-	out := &SearchOut{Total: len(rs)}
+	out := &SearchOut{Total: len(rs), Tickets: []Summary{}}
 	limit := in.Limit
-	if limit <= 0 {
+	switch {
+	case limit == 0:
 		limit = 20
+	case limit < 0: // everything
+		limit = len(rs)
 	}
 	for i, r := range rs {
 		if i >= limit {
@@ -740,6 +743,8 @@ type UpdateIn struct {
 	Add    map[string][]string `json:"add,omitempty"`
 	Remove map[string][]string `json:"remove,omitempty"`
 	Body   *string             `json:"body,omitempty"`
+	// IfMatch makes the update conditional on ticket.md's blob SHA (REST If-Match).
+	IfMatch string `json:"if_match,omitempty"`
 }
 
 // Update patches one or many tickets (one commit each, one push per store).
@@ -787,7 +792,7 @@ func (s *Service) Update(ctx context.Context, c Caller, ins []UpdateIn) ([]*Writ
 }
 
 func (s *Service) updateOp(c Caller, pi *ProjectInfo, in UpdateIn) (*Op, error) {
-	o := &Op{Op: "update", ID: strings.ToUpper(in.ID), Set: map[string]*string{}, Add: in.Add, Remove: in.Remove, Body: in.Body}
+	o := &Op{Op: "update", ID: strings.ToUpper(in.ID), Set: map[string]*string{}, Add: in.Add, Remove: in.Remove, Body: in.Body, IfMatch: in.IfMatch}
 	for k, v := range in.Set {
 		if name, ok := strings.CutPrefix(k, "fields."); ok {
 			if err := s.setField(pi, o, name, v); err != nil {

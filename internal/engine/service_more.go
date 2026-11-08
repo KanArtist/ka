@@ -327,8 +327,9 @@ func (s *Service) TicketPath(id string) (string, *Store, error) {
 
 // ReplaceTicket commits a hand-edited ticket.md (ka edit with $EDITOR). The
 // edit is validated first and recorded as an update of the changed fields,
-// so it replays like any other operation.
-func (s *Service) ReplaceTicket(ctx context.Context, c Caller, id string, data []byte) (*WriteOut, error) {
+// so it replays like any other operation. A non-empty ifMatch requires the
+// file on disk to still have that blob SHA.
+func (s *Service) ReplaceTicket(ctx context.Context, c Caller, id string, data []byte, ifMatch string) (*WriteOut, error) {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 	st, pi, err := s.storeOf(id)
@@ -353,6 +354,7 @@ func (s *Service) ReplaceTicket(ctx context.Context, c Caller, id string, data [
 		return nil, Errf(CodeInvalid, "IDs never change; file a new ticket instead", "id changed from %s to %s", old.ID, nt.ID)
 	}
 	o := diffOp(&old, nt)
+	o.IfMatch = ifMatch
 	if nt.Status != old.Status {
 		if _, ok := pi.Cfg.StatusByName(nt.Status); !ok {
 			return nil, unknownStatus(pi.Cfg, nt.Status)

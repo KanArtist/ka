@@ -82,6 +82,16 @@ func TestCLIWorkflow(t *testing.T) {
 	if r := ka(t, dir, "template"); r.code != 0 || !strings.Contains(r.out, "id: DEMO-") {
 		t.Fatalf("template: %+v", r)
 	}
+	if r := ka(t, dir, "daemon", "openapi"); r.code != 0 || !strings.Contains(r.out, `"openapi": "3.1.0"`) {
+		t.Fatalf("daemon openapi: %+v", r)
+	}
+	t.Setenv("KA_RUNTIME_DIR", t.TempDir())
+	if r := ka(t, dir, "daemon", "status"); r.code != 1 || !strings.Contains(r.out, "no daemon") {
+		t.Fatalf("daemon status: %+v", r)
+	}
+	if r := ka(t, dir, "daemon", "--listen", "0.0.0.0:0"); r.code != 1 || !strings.Contains(r.err, "loopback") {
+		t.Fatalf("daemon on 0.0.0.0: %+v", r)
+	}
 	// Commits carry the actor and op; the author is the git identity.
 	log := testkit.Git(t, dir, "log", "-1", "--format=%an|%B")
 	if !strings.HasPrefix(log, "Test User|"+id+": ready → done") && !strings.Contains(log, "→ done") {

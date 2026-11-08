@@ -27,16 +27,16 @@ var ConfigKeys = []string{"id_suffix_length", "workflow", "kinds", "labels", "fi
 
 // Status is one workflow status.
 type Status struct {
-	Name     string
-	Category string
-	Blocked  bool
+	Name     string `json:"name"`
+	Category string `json:"category"`
+	Blocked  bool   `json:"blocked,omitempty"`
 }
 
 // FieldDef declares a custom field.
 type FieldDef struct {
-	Type        string
-	Values      []string // enum values
-	Description string
+	Type        string   `json:"type"`
+	Values      []string `json:"values,omitempty"` // enum values
+	Description string   `json:"description,omitempty"`
 }
 
 // Config is the effective data config of a project.

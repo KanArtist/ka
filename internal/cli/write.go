@@ -166,7 +166,7 @@ func editInEditor(ctx context.Context, x *IO, c *common, svc *engine.Service, ca
 			fmt.Fprintln(x.Out, "no changes")
 			return 0
 		}
-		w, err := svc.ReplaceTicket(ctx, caller, id, edited)
+		w, err := svc.ReplaceTicket(ctx, caller, id, edited, "")
 		if err == nil {
 			return emit(x, c, w, render.Write("updated", w))
 		}

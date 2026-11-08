@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/JumpKickOSS/ka/internal/cli"
 	"github.com/JumpKickOSS/ka/internal/engine"
@@ -24,7 +25,7 @@ func main() {
 		// Forward slashes keep the command valid in git's sh on Windows too.
 		engine.MergeDriverCommand = `"` + strings.ReplaceAll(exe, `\`, "/") + `" merge-driver %O %A %B %P`
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	os.Exit(cli.Run(ctx, &cli.IO{In: os.Stdin, Out: os.Stdout, Err: os.Stderr}, os.Args[1:]))
 }

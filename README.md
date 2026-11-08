@@ -6,9 +6,10 @@ Agents are the primary users; humans get a live window into what they are doing.
 - **Product requirements:** [docs/prd.md](docs/prd.md)
 - **The Store Spec (the on-disk contract):** [spec/v1/README.md](spec/v1/README.md)
 - **How the engine, CLI and MCP server work:** [docs/engine.md](docs/engine.md)
+- **The daemon and REST API:** [docs/api.md](docs/api.md)
 - **Migrating from KanArtist v0:** [docs/migration.md](docs/migration.md)
 
-## Status: M1 (engine, CLI, MCP stdio)
+## Status: M1 done; M2 (daemon and live UI) in progress
 
 | Piece | Where |
 |---|---|
@@ -17,10 +18,11 @@ Agents are the primary users; humans get a live window into what they are doing.
 | Engine: workspaces, index, queries, operations, sync with operation replay, merge driver | [`internal/engine/`](internal/engine/) |
 | `ka mcp`: 15 MCP tools with workspace-specific schemas | [`internal/mcpserver/`](internal/mcpserver/) |
 | The `ka` CLI | [`internal/cli/`](internal/cli/) |
+| `ka daemon`: REST `/api/v1`, OpenAPI 3.1, local token auth (M2) | [`internal/api/`](internal/api/) |
 | PRD scenarios, the multi-clone simulator, token budgets | [`internal/scenario/`](internal/scenario/) |
 | One-time v0 importer (repeatable until cut-over) | [`tools/migrate-v0/`](tools/migrate-v0/) |
 
-The daemon, REST/SSE API and web UI come in M2 ([PRD §21](docs/prd.md#21-milestones)).
+SSE, MCP over HTTP, presence and the web UI are the rest of M2 ([PRD §21](docs/prd.md#21-milestones)).
 
 ## Install
 
@@ -59,6 +61,7 @@ ka edit JK-7QK3M --set priority=P0 --add labels=cache   # no flags: $EDITOR
 ka move JK-7QK3M done -m "Fixed the race in the eviction thread."
 ka inbox / ka answer JK-7QK3M --choice 1 / ka approve JK-7QK3M
 ka sync / ka check / ka fix / ka doctor [--fix]
+ka daemon / ka daemon status / ka daemon stop   # REST API on 127.0.0.1:7711
 ```
 
 Every read command takes `--json`. `ka help` lists everything.

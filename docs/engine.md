@@ -12,6 +12,7 @@ This is how milestone M1 implements PRD §8–§11 and §14. The on-disk format 
 | `internal/engine` | Workspace discovery, the in-memory index, the query language, operations, sync and replay, the merge driver, `ka fix`, and the service API shared by every interface. |
 | `internal/render` | Compact text renderings used by both the CLI and MCP. |
 | `internal/mcpserver` | `ka mcp`: the MCP tools, resources and prompts over stdio. |
+| `internal/api` | `ka daemon`: REST and OpenAPI over HTTP (M2; see [api.md](api.md)). |
 | `internal/cli` | The `ka` commands. |
 | `internal/testkit`, `internal/scenario` | Throwaway remotes and clones; the PRD scenarios, the multi-clone simulator and the token budgets. |
 
@@ -177,9 +178,11 @@ room the rest leaves. Over every ready ticket of the migrated `jk` store, the ma
 
 ## Not in M1
 
-- The daemon, REST, SSE and the web UI arrive in M2. So does proxying `ka mcp` to a daemon.
+- SSE, MCP over HTTP, presence and the web UI arrive in M2, as does proxying `ka mcp` to a daemon.
+  The daemon and REST API have landed ([api.md](api.md)).
 - `runtime.sync.push: debounce` is not implemented. Stores push immediately unless the workspace
   sets `push: manual`.
 - `ka watch`, `ka open`, `ka config explain`, `ka project move`, `ka migrate`, `ka hooks install`,
   `ka completion`, `ka check --ci` annotations and SARIF, and interactive prompts for missing
-  arguments are not implemented.
+  arguments are not implemented. Each is a ticket in the `ka` store (`ka ls label:m1-follow-up`,
+  `label:m2`, `label:m3`, `label:later`).

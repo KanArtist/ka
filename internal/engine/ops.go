@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -39,6 +41,11 @@ type Op struct {
 	CommentName string          `json:"comment_name,omitempty"`
 
 	Check []CheckItem `json:"check,omitempty"`
+
+	// IfMatch, when set, requires ticket.md to still have this blob SHA
+	// (BlobSHA). It guards editor saves against lost updates; it is checked
+	// only on first application and never travels in Ka-Op.
+	IfMatch string `json:"-"`
 }
 
 // CheckItem marks one acceptance item, by index or by text.
@@ -65,6 +72,15 @@ func DecodeOp(s string) (*Op, error) {
 		return nil, fmt.Errorf("malformed Ka-Op: %v", err)
 	}
 	return &o, nil
+}
+
+// BlobSHA is git's SHA-1 object ID for a file's bytes. It identifies a
+// version of ticket.md for If-Match.
+func BlobSHA(data []byte) string {
+	h := sha1.New()
+	fmt.Fprintf(h, "blob %d\x00", len(data))
+	h.Write(data)
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // change is one file written (or removed, when Data is nil) by an operation.
@@ -137,6 +153,9 @@ func apply(env applyEnv, o *Op) ([]change, string, error) {
 		return nil, "", err
 	}
 	t := lt.t
+	if o.IfMatch != "" && o.IfMatch != BlobSHA(lt.raw) {
+		return nil, "", Errf(CodeConflict, "reload the ticket, reapply your edit and save again", "%s changed since you loaded it", o.ID)
+	}
 	if t.MovedTo != "" {
 		return nil, "", Errf(CodeMoved, "operate on "+t.MovedTo+" instead", "%s was moved to %s", o.ID, t.MovedTo)
 	}
