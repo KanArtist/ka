@@ -29,10 +29,20 @@ Agents are the primary users; humans get a live window into what they are doing.
 
 ## Install
 
-Requires git 2.40+ at run time. Until the first release, build it with Go 1.27+:
+Requires git 2.40+ at run time.
 
 ```bash
-go install github.com/JumpKickOSS/ka/cmd/ka@latest
+brew install jumpkickoss/tap/ka                  # macOS, Linux
+scoop bucket add jumpkick https://github.com/JumpKickOSS/scoop-bucket
+scoop install jumpkick/ka                        # Windows
+go install github.com/JumpKickOSS/ka/cmd/ka@latest   # anywhere, with Go 1.27+
+docker run --rm ghcr.io/jumpkickoss/ka version   # the container image (a team daemon)
+```
+
+Or download an archive, `.deb` or `.rpm` from
+[the releases](https://github.com/JumpKickOSS/ka/releases/latest).
+
+```bash
 source <(ka completion bash)          # optional; also zsh, fish, powershell
 ```
 

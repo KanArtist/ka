@@ -12,10 +12,12 @@ share the store with a teammate.
 You need git 2.40 or later.
 
 ```bash
-# A release binary (Linux, macOS, Windows; amd64 and arm64):
-#   https://github.com/JumpKickOSS/ka/releases  → unpack ka (ka.exe) onto your PATH
-# or with Go 1.27+:
-go install github.com/JumpKickOSS/ka/cmd/ka@latest
+brew install jumpkickoss/tap/ka                  # macOS, Linux
+scoop bucket add jumpkick https://github.com/JumpKickOSS/scoop-bucket
+scoop install jumpkick/ka                        # Windows
+go install github.com/JumpKickOSS/ka/cmd/ka@latest   # anywhere, with Go 1.27+
+docker run --rm ghcr.io/jumpkickoss/ka version   # the container image (a team daemon)
+# or an archive, .deb or .rpm from https://github.com/JumpKickOSS/ka/releases/latest
 
 ka version
 ```
