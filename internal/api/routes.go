@@ -96,9 +96,13 @@ type actorList struct {
 }
 
 func (s *Server) workspaceRoutes() {
-	reg(s, get("getWorkspace", "/workspace", "The workspace: stores, projects, default project and the daemon's human", "workspace"),
-		func(ctx context.Context, in *struct{}) (*body[*engine.WorkspaceOut], error) {
-			return &body[*engine.WorkspaceOut]{s.svc.WorkspaceInfo()}, nil
+	reg(s, get("getWorkspace", "/workspace", "The workspace: stores, projects, default project and who you are", "workspace"),
+		func(ctx context.Context, in *struct{ CallerHeaders }) (*body[*engine.WorkspaceOut], error) {
+			out := s.svc.WorkspaceInfo()
+			if in.Principal != "" {
+				out.You = s.caller(in.CallerHeaders).Actor // remote mode: the authenticated person
+			}
+			return &body[*engine.WorkspaceOut]{out}, nil
 		})
 	reg(s, get("listStores", "/stores", "Stores with their sync state", "workspace"),
 		func(ctx context.Context, in *struct{}) (*body[storeList], error) {

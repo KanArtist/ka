@@ -85,6 +85,10 @@ func TestRemoteMode(t *testing.T) {
 	if d, _ := svc.Get(engineGet(id)); d.Claim == nil || d.Claim.By != "agent/claude" {
 		t.Fatalf("claim: %+v", d.Claim)
 	}
+	// "You" is the token's actor.
+	if rec := send("GET", "/api/v1/workspace", host, "203.0.113.5:4000", map[string]string{"Authorization": "Bearer " + tok}, nil); !strings.Contains(rec.Body.String(), `"you":"bob"`) {
+		t.Fatalf("workspace you: %s", rec.Body)
+	}
 	// A client cannot forge the principal header.
 	by, _ = createdBy(send("POST", "/api/v1/tickets", host, "203.0.113.5:4000", map[string]string{"Authorization": "Bearer " + tok, PrincipalHeader: "mallory"}, ticket))
 	if by != "bob" {

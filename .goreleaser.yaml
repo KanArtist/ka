@@ -1,0 +1,140 @@
+# GoReleaser v2: binaries for six platforms, archives, checksums, SBOMs,
+# keyless cosign signatures, a container image, deb/rpm, and Homebrew,
+# Scoop and winget manifests. Run by .github/workflows/release.yml on a v* tag.
+version: 2
+project_name: ka
+
+before:
+  hooks:
+    - go mod download
+
+builds:
+  - id: ka
+    main: ./cmd/ka
+    binary: ka
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: ka
+    # No version in the name, so releases/latest/download/ka_linux_amd64.tar.gz
+    # always works (the check action relies on it).
+    name_template: "ka_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+
+sboms:
+  - artifacts: archive
+
+signs:
+  - cmd: cosign
+    artifacts: checksum
+    signature: "${artifact}.sig"
+    certificate: "${artifact}.pem"
+    args: ["sign-blob", "--yes", "--output-signature=${signature}", "--output-certificate=${certificate}", "${artifact}"]
+
+nfpms:
+  - id: packages
+    package_name: ka
+    file_name_template: "ka_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    vendor: JumpKick
+    homepage: https://github.com/JumpKickOSS/ka
+    maintainer: Bryan Sant <BryanSant@users.noreply.github.com>
+    description: KanArtist, a git-native work tracker for AI agents and the humans who watch them.
+    license: Apache-2.0
+    formats: [deb, rpm]
+    dependencies:
+      - git
+
+dockers_v2:
+  - id: ka
+    dockerfile: Dockerfile.release
+    images:
+      - ghcr.io/jumpkickoss/ka
+    tags:
+      - "{{ .Version }}"
+      - "{{ if not .Prerelease }}latest{{ end }}"
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    labels:
+      org.opencontainers.image.source: https://github.com/JumpKickOSS/ka
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.licenses: Apache-2.0
+
+docker_signs:
+  - cmd: cosign
+    artifacts: images
+    args: ["sign", "--yes", "${artifact}"]
+
+# Package managers. Each needs its repository and a token secret (see
+# docs/releasing.md); with the token unset, the step is skipped.
+homebrew_casks:
+  - name: ka
+    repository:
+      owner: JumpKickOSS
+      name: homebrew-tap
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    skip_upload: '{{ if .Env.TAP_GITHUB_TOKEN }}false{{ else }}true{{ end }}'
+    directory: Casks
+    homepage: https://github.com/JumpKickOSS/ka
+    description: Git-native work tracker for AI agents and the humans who watch them
+    license: Apache-2.0
+    binaries: [ka]
+
+scoops:
+  - name: ka
+    repository:
+      owner: JumpKickOSS
+      name: scoop-bucket
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    skip_upload: '{{ if .Env.TAP_GITHUB_TOKEN }}false{{ else }}true{{ end }}'
+    homepage: https://github.com/JumpKickOSS/ka
+    description: Git-native work tracker for AI agents and the humans who watch them
+    license: Apache-2.0
+    depends: [git]
+
+winget:
+  - name: ka
+    publisher: JumpKick
+    short_description: Git-native work tracker for AI agents and the humans who watch them
+    license: Apache-2.0
+    homepage: https://github.com/JumpKickOSS/ka
+    package_identifier: JumpKick.ka
+    repository:
+      owner: JumpKickOSS
+      name: winget-pkgs
+      branch: "ka-{{ .Version }}"
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+      pull_request:
+        enabled: true
+        base:
+          owner: microsoft
+          name: winget-pkgs
+          branch: master
+    skip_upload: '{{ if .Env.TAP_GITHUB_TOKEN }}false{{ else }}true{{ end }}'
+
+release:
+  github:
+    owner: JumpKickOSS
+    name: ka
+  draft: true
+  prerelease: auto
+
+changelog:
+  use: github
+  sort: asc

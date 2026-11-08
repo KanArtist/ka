@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"syscall"
 
@@ -14,10 +15,15 @@ import (
 	"github.com/JumpKickOSS/ka/internal/engine"
 )
 
-var version = "0.1.0-m1"
+// version is set by release builds (-ldflags "-X main.version=1.2.3").
+var version = "0.1.0-dev"
 
 func main() {
 	cli.Version = version
+	// go install github.com/JumpKickOSS/ka/cmd/ka@v1.2.3 records the module version.
+	if bi, ok := debug.ReadBuildInfo(); ok && strings.HasSuffix(version, "-dev") && strings.HasPrefix(bi.Main.Version, "v") && !strings.HasPrefix(bi.Main.Version, "v0.0.0-") {
+		cli.Version = strings.TrimPrefix(bi.Main.Version, "v")
+	}
 	if exe, err := os.Executable(); err == nil {
 		if real, err := filepath.EvalSymlinks(exe); err == nil {
 			exe = real
