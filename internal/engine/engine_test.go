@@ -437,3 +437,15 @@ func TestRestorePreservedOperation(t *testing.T) {
 		t.Fatal("unknown comment accepted")
 	}
 }
+
+func TestActivityMapsGitAuthorsToActors(t *testing.T) {
+	e := newEnv(t, map[string]string{".ka/actors.yml": "humans:\n  tester:\n    name: Test User\n    aliases:\n      - Test User\n"})
+	svc, _ := e.clone()
+	out, err := svc.Activity(ctx, ActivityIn{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Events) == 0 || out.Events[0].Actor != "tester" {
+		t.Fatalf("hand-made commit actor: %+v", out.Events)
+	}
+}

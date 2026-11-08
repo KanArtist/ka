@@ -125,7 +125,7 @@ func (ix *Index) catchUp() {
 		if paths == nil || len(paths) > 0 {
 			actor := ""
 			if ix.emit != nil && prev != nil && prev.head != "" && cur.head != "" {
-				actor = commitsActor(s, prev.head, cur.head)
+				actor = ix.commitsActor(s, prev.head, cur.head)
 			}
 			ix.refreshBy(s, paths, actor)
 		}
@@ -137,7 +137,7 @@ func (ix *Index) catchUp() {
 
 // commitsActor names who made the commits in old..new when it is one actor:
 // the Ka-Actor trailer, else the git author's name.
-func commitsActor(s *Store, old, new string) string {
+func (ix *Index) commitsActor(s *Store, old, new string) string {
 	cs, err := s.git.Log(context.Background(), old+".."+new, false)
 	if err != nil || len(cs) == 0 {
 		return ""
@@ -146,7 +146,7 @@ func commitsActor(s *Store, old, new string) string {
 	for _, c := range cs {
 		a := c.Trailers["Ka-Actor"]
 		if a == "" {
-			a, _, _ = strings.Cut(c.Author, " <")
+			a = ix.authorActor(c.Author)
 		}
 		if actor != "" && a != actor {
 			return ""
@@ -498,3 +498,34 @@ func (e ixEnv) ref(id string) (bool, bool) {
 
 // Workspace returns the kaspec workspace for validation (ka check).
 func (ix *Index) Workspace() *kaspec.Workspace { return ix.kws }
+
+// authorActor maps a git author ("Name <email>") written without a Ka-Actor
+// trailer to an actor handle through the registry's emails and aliases, so a
+// hand-made commit by "Bryan Sant" shows as bsant. Unknown authors keep their
+// name.
+func (ix *Index) authorActor(author string) string {
+	name, email, _ := strings.Cut(author, " <")
+	email = strings.TrimSuffix(email, ">")
+	ix.mu.RLock()
+	defer ix.mu.RUnlock()
+	if ix.actors == nil {
+		return name
+	}
+	for _, h := range sortedKeys(ix.actors.Humans) {
+		hu := ix.actors.Humans[h]
+		if strings.EqualFold(h, name) {
+			return h
+		}
+		for _, e := range hu.Emails {
+			if email != "" && strings.EqualFold(e, email) {
+				return h
+			}
+		}
+		for _, a := range hu.Aliases {
+			if strings.EqualFold(a, name) {
+				return h
+			}
+		}
+	}
+	return name
+}

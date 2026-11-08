@@ -73,8 +73,7 @@ func (s *Service) commitEvents(st *Store, c gitx.Commit) []Event {
 	if t, err := time.Parse(time.RFC3339, c.Date); err == nil {
 		at = t.UTC().Format("2006-01-02T15:04:05Z")
 	}
-	author, _, _ := strings.Cut(c.Author, " <")
-	base := Event{At: at, Store: st.Name, Commit: short(c.SHA), Actor: author}
+	base := Event{At: at, Store: st.Name, Commit: short(c.SHA), Actor: s.ix.authorActor(c.Author)}
 	if a := c.Trailers["Ka-Actor"]; a != "" {
 		base.Actor = a
 	}
