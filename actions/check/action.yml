@@ -5,28 +5,32 @@ branding:
   color: green
 inputs:
   path:
-    description: Store directories to check, space-separated (default: the repository root).
+    description: "Store directories to check, space-separated (default: the repository root)."
     default: "."
   version:
-    description: The ka release to use, such as v1.0.0, or "latest".
+    description: "The ka release to use, such as v1.0.0, or \"latest\"."
     default: latest
   format:
     description: "github (annotations on the pull request) or sarif (writes sarif-file for github/codeql-action/upload-sarif)."
     default: github
   sarif-file:
-    description: Where to write the SARIF report when format is sarif.
+    description: "Where to write the SARIF report when format is sarif."
     default: ka-check.sarif
+  skip-install:
+    description: "Use the ka already on PATH instead of downloading it."
+    default: "false"
   args:
-    description: Extra arguments for ka check, such as --map URL=DIR for config parents.
+    description: "Extra arguments for ka check, such as --map URL=DIR for config parents."
     default: ""
 outputs:
   sarif-file:
-    description: The SARIF report path (format sarif).
+    description: "The SARIF report path (format sarif)."
     value: ${{ steps.check.outputs.sarif-file }}
 runs:
   using: composite
   steps:
     - name: Install ka
+      if: inputs.skip-install != 'true'
       shell: bash
       env:
         KA_VERSION: ${{ inputs.version }}

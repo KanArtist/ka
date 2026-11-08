@@ -36,6 +36,7 @@ Inputs:
 | `version` | `latest` | A ka release tag. Before the first release, the action builds ka with `go install` (add `actions/setup-go`). |
 | `format` | `github` | `github` annotations, or `sarif`. |
 | `sarif-file` | `ka-check.sarif` | Where the SARIF report goes. |
+| `skip-install` | `false` | Use the `ka` already on `PATH`. |
 | `args` | | Extra `ka check` arguments, such as `--map git@github.com:org/ka-org.git=../org` when a config parent is checked out beside the store. |
 
 Other CI systems run the same command: `ka check --ci` exits 1 on errors or warnings; add

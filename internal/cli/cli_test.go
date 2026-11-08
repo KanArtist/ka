@@ -93,7 +93,7 @@ func TestCLIWorkflow(t *testing.T) {
 	if r := ka(t, dir, "daemon", "status"); r.code != 1 || !strings.Contains(r.out, "no daemon") {
 		t.Fatalf("daemon status: %+v", r)
 	}
-	if r := ka(t, dir, "daemon", "--listen", "0.0.0.0:0"); r.code != 1 || !strings.Contains(r.err, "loopback") {
+	if r := ka(t, dir, "daemon", "--listen", "0.0.0.0:0"); r.code != 1 || !strings.Contains(r.err, "without authentication") {
 		t.Fatalf("daemon on 0.0.0.0: %+v", r)
 	}
 	// Commits carry the actor and op; the author is the git identity.

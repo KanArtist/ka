@@ -282,7 +282,7 @@ func (s *Service) StoresForRepo(urls ...string) []string {
 }
 
 func repoKey(u string) string {
-	u = strings.TrimSpace(u)
+	u = strings.ReplaceAll(strings.TrimSpace(u), `\`, "/")
 	if u == "" {
 		return ""
 	}
