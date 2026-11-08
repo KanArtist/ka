@@ -150,3 +150,32 @@ func TestExtendsParentIsReadOnlyAndLayersConfig(t *testing.T) {
 		t.Fatalf("org replaced kinds; chore should be rejected: %v", err)
 	}
 }
+
+// An extends parent known only by URL is cloned once online; offline opens
+// (ka check) must use that clone rather than drop the parent's config.
+func TestOfflineOpenUsesExistingParentClone(t *testing.T) {
+	gitEnv(t)
+	root := t.TempDir()
+	org := filepath.Join(root, "org")
+	if _, err := InitStore(ctx, InitOptions{Dir: org, Name: "org"}); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(org, ".ka", "config.yml"), []byte("kinds:\n  - feature\n  - spike\n"), 0o644)
+	run(t, org, "add", "-A")
+	run(t, org, "commit", "-qm", "org")
+	bare := filepath.Join(root, "org.git")
+	run(t, root, "clone", "-q", "--bare", org, bare)
+	jk := filepath.Join(root, "jk")
+	if _, err := InitStore(ctx, InitOptions{Dir: jk, Name: "jk", Project: "jk", Extends: bare}); err != nil {
+		t.Fatal(err)
+	}
+	run(t, jk, "add", "-A")
+	run(t, jk, "commit", "-qm", "jk")
+	if ws, err := Open(ctx, OpenOptions{Dir: jk}); err != nil || len(ws.Stores) != 2 {
+		t.Fatalf("online open: %v %+v", err, ws)
+	}
+	ws, err := Open(ctx, OpenOptions{Dir: jk, Offline: true})
+	if err != nil || len(ws.Stores) != 2 || !ws.Stores[1].ReadOnly {
+		t.Fatalf("offline open dropped the parent: %v %+v", err, ws)
+	}
+}

@@ -422,11 +422,8 @@ func Open(ctx context.Context, o OpenOptions) (*Workspace, error) {
 				if !isStoreDir(dir) {
 					continue // reported by ka check as config_parent_unavailable
 				}
-			} else if offline {
-				if _, ok := lookupMap(o.Map, p.URL); !ok {
-					continue
-				}
 			}
+			// Offline, add uses an existing managed clone and never clones.
 			if _, err := add(sp, true); err != nil {
 				continue // unavailable parents are diagnostics, not fatal
 			}
