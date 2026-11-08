@@ -69,7 +69,7 @@
                     }
                     @case ('title') {
                       <span class="title">
-                        @if (t.blocked) {
+                        @if (t.blocked && t.status !== 'blocked') {
                           <span class="tag blocked">blocked</span>
                         }
                         {{ t.title }}

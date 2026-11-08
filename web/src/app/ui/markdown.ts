@@ -31,9 +31,30 @@ const docLink: TokenizerAndRendererExtension = {
   },
 };
 
+/** Ticket IDs (spec §3.1) standing alone in text open in the side panel. */
+const TICKET_ID = /^[A-Z][A-Z0-9]{0,9}-[0-9A-HJKMNP-TV-Z]{5,8}(?![A-Za-z0-9_-])/;
+const ticketLink: TokenizerAndRendererExtension = {
+  name: 'ticketLink',
+  level: 'inline',
+  start(src: string) {
+    const m = /(?<![A-Za-z0-9_\-/.#])[A-Z][A-Z0-9]{0,9}-[0-9A-HJKMNP-TV-Z]{5,8}(?![A-Za-z0-9_-])/.exec(src);
+    return m ? m.index : undefined;
+  },
+  tokenizer(this: { lexer: { state: { inLink: boolean } } }, src: string) {
+    if (this.lexer.state.inLink) return undefined;
+    const m = TICKET_ID.exec(src);
+    if (m) return { type: 'ticketLink', raw: m[0] };
+    return undefined;
+  },
+  renderer(t) {
+    const id = (t as unknown as { raw: string }).raw;
+    return `<a class="ticket-ref" href="?peek=${esc(id)}">${esc(id)}</a>`;
+  },
+};
+
 const md = new Marked({ gfm: true, async: false });
 md.use({
-  extensions: [docLink],
+  extensions: [docLink, ticketLink],
   walkTokens(token) {
     // [text](projects/jk/docs/a.md) opens the doc in the app.
     if (token.type === 'link') {
@@ -60,12 +81,17 @@ export function renderMarkdown(src: string | undefined): string {
 
 /**
  * Click handler for containers of rendered markdown: in-app links (to
- * /docs, or ?peek=) navigate with the router instead of reloading.
+ * /docs, or ?peek=ID from ticket references) navigate with the router instead of reloading.
  */
 export function followInternalLink(e: MouseEvent, router: Router): void {
   if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
   const a = (e.target as HTMLElement | null)?.closest('a');
   const href = a?.getAttribute('href');
+  if (href?.startsWith('?peek=')) {
+    e.preventDefault();
+    void router.navigate([], { queryParams: { peek: decodeURIComponent(href.slice(6)) }, queryParamsHandling: 'merge' });
+    return;
+  }
   if (!href || !href.startsWith('/') || href.startsWith('//')) return;
   e.preventDefault();
   void router.navigateByUrl(href);

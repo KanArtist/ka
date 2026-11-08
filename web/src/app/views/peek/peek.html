@@ -3,7 +3,7 @@
     <span class="id">{{ id() }}</span>
     @if (detail(); as d) {
       <button #statusBtn type="button" class="status prop-btn" [attr.data-cat]="category()" [disabled]="!writable()" (click)="openMenu('status', statusBtn)" title="Change status (s)"><span class="dot" [attr.data-cat]="category()"></span>{{ d.status }}</button>
-      @if (d.blocked) {
+      @if (d.blocked && d.status !== 'blocked') {
         <span class="flag blocked">blocked</span>
       }
     }

@@ -116,9 +116,9 @@
                   }
                 </div>
                 <p class="title">{{ t.title }}</p>
-                @if ((show('kind') && t.kind) || (show('labels') && t.labels?.length) || (show('acceptance') && t.acceptance) || t.blocked) {
+                @if ((show('kind') && t.kind) || (show('labels') && t.labels?.length) || (show('acceptance') && t.acceptance) || (t.blocked && t.status !== 'blocked')) {
                   <div class="line3">
-                    @if (t.blocked) {
+                    @if (t.blocked && t.status !== 'blocked') {
                       <span class="tag blocked">blocked</span>
                     }
                     @if (show('kind') && t.kind) {
