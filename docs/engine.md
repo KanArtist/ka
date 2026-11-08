@@ -246,12 +246,8 @@ room the rest leaves. Over every ready ticket of the migrated `jk` store, the ma
   four things: every accepted change is present in a fresh clone; IDs are unique; history is
   linear; and every process converged.
 
-## Not in M1
+## Not yet built
 
-- The web UI arrives in M2. The daemon, REST API, SSE events, MCP over HTTP, the `ka mcp` proxy
-  and presence have landed ([api.md](api.md)). CLI commands still run in-process; the daemon
-  notices their commits within 250 ms.
-- `ka watch`, `ka migrate`, `ka hooks install`,
-  `ka completion`, `ka check --ci` annotations and SARIF, and interactive prompts for missing
-  arguments are not implemented. Each is a ticket in the `ka` store (`ka ls label:m1-follow-up`,
-  `label:m2`, `label:m3`, `label:later`).
+- `ka migrate` (a store upgrade path) waits for a Store Spec v2.
+- The roadmap/milestones view, manual ranking, importers and notifications are later work
+  (PRD §21).

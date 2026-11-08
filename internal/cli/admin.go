@@ -392,6 +392,15 @@ func cmdDoctor(ctx context.Context, x *IO, args []string) int {
 
 // ---- store management -------------------------------------------------------------
 
+// isBareRepo reports whether dir is a bare git repository: a local remote
+// to clone, not a checkout to attach.
+func isBareRepo(dir string) bool {
+	_, e1 := os.Stat(filepath.Join(dir, "HEAD"))
+	_, e2 := os.Stat(filepath.Join(dir, "objects"))
+	_, e3 := os.Stat(filepath.Join(dir, ".ka", "store.yml"))
+	return e1 == nil && e2 == nil && e3 != nil
+}
+
 func cmdStore(ctx context.Context, x *IO, args []string) int {
 	fl, c := newFlags("store", "ls | add URL|PATH [--name N] [--branch B] | rm NAME", x)
 	name := fl.String("name", "", "store name")
@@ -423,7 +432,7 @@ func cmdStore(ctx context.Context, x *IO, args []string) int {
 		if fi, err := os.Stat(filepath.Join(x.Dir, target)); err == nil && fi.IsDir() && !filepath.IsAbs(target) {
 			target = filepath.Join(x.Dir, target)
 		}
-		if fi, err := os.Stat(target); err == nil && fi.IsDir() {
+		if fi, err := os.Stat(target); err == nil && fi.IsDir() && !isBareRepo(target) {
 			root, err := findStore(target)
 			if err != nil {
 				return fail(x, c, err)

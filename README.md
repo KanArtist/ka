@@ -3,36 +3,37 @@
 A work tracker for teams whose work is mostly done by AI agents, with git as the database.
 Agents are the primary users; humans get a live window into what they are doing.
 
-- **Product requirements:** [docs/prd.md](docs/prd.md)
-- **The Store Spec (the on-disk contract):** [spec/v1/README.md](spec/v1/README.md)
-- **How the engine, CLI and MCP server work:** [docs/engine.md](docs/engine.md)
-- **The daemon and REST API:** [docs/api.md](docs/api.md)
-- **Migrating from KanArtist v0:** [docs/migration.md](docs/migration.md)
+**New here? Start with [Getting started](docs/getting-started.md).** All documentation:
+[docs/](docs/README.md).
 
-## Status: M1 done; M2 (daemon and live UI) built, in daily-use trial
+- **For agents:** [docs/agent-guide.md](docs/agent-guide.md)
+- **Running a team daemon:** [docs/operations.md](docs/operations.md)
+- **The Store Spec (the on-disk contract):** [spec/v1/README.md](spec/v1/README.md)
+- **Product requirements:** [docs/prd.md](docs/prd.md)
+
+## Status: M1 and M2 done; M3 and M4 built, awaiting review; 1.0 not yet released
 
 | Piece | Where |
 |---|---|
 | Store Spec v1: prose, JSON Schemas, built-in defaults, conformance corpus | [`spec/v1/`](spec/v1/) |
-| `kaspec`: parse, canonical format, config layering, validation | [`pkg/kaspec/`](pkg/kaspec/) |
+| `kaspec`: parse, canonical format, config layering with locks, validation | [`pkg/kaspec/`](pkg/kaspec/) |
 | Engine: workspaces, index, queries, operations, sync with operation replay, merge driver | [`internal/engine/`](internal/engine/) |
 | `ka mcp`: 15 MCP tools with workspace-specific schemas | [`internal/mcpserver/`](internal/mcpserver/) |
-| The `ka` CLI | [`internal/cli/`](internal/cli/) |
-| `ka daemon`: REST `/api/v1`, OpenAPI 3.1, SSE events, MCP over HTTP, presence, local token auth (M2) | [`internal/api/`](internal/api/) |
-| The web UI (Angular, embedded in the binary), opened with `ka open` (M2) | [`web/`](web/) |
-| PRD scenarios, the multi-clone simulator, token budgets | [`internal/scenario/`](internal/scenario/) |
-| One-time v0 importer (repeatable until cut-over) | [`tools/migrate-v0/`](tools/migrate-v0/) |
-
-M2's pieces have all landed: the daemon, REST, SSE, MCP over HTTP, presence, and the web UI's
-Activity, Board, Ticket peek, Agents and Inbox views. M2 closes after measuring its latency targets
-and using it daily on the migrated stores ([PRD §21](docs/prd.md#21-milestones)).
+| The `ka` CLI, with prompts, completion, `ka watch`, hooks | [`internal/cli/`](internal/cli/) |
+| `ka daemon`: REST, OpenAPI 3.1, SSE, MCP over HTTP, presence, remote mode (tokens, proxies), webhooks, metrics | [`internal/api/`](internal/api/) |
+| Web UI (Angular, embedded): Activity, Board (drag and drop, saved boards), Table, ticket editing, Agents, Inbox, Docs, Sync & health, Settings | [`web/`](web/) |
+| PRD scenarios S1–S9, the multi-clone simulator, token budgets | [`internal/scenario/`](internal/scenario/) |
+| `ka check --ci` GitHub Action | [`actions/check/`](actions/check/) |
+| Releases (GoReleaser, container image) — not yet published | [`.goreleaser.yaml`](.goreleaser.yaml), [`Dockerfile`](Dockerfile) |
+| One-time v0 importer | [`tools/migrate-v0/`](tools/migrate-v0/) |
 
 ## Install
 
-Requires Go 1.27+ to build, and git 2.40+ at run time.
+Requires git 2.40+ at run time. Until the first release, build it with Go 1.27+:
 
 ```bash
 go install github.com/JumpKickOSS/ka/cmd/ka@latest
+source <(ka completion bash)          # optional; also zsh, fish, powershell
 ```
 
 ## For agents (MCP)
@@ -65,21 +66,25 @@ ka move JK-7QK3M done -m "Fixed the race in the eviction thread."
 ka inbox / ka answer JK-7QK3M --choice 1 / ka approve JK-7QK3M
 ka sync / ka check / ka fix / ka doctor [--fix]
 ka open [ID]                         # the web UI (starts the daemon if needed)
+ka watch [QUERY]                     # the live activity stream in the terminal
+ka config explain [KEY]              # effective config and the file that set each value
+ka project move KEY --to STORE       # re-home a project; IDs stay the same
+ka hooks install                     # pre-commit: ka fmt --staged && ka check --staged
 ka daemon / ka daemon status / ka daemon stop   # REST API on 127.0.0.1:7711
+ka token create --actor NAME         # API tokens for a remote daemon (docs/operations.md)
 ```
 
 Every read command takes `--json`. `ka help` lists everything.
 
 ## Development
 
+See [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ```bash
 go test ./...                                          # everything (the S5 simulator takes ~30 s)
 go test -short -race ./...                             # what CI runs on all three OSes
 KA_V0_CORPUS=~/src/oss/kanartist go test ./tools/...   # plus the real v0 corpus, if you have it
 ```
-
-Spec changes and code changes travel together: tests fail if the diagnostic-code table in the spec,
-the built-in defaults, the JSON Schemas and the Go validator disagree.
 
 ## License
 

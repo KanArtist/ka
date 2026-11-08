@@ -385,3 +385,15 @@ func TestTokensAndRemoteRefusal(t *testing.T) {
 		t.Fatalf("after rm: %+v", r)
 	}
 }
+
+func TestStoreAddBareRepo(t *testing.T) {
+	testkit.GitEnv(t)
+	r := testkit.NewRemote(t, nil)
+	home := t.TempDir()
+	if res := ka(t, home, "store", "add", r.Path, "--name", "team"); res.code != 0 {
+		t.Fatalf("store add: %+v", res)
+	}
+	if res := ka(t, home, "new", "-t", "From a teammate"); res.code != 0 || !strings.Contains(res.out, "pushed") {
+		t.Fatalf("new via managed clone: %+v", res)
+	}
+}
