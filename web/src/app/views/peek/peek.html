@@ -1,4 +1,4 @@
-<article class="peek" [class.panel]="panel()" [attr.aria-label]="'Ticket ' + id()">
+<article class="peek" [class.panel]="panel()" [attr.aria-label]="'Ticket ' + id()" (click)="linkClick($event)">
   <header class="top">
     <span class="id">{{ id() }}</span>
     @if (detail(); as d) {

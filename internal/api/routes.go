@@ -153,6 +153,21 @@ func (s *Server) workspaceRoutes() {
 			}
 			return &body[engine.MoveProjectOut]{*out}, nil
 		})
+	reg(s, get("listDocs", "/docs", "Files under projects/<key>/docs/", "workspace"),
+		func(ctx context.Context, in *struct {
+			Project string `query:"project" doc:"Only this project's docs."`
+		}) (*body[*engine.DocsOut], error) {
+			out, err := s.svc.Docs(in.Project)
+			return &body[*engine.DocsOut]{out}, err
+		})
+	reg(s, get("getDoc", "/projects/{key}/doc", "One project doc and the tickets that mention it", "workspace"),
+		func(ctx context.Context, in *struct {
+			Key  string `path:"key"`
+			Path string `query:"path" required:"true" doc:"Relative to the project's docs/ directory."`
+		}) (*body[*engine.DocOut], error) {
+			out, err := s.svc.Doc(in.Key, in.Path)
+			return &body[*engine.DocOut]{out}, err
+		})
 	reg(s, get("listBoards", "/boards", "Saved boards", "workspace"),
 		func(ctx context.Context, in *struct{}) (*body[boardList], error) {
 			return &body[boardList]{boardList{s.svc.Boards()}}, nil

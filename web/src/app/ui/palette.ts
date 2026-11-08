@@ -187,6 +187,7 @@ export class Palette {
       { key: 'c:activity', kind: 'command', label: 'Go to Activity', hint: 'G A', run: go('/activity') },
       { key: 'c:board', kind: 'command', label: 'Go to Board', hint: 'G B', run: go('/board') },
       { key: 'c:table', kind: 'command', label: 'Go to Table', hint: 'G T', run: go('/table') },
+      { key: 'c:docs', kind: 'command', label: 'Go to Docs', hint: 'G D', run: go('/docs') },
       { key: 'c:agents', kind: 'command', label: 'Go to Agents', hint: 'G G', run: go('/agents') },
       { key: 'c:inbox', kind: 'command', label: 'Go to Inbox', hint: 'G I', run: go('/inbox') },
       {

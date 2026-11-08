@@ -360,3 +360,39 @@ func TestSaveAndDeleteBoard(t *testing.T) {
 		t.Fatalf("log:\n%s", log)
 	}
 }
+
+func TestDocsAndBacklinks(t *testing.T) {
+	e := newEnv(t, map[string]string{
+		"projects/jk/docs/design/cache.md": "Intro line\n\n# Cache design\n\nBody.\n",
+		"projects/jk/docs/notes.txt":       "plain\n",
+	})
+	svc, _ := e.clone()
+	me := svc.CallerFor("tester", "")
+	out, err := svc.Create(ctx, me, []CreateIn{
+		{Title: "Implement the cache", Body: "See projects/jk/docs/design/cache.md for the design."},
+		{Title: "Unrelated"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := out.Created[1].ID
+	if _, err := svc.Comment(ctx, me, CommentIn{ID: other, Body: "Also relevant: projects/jk/docs/design/cache.md"}); err != nil {
+		t.Fatal(err)
+	}
+	list, err := svc.Docs("")
+	if err != nil || len(list.Docs) != 2 || list.Docs[0].Path != "design/cache.md" || list.Docs[0].Title != "Cache design" || list.Docs[1].Title != "notes.txt" {
+		t.Fatalf("docs: %+v %v", list, err)
+	}
+	d, err := svc.Doc("jk", "design/cache.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Title != "Cache design" || !d.Text || d.StorePath != "projects/jk/docs/design/cache.md" || len(d.Backlinks) != 2 {
+		t.Fatalf("doc: %+v", d)
+	}
+	for _, bad := range []string{"../project.yml", "../../.ka/store.yml", "", "design"} {
+		if _, err := svc.Doc("jk", bad); err == nil {
+			t.Fatalf("Doc(%q) should fail", bad)
+		}
+	}
+}

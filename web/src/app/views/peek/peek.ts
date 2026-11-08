@@ -1,10 +1,10 @@
 import { ChangeDetectionStrategy, Component, ElementRef, HostListener, computed, effect, inject, input, output, signal, untracked, viewChild } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
-import { marked } from 'marked';
 import { Api, ApiError, CommentOut, Detail, KaEvent } from '../../api/api';
 import { Actions } from '../../actions';
 import { Live } from '../../live';
 import { Actor, isAgent } from '../../ui/actor';
+import { followInternalLink, renderMarkdown } from '../../ui/markdown';
 import { Menu, MenuOption } from '../../ui/menu';
 import { Clock, ago, exact } from '../../ui/time';
 import { describe } from '../activity/describe';
@@ -232,6 +232,10 @@ export class Peek {
     }));
   }
 
+  protected linkClick(e: MouseEvent): void {
+    followInternalLink(e, this.router);
+  }
+
   protected expand(): void {
     void this.router.navigate(['/ticket', this.id()]);
   }
@@ -406,8 +410,4 @@ function isTyping(e: KeyboardEvent): boolean {
   return !!t && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName));
 }
 
-/** Markdown to HTML. Angular's [innerHTML] sanitizer strips scripts, handlers and unsafe URLs. */
-function render(md: string | undefined): string {
-  if (!md?.trim()) return '';
-  return marked.parse(md, { gfm: true, async: false }) as string;
-}
+const render = renderMarkdown;
