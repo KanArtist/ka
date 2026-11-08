@@ -152,8 +152,9 @@ when it connected and was last seen, its last method and tool call, the ticket t
 about (for `ka_next`, the ticket it got), the error code if the call failed, and a call count.
 
 Changes stream as `presence.changed` events with `state` `connected`, `active` or `disconnected`.
-A session leaves presence when it closes, or when the daemon's 30-second keep-alive pings stop
-reaching it; one idle for 2 hours is swept as a last resort. Presence is live state only: it is
+A session leaves presence when it closes (the `ka mcp` bridge ends its HTTP session when the client
+exits), or after 30 minutes without a call. There are no keep-alive pings: they would travel on the
+optional server-to-client stream, which stdio bridges and many HTTP clients never open. Presence is live state only: it is
 never written to git, and it starts empty when the daemon restarts. Sessions of a `ka mcp
 --no-daemon` don't appear, because they never talk to the daemon.
 

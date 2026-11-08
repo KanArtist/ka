@@ -11,6 +11,10 @@ import (
 	"github.com/JumpKickOSS/ka/internal/engine"
 )
 
+// IdleTimeout drops a session that made no call for this long (a client
+// that went away without closing).
+const IdleTimeout = 30 * time.Minute
+
 // Session is one connected agent session.
 type Session struct {
 	ID         string `json:"id"`

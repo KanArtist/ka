@@ -50,10 +50,11 @@ func New(svc *engine.Service, opt Options) *Server {
 		opt.MaxWait = 15 * time.Minute
 	}
 	s := &Server{svc: svc, opt: opt, session: kaspec.RandomBase32(12)}
+	// No keep-alive pings: they travel on the optional server-to-client
+	// stream, which stdio bridges and many HTTP clients never open, and a
+	// failed ping ends the session. Presence instead drops sessions that
+	// close, or that stay idle (presence.Sweep).
 	so := &mcp.ServerOptions{Instructions: instructions}
-	if opt.Presence != nil {
-		so.KeepAlive = 30 * time.Second // notice clients that vanish
-	}
 	s.MCP = mcp.NewServer(&mcp.Implementation{Name: "ka", Title: "KanArtist", Version: Version}, so)
 	if opt.Presence != nil {
 		s.MCP.AddReceivingMiddleware(s.trackPresence)

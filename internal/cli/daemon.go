@@ -78,7 +78,7 @@ func daemonRun(ctx context.Context, x *IO, args []string) int {
 			case <-ctx.Done():
 				return
 			case <-t.C:
-				pres.Sweep(2 * time.Hour)
+				pres.Sweep(presence.IdleTimeout)
 			}
 		}
 	}()

@@ -1,0 +1,94 @@
+<section class="agents">
+  <header class="head">
+    <h1>Agents</h1>
+    <p class="summary">
+      {{ connected() === 1 ? '1 session connected' : connected() + ' sessions connected' }}@if (staleCount()) {<span class="warn">, {{ staleCount() === 1 ? '1 stale claim' : staleCount() + ' stale claims' }}</span>}
+    </p>
+  </header>
+
+  @for (p of people(); track p.actor) {
+    <article class="person" [class.agent]="p.agent" [class.online]="p.sessions.length > 0">
+      <header class="who">
+        <ka-actor [actor]="p.actor" [size]="22" />
+        @if (p.sessions.length) {
+          <span class="online-dot" title="Connected now"></span>
+        }
+        <span class="spacer"></span>
+        <span class="stat"><strong>{{ p.closedToday }}</strong> closed today</span>
+        <span class="stat"><strong>{{ p.actionsToday }}</strong> actions today</span>
+        @if (p.lastAt) {
+          <span class="stat muted" [title]="exact(p.lastAt)">active {{ ago(p.lastAt, now()) }}</span>
+        }
+      </header>
+
+      @for (s of p.sessions; track s.id) {
+        <div class="session">
+          <span class="label">Session</span>
+          <span class="client">{{ s.client || s.transport }}</span>
+          <span class="muted" [title]="exact(s.connected)">since {{ ago(s.connected, now()) }}</span>
+          <span class="muted">{{ s.calls }} calls</span>
+          @if (toolLine(s)) {
+            <span class="last">
+              last <code>{{ toolLine(s) }}</code>
+              @if (s.last_ticket) {
+                on <a [routerLink]="[]" [queryParams]="{ peek: s.last_ticket }" queryParamsHandling="merge" class="id">{{ s.last_ticket }}</a>
+              }
+              <span class="muted" [title]="exact(s.last_seen)">{{ ago(s.last_seen, now()) }}</span>
+              @if (s.last_error) {
+                <span class="err">failed: {{ s.last_error }}</span>
+              }
+            </span>
+          }
+        </div>
+      }
+
+      @if (p.claims.length) {
+        <ul class="claims">
+          @for (t of p.claims; track t.id) {
+            <li [class.stale]="t.claim?.stale">
+              <span class="dot" [attr.data-cat]="live.category(t)"></span>
+              <a [routerLink]="[]" [queryParams]="{ peek: t.id }" queryParamsHandling="merge" class="ticket">
+                <span class="id">{{ t.id }}</span>
+                <span class="title">{{ t.title }}</span>
+              </a>
+              <span class="status">{{ t.status }}</span>
+              <span class="age" [title]="'Claimed ' + exact(t.claim?.at)">{{ ago(t.claim?.at, now()) }}</span>
+              @if (t.claim?.stale) {
+                <span class="flag">stale</span>
+              }
+              <button
+                type="button"
+                class="release"
+                [class.primary]="t.claim?.stale"
+                [class.confirm]="confirm() === t.id"
+                [disabled]="releasing().has(t.id)"
+                (click)="release(t)"
+                (blur)="confirm() === t.id && confirm.set('')"
+              >
+                @if (releasing().has(t.id)) {
+                  Releasing…
+                } @else if (confirm() === t.id) {
+                  Release {{ p.agent ? 'the agent’s' : 'their' }} claim?
+                } @else if (t.claim?.stale) {
+                  Release stale claim
+                } @else {
+                  Release
+                }
+              </button>
+            </li>
+            @if (error()?.id === t.id) {
+              <li class="error" role="alert">{{ error()!.message }}</li>
+            }
+          }
+        </ul>
+      } @else if (p.sessions.length) {
+        <p class="none muted">Holds no claims.</p>
+      }
+    </article>
+  } @empty {
+    <p class="empty">
+      No agent is connected and nobody holds a claim. Agents appear here when they connect through
+      <code>ka mcp</code> while this daemon runs, or when they claim a ticket.
+    </p>
+  }
+</section>
