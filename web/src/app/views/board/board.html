@@ -1,7 +1,28 @@
 <section class="board" #host>
   <p class="sr-only" aria-live="polite">{{ announce() }}</p>
   <header class="head">
-    <h1>Board</h1>
+    <h1>{{ board()?.title || 'Board' }}</h1>
+    <div class="boards">
+      <select [value]="boardId()" (change)="pickBoard($any($event.target).value)" aria-label="Saved board">
+        <option value="" [selected]="!boardId()">All statuses</option>
+        @for (g of boardsByStore(); track g[0]) {
+          <optgroup [label]="g[0]">
+            @for (b of g[1]; track b.id) {
+              <option [value]="b.id" [selected]="b.id === boardId()">{{ b.title || b.name }}</option>
+            }
+          </optgroup>
+        }
+      </select>
+      @if (board() && dirty()) {
+        <button type="button" class="btn small" (click)="startSave(false)" title="Commit the current filter and swimlanes to {{ board()!.store }}/{{ board()!.name }}">Save changes</button>
+      }
+      @if (writableStores().length) {
+        <button type="button" class="btn quiet small" (click)="startSave(true)">Save view as board…</button>
+      }
+      @if (board()) {
+        <button type="button" class="btn quiet small" (click)="deleteBoard()" aria-label="Delete this board">Delete</button>
+      }
+    </div>
     <div class="controls">
       <ka-query-bar />
       @if (projects().length > 1) {
@@ -80,7 +101,7 @@
                 ></a>
                 <div class="line1">
                   <span class="id">{{ t.id }}</span>
-                  @if (t.priority) {
+                  @if (show('priority') && t.priority) {
                     <span class="prio" [attr.data-p]="t.priority">{{ t.priority }}</span>
                   }
                   <span class="spacer"></span>
@@ -95,19 +116,21 @@
                   }
                 </div>
                 <p class="title">{{ t.title }}</p>
-                @if (t.kind || t.labels?.length || t.acceptance || t.blocked) {
+                @if ((show('kind') && t.kind) || (show('labels') && t.labels?.length) || (show('acceptance') && t.acceptance) || t.blocked) {
                   <div class="line3">
                     @if (t.blocked) {
                       <span class="tag blocked">blocked</span>
                     }
-                    @if (t.kind) {
+                    @if (show('kind') && t.kind) {
                       <span class="kind">{{ t.kind }}</span>
                     }
-                    @for (l of t.labels ?? []; track l) {
-                      <span class="tag">{{ l }}</span>
+                    @if (show('labels')) {
+                      @for (l of t.labels ?? []; track l) {
+                        <span class="tag">{{ l }}</span>
+                      }
                     }
                     <span class="spacer"></span>
-                    @if (acceptance(t); as a) {
+                    @if (show('acceptance') && acceptance(t); as a) {
                       <span class="acc" [class.full]="a.done === a.total" [title]="'Acceptance ' + a.done + ' of ' + a.total">
                         <span class="bar"><span [style.width.%]="(a.done / a.total) * 100"></span></span>{{ a.done }}/{{ a.total }}
                       </span>
@@ -129,3 +152,29 @@
     }
   </div>
 </section>
+
+@if (saving(); as sv) {
+  <div class="save-scrim" (click)="saving.set(null)">
+    <form class="save" (click)="$event.stopPropagation()" (submit)="$event.preventDefault(); submitSave()" (keydown.escape)="saving.set(null)" role="dialog" aria-modal="true" aria-labelledby="save-title">
+      <h2 id="save-title">Save this view as a board</h2>
+      <p class="muted">The filter and swimlanes are committed to <code>boards/{{ sv.key || '…' }}.yml</code>, for everyone using the store.</p>
+      <label>Title <input #st class="field" [value]="sv.title" (input)="setSaveTitle(st.value)" /></label>
+      <div class="pair">
+        <label>File name <input #sk class="field mono" [value]="sv.key" (input)="saving.set({ ...sv, key: sk.value, keyTouched: true })" pattern="[a-z0-9][a-z0-9_\-]*" /></label>
+        <label>
+          Store
+          <select class="field" (change)="saving.set({ ...sv, store: $any($event.target).value })">
+            @for (s of writableStores(); track s) {
+              <option [value]="s" [selected]="s === sv.store">{{ s }}</option>
+            }
+          </select>
+        </label>
+      </div>
+      <label>Description <input #sd class="field" [value]="sv.description" (input)="saving.set({ ...sv, description: sd.value })" /></label>
+      <div class="actions">
+        <button type="button" class="btn quiet" (click)="saving.set(null)">Cancel</button>
+        <button type="submit" class="btn primary" [disabled]="!sv.title.trim() || !sv.key">Save board</button>
+      </div>
+    </form>
+  </div>
+}

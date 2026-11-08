@@ -159,11 +159,12 @@ func (s *Server) workspaceRoutes() {
 		})
 	reg(s, get("getBoard", "/boards/{name}", "A saved board and the tickets its filter matches", "workspace"),
 		func(ctx context.Context, in *struct {
-			Name  string `path:"name"`
+			Name  string `path:"name" doc:"The board key."`
+			Store string `query:"store" doc:"The store holding it (default: the first that has the key)."`
 			Limit int    `query:"limit" minimum:"0" doc:"Maximum tickets; 0 means all."`
 		}) (*body[boardTickets], error) {
 			for _, b := range s.svc.Boards() {
-				if b.Name != in.Name {
+				if b.Name != in.Name || (in.Store != "" && b.Store != in.Store) {
 					continue
 				}
 				var sorts []string
@@ -181,6 +182,30 @@ func (s *Server) workspaceRoutes() {
 				return &body[boardTickets]{boardTickets{b, res}}, nil
 			}
 			return nil, engine.Errf(engine.CodeNotFound, "list boards with GET /api/v1/boards", "no board %q", in.Name)
+		})
+	reg(s, huma.Operation{OperationID: "saveBoard", Method: http.MethodPut, Path: "/api/v1/boards/{name}", Tags: []string{"workspace"},
+		Summary: "Create or replace a saved board (boards/<name>.yml, committed)"},
+		func(ctx context.Context, in *struct {
+			CallerHeaders
+			Name string `path:"name" doc:"The board key."`
+			Body engine.BoardIn
+		}) (*body[*engine.BoardOut], error) {
+			in.Body.Key = in.Name
+			out, err := s.svc.SaveBoard(ctx, s.caller(in.CallerHeaders), in.Body)
+			return &body[*engine.BoardOut]{out}, err
+		})
+	reg(s, huma.Operation{OperationID: "deleteBoard", Method: http.MethodDelete, Path: "/api/v1/boards/{name}", Tags: []string{"workspace"},
+		Summary: "Remove a saved board (committed)"},
+		func(ctx context.Context, in *struct {
+			CallerHeaders
+			Name  string `path:"name"`
+			Store string `query:"store"`
+		}) (*struct{}, error) {
+			ref := in.Name
+			if in.Store != "" {
+				ref = in.Store + "/" + in.Name
+			}
+			return nil, s.svc.DeleteBoard(ctx, s.caller(in.CallerHeaders), ref)
 		})
 	reg(s, get("listActors", "/actors", "Humans and agents from the actor registries, with roles", "workspace"),
 		func(ctx context.Context, in *struct{}) (*body[actorList], error) {

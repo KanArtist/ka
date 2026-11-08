@@ -131,6 +131,27 @@ export class Actions {
     return this.run('Could not update acceptance', async () => (await this.api.post(this.path(id, '/acceptance'), { items: [{ index, done }] })).body);
   }
 
+  async saveBoard(b: { store: string; key: string; title: string; description?: string; filter?: string; swimlanes?: string; group_by?: string; columns?: string[]; card_fields?: string[] }) {
+    const out = await this.run('Could not save the board', async () => (await this.api.request<any>('PUT', `/boards/${encodeURIComponent(b.key)}`, b)).body);
+    if (out) {
+      this.toasts.show(`Saved board ${b.store}/${b.key}`);
+      await this.live.refreshBoards();
+    }
+    return out;
+  }
+
+  async deleteBoard(store: string, key: string): Promise<boolean> {
+    const out = await this.run('Could not delete the board', async () => {
+      await this.api.request('DELETE', `/boards/${encodeURIComponent(key)}?store=${encodeURIComponent(store)}`);
+      return true;
+    });
+    if (out) {
+      this.toasts.show(`Deleted board ${store}/${key}`);
+      await this.live.refreshBoards();
+    }
+    return !!out;
+  }
+
   async create(t: CreateTicket): Promise<string | null> {
     const out = await this.run('Could not create the ticket', async () => (await this.api.post<{ created: { id: string }[] }>('/tickets', t)).body);
     const id = (out as any)?.created?.[0]?.id ?? (out as any)?.id ?? null;

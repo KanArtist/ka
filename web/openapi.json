@@ -256,6 +256,64 @@
         ],
         "type": "object"
       },
+      "BoardIn": {
+        "additionalProperties": false,
+        "properties": {
+          "card_fields": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "columns": {
+            "description": "The columns (statuses, when grouped by status) to show, in order.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "filter": {
+            "description": "A ka query.",
+            "type": "string"
+          },
+          "group_by": {
+            "type": "string"
+          },
+          "key": {
+            "description": "The file name without .yml: lowercase letters, digits, - and _.",
+            "type": "string"
+          },
+          "sort": {
+            "type": "string"
+          },
+          "store": {
+            "description": "The store to save the board in.",
+            "type": "string"
+          },
+          "swimlanes": {
+            "type": "string"
+          },
+          "title": {
+            "description": "The display name (the file's name: field).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "store",
+          "key",
+          "title"
+        ],
+        "type": "object"
+      },
       "BoardList": {
         "additionalProperties": false,
         "properties": {
@@ -304,7 +362,12 @@
           "group_by": {
             "type": "string"
           },
+          "id": {
+            "description": "store/key: unique across the workspace.",
+            "type": "string"
+          },
           "name": {
+            "description": "The key (file name without .yml).",
             "type": "string"
           },
           "sort": {
@@ -315,10 +378,16 @@
           },
           "swimlanes": {
             "type": "string"
+          },
+          "title": {
+            "description": "The display name.",
+            "type": "string"
           }
         },
         "required": [
+          "id",
           "name",
+          "title",
           "store"
         ],
         "type": "object"
@@ -2488,14 +2557,84 @@
       }
     },
     "/api/v1/boards/{name}": {
-      "get": {
-        "operationId": "getBoard",
+      "delete": {
+        "operationId": "deleteBoard",
         "parameters": [
+          {
+            "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+            "in": "header",
+            "name": "X-Ka-Actor",
+            "schema": {
+              "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A session ID, recorded in the Ka-Session trailer.",
+            "in": "header",
+            "name": "X-Ka-Session",
+            "schema": {
+              "description": "A session ID, recorded in the Ka-Session trailer.",
+              "type": "string"
+            }
+          },
           {
             "in": "path",
             "name": "name",
             "required": true,
             "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "store",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Remove a saved board (committed)",
+        "tags": [
+          "workspace"
+        ]
+      },
+      "get": {
+        "operationId": "getBoard",
+        "parameters": [
+          {
+            "description": "The board key.",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "description": "The board key.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The store holding it (default: the first that has the key).",
+            "explode": false,
+            "in": "query",
+            "name": "store",
+            "schema": {
+              "description": "The store holding it (default: the first that has the key).",
               "type": "string"
             }
           },
@@ -2535,6 +2674,75 @@
           }
         },
         "summary": "A saved board and the tickets its filter matches",
+        "tags": [
+          "workspace"
+        ]
+      },
+      "put": {
+        "operationId": "saveBoard",
+        "parameters": [
+          {
+            "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+            "in": "header",
+            "name": "X-Ka-Actor",
+            "schema": {
+              "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A session ID, recorded in the Ka-Session trailer.",
+            "in": "header",
+            "name": "X-Ka-Session",
+            "schema": {
+              "description": "A session ID, recorded in the Ka-Session trailer.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The board key.",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "description": "The board key.",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BoardIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BoardOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Create or replace a saved board (boards/\u003cname\u003e.yml, committed)",
         "tags": [
           "workspace"
         ]

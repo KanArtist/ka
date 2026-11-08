@@ -278,6 +278,17 @@ export class Peek {
     this.bodyConflict.set(false);
     this.bodyError.set('');
     this.editingBody.set(true);
+    setTimeout(() => document.querySelector<HTMLTextAreaElement>('ka-peek .body-editor textarea')?.focus());
+  }
+
+  protected editTitle(): void {
+    if (!this.writable()) return;
+    this.editingTitle.set(true);
+    setTimeout(() => {
+      const el = document.querySelector<HTMLInputElement>('ka-peek .title-edit');
+      el?.focus();
+      el?.select();
+    });
   }
 
   protected async saveBody(): Promise<void> {

@@ -10,8 +10,8 @@ import {
   untracked,
   viewChild,
 } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { Summary } from '../../api/api';
+import { NavigationEnd, Router, RouterLink } from '@angular/router';
+import { BoardOut, Summary } from '../../api/api';
 import { Actions } from '../../actions';
 import { Live } from '../../live';
 import { Query, QueryBar } from '../../query';
@@ -65,6 +65,25 @@ export class Board {
   protected readonly project = signal('');
   protected readonly lane = signal<Lane>('none');
   private query = inject(Query);
+  private router = inject(Router);
+
+  // ---- saved boards (boards/*.yml) ----
+  /** The selected saved board, store/key (?board=). */
+  protected readonly boardId = signal('');
+  protected readonly board = computed<BoardOut | undefined>(() => this.live.boards().find((b) => b.id === this.boardId()));
+  protected readonly boardsByStore = computed(() => {
+    const m = new Map<string, BoardOut[]>();
+    for (const b of this.live.boards()) m.set(b.store, [...(m.get(b.store) ?? []), b]);
+    return [...m.entries()];
+  });
+  protected readonly writableStores = computed(() => this.live.stores().filter((s) => !s.read_only).map((s) => s.store));
+  /** The view differs from the saved board. */
+  protected readonly dirty = computed(() => {
+    const b = this.board();
+    if (!b) return false;
+    return (b.filter ?? '') !== this.query.text() || laneOf(b.swimlanes) !== this.lane();
+  });
+  protected readonly saving = signal<{ title: string; key: string; store: string; description: string; keyTouched: boolean } | null>(null);
   protected readonly showCanceled = signal(false);
   protected readonly now = this.clock.now;
   protected readonly ago = ago;
@@ -92,8 +111,61 @@ export class Board {
         if (!out.some((o) => o.name === s.name)) out.push({ name: s.name, category: s.category });
       }
     }
+    const cols = this.board()?.columns;
+    if (cols?.length && (this.board()?.group_by ?? 'status') === 'status') {
+      return cols.map((c) => out.find((o) => o.name === c)).filter((o): o is { name: string; category: string } => !!o);
+    }
     return out.filter((s) => this.showCanceled() || s.category !== 'canceled');
   });
+
+  /** Card fields to show: a board's card_fields, else all. */
+  protected show(field: string): boolean {
+    const f = this.board()?.card_fields;
+    return !f?.length || f.includes(field);
+  }
+
+  protected pickBoard(id: string): void {
+    const b = this.live.boards().find((x) => x.id === id);
+    void this.router.navigate([], { queryParams: { board: id || null, q: b?.filter || null }, queryParamsHandling: 'merge' });
+    if (b) this.lane.set(laneOf(b.swimlanes));
+    else this.lane.set('none');
+  }
+
+  protected startSave(asNew: boolean): void {
+    const b = this.board();
+    if (b && !asNew) {
+      void this.actions.saveBoard({ store: b.store, key: b.name, title: b.title, description: b.description, filter: this.query.text(), swimlanes: this.lane() === 'none' ? '' : this.lane(), group_by: b.group_by, columns: b.columns ?? [], card_fields: b.card_fields ?? [] });
+      return;
+    }
+    const stores = this.writableStores();
+    this.saving.set({ title: '', key: '', store: b?.store ?? stores[0] ?? '', description: '', keyTouched: false });
+    setTimeout(() => document.querySelector<HTMLInputElement>('form.save input')?.focus());
+  }
+
+  protected setSaveTitle(title: string): void {
+    const s = this.saving();
+    if (!s) return;
+    this.saving.set({ ...s, title, key: s.keyTouched ? s.key : slug(title) });
+  }
+
+  protected async submitSave(): Promise<void> {
+    const s = this.saving();
+    if (!s || !s.title.trim() || !s.key || !s.store) return;
+    const project = this.project();
+    const q = this.query.text();
+    const filter = project && this.projects().length > 1 && !/(^|\s)project:/.test(q) ? `project:${project} ${q}`.trim() : q;
+    const out = await this.actions.saveBoard({ store: s.store, key: s.key, title: s.title.trim(), description: s.description.trim(), filter, swimlanes: this.lane() === 'none' ? '' : this.lane(), group_by: 'status' });
+    if (out) {
+      this.saving.set(null);
+      void this.router.navigate([], { queryParams: { board: `${s.store}/${s.key}`, q: filter || null }, queryParamsHandling: 'merge' });
+    }
+  }
+
+  protected async deleteBoard(): Promise<void> {
+    const b = this.board();
+    if (!b || !confirm(`Delete the board “${b.title}” from ${b.store}? This commits the removal.`)) return;
+    if (await this.actions.deleteBoard(b.store, b.name)) this.pickBoard('');
+  }
 
   private readonly tickets = computed(() => {
     const project = this.project();
@@ -150,6 +222,15 @@ export class Board {
   });
 
   constructor() {
+    const readBoard = () => {
+      const b = this.router.parseUrl(this.router.url).queryParams['board'];
+      const id = typeof b === 'string' ? b : '';
+      if (id !== untracked(this.boardId)) this.boardId.set(id);
+    };
+    readBoard();
+    this.router.events.subscribe((e) => {
+      if (e instanceof NavigationEnd) readBoard();
+    });
     const ws = this.live.workspace();
     untracked(() => this.project.set(ws?.default_project ?? (this.live.schema()?.projects?.length === 1 ? this.live.schema()!.projects![0].key : '')));
 
@@ -327,6 +408,14 @@ export class Board {
   }
 
   protected trackCard = (_: number, t: Summary) => t.id;
+}
+
+function laneOf(s: string | undefined): Lane {
+  return (['project', 'assignee', 'priority', 'parent'] as const).find((l) => l === s) ?? 'none';
+}
+
+function slug(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 64);
 }
 
 function laneKey(t: Summary, lane: Lane): string {

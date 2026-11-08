@@ -36,10 +36,9 @@
         (keydown.enter)="saveTitle(titleIn.value)"
         (keydown.escape)="$event.stopPropagation(); editingTitle.set(false)"
         (blur)="saveTitle(titleIn.value)"
-        autofocus
       />
     } @else {
-      <h1 class="title" [class.editable]="writable()" (click)="writable() && editingTitle.set(true)" [title]="writable() ? 'Click to edit the title' : ''">{{ d.title }}</h1>
+      <h1 class="title" [class.editable]="writable()" (click)="editTitle()" [title]="writable() ? 'Click to edit the title' : ''">{{ d.title }}</h1>
     }
 
     <div class="cols">
@@ -53,7 +52,6 @@
               [value]="bodyDraft()"
               (input)="bodyDraft.set($any($event.target).value)"
               (keydown)="bodyKey($event)"
-              autofocus
             ></textarea>
             @if (bodyConflict()) {
               <div class="conflict" role="alert">

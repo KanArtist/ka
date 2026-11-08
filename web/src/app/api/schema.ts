@@ -64,9 +64,11 @@ export interface paths {
         };
         /** A saved board and the tickets its filter matches */
         get: operations["getBoard"];
-        put?: never;
+        /** Create or replace a saved board (boards/<name>.yml, committed) */
+        put: operations["saveBoard"];
         post?: never;
-        delete?: never;
+        /** Remove a saved board (committed) */
+        delete: operations["deleteBoard"];
         options?: never;
         head?: never;
         patch?: never;
@@ -685,6 +687,23 @@ export interface components {
             error?: components["schemas"]["Error"];
             results: components["schemas"]["WriteOut"][] | null;
         };
+        BoardIn: {
+            card_fields?: string[] | null;
+            /** @description The columns (statuses, when grouped by status) to show, in order. */
+            columns?: string[] | null;
+            description?: string;
+            /** @description A ka query. */
+            filter?: string;
+            group_by?: string;
+            /** @description The file name without .yml: lowercase letters, digits, - and _. */
+            key: string;
+            sort?: string;
+            /** @description The store to save the board in. */
+            store: string;
+            swimlanes?: string;
+            /** @description The display name (the file's name: field). */
+            title: string;
+        };
         BoardList: {
             boards: components["schemas"]["BoardOut"][] | null;
         };
@@ -694,10 +713,15 @@ export interface components {
             description?: string;
             filter?: string;
             group_by?: string;
+            /** @description store/key: unique across the workspace. */
+            id: string;
+            /** @description The key (file name without .yml). */
             name: string;
             sort?: string;
             store: string;
             swimlanes?: string;
+            /** @description The display name. */
+            title: string;
         };
         BoardTickets: {
             board: components["schemas"]["BoardOut"];
@@ -1335,11 +1359,14 @@ export interface operations {
     getBoard: {
         parameters: {
             query?: {
+                /** @description The store holding it (default: the first that has the key). */
+                store?: string;
                 /** @description Maximum tickets; 0 means all. */
                 limit?: number;
             };
             header?: never;
             path: {
+                /** @description The board key. */
                 name: string;
             };
             cookie?: never;
@@ -1354,6 +1381,83 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["BoardTickets"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    saveBoard: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Act as this actor; default: the daemon's human. Agents use agent/<name> and are recorded as acting on behalf of the human. */
+                "X-Ka-Actor"?: string;
+                /** @description A session ID, recorded in the Ka-Session trailer. */
+                "X-Ka-Session"?: string;
+            };
+            path: {
+                /** @description The board key. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BoardIn"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoardOut"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    deleteBoard: {
+        parameters: {
+            query?: {
+                store?: string;
+            };
+            header?: {
+                /** @description Act as this actor; default: the daemon's human. Agents use agent/<name> and are recorded as acting on behalf of the human. */
+                "X-Ka-Actor"?: string;
+                /** @description A session ID, recorded in the Ka-Session trailer. */
+                "X-Ka-Session"?: string;
+            };
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {

@@ -455,14 +455,13 @@ func diffOp(a, b *kaspec.Ticket) *Op {
 	return o
 }
 
-// BoardFilter returns a saved board's filter.
-func (s *Service) BoardFilter(name string) (string, bool) {
+// BoardFilter returns a saved board's filter. ref is "store/key", or a key
+// (the first store that has it).
+func (s *Service) BoardFilter(ref string) (string, bool) {
 	s.ix.mu.RLock()
 	defer s.ix.mu.RUnlock()
-	for _, st := range s.ix.stores {
-		if b, ok := s.ix.ks[st].Boards[name]; ok && b != nil {
-			return b.Filter, true
-		}
+	if _, _, b := s.boardRef(ref); b != nil {
+		return b.Filter, true
 	}
 	return "", false
 }

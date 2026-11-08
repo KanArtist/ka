@@ -1,5 +1,5 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
-import { Api, InboxOut, KaEvent, SchemaOut, SearchOut, Session, StoreOut, Summary, WorkspaceOut } from './api/api';
+import { Api, BoardOut, InboxOut, KaEvent, SchemaOut, SearchOut, Session, StoreOut, Summary, WorkspaceOut } from './api/api';
 
 const EVENT_TYPES = [
   'ticket.created',
@@ -40,6 +40,8 @@ export class Live {
   readonly events = signal<KaEvent[]>([]);
   readonly presence = signal<Session[]>([]);
   readonly inbox = signal<InboxOut | null>(null);
+  /** Saved boards from every store (boards/*.yml), namespaced store/key. */
+  readonly boards = signal<BoardOut[]>([]);
   readonly connection = signal<Connection>('connecting');
   readonly loaded = signal(false);
   /** Bumped on every ticket change, for views that watch one ticket. */
@@ -76,13 +78,14 @@ export class Live {
   }
 
   private async snapshot(): Promise<void> {
-    const [ws, schema, stores, tickets, presence, inbox] = await Promise.all([
+    const [ws, schema, stores, tickets, presence, inbox, boards] = await Promise.all([
       this.api.get<WorkspaceOut>('/workspace'),
       this.api.get<SchemaOut>('/schema'),
       this.api.get<{ stores: StoreOut[] }>('/stores'),
       this.api.get<SearchOut>('/tickets?all=true&limit=-1&include=fields'),
       this.api.get<{ sessions: Session[] }>('/presence'),
       this.api.get<InboxOut>('/inbox?since=7d'),
+      this.api.get<{ boards: BoardOut[] }>('/boards'),
     ]);
     this.workspace.set(ws.body);
     this.schema.set(schema.body);
@@ -90,6 +93,7 @@ export class Live {
     this.tickets.set(new Map((tickets.body.tickets ?? []).map((t) => [t.id, t])));
     this.presence.set(presence.body.sessions ?? []);
     this.inbox.set(inbox.body);
+    this.boards.set(boards.body.boards ?? []);
     // Resume from the oldest of the snapshots; replayed events are idempotent.
     this.lastSeq = Math.min(ws.seq, stores.seq, tickets.seq, presence.seq, inbox.seq);
     this.ticketTick.update((n) => n + 1);
@@ -115,6 +119,14 @@ export class Live {
     }
   }
 
+  async refreshBoards(): Promise<void> {
+    try {
+      this.boards.set((await this.api.get<{ boards: BoardOut[] }>('/boards')).body.boards ?? []);
+    } catch {
+      /* keep the old list */
+    }
+  }
+
   private refreshInbox = debounce(async () => {
     try {
       this.inbox.set((await this.api.get<InboxOut>('/inbox?since=7d')).body);
@@ -126,8 +138,14 @@ export class Live {
   private apply(e: KaEvent): void {
     this.lastSeq = Math.max(this.lastSeq, e.id);
     switch (e.type) {
-      case 'reset':
       case 'store.changed':
+        if (e.data?.what === 'boards') {
+          void this.refreshBoards();
+          break;
+        }
+        void this.resync();
+        return;
+      case 'reset':
         void this.resync();
         return;
       case 'ticket.created':

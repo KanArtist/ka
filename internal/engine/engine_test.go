@@ -317,3 +317,46 @@ func TestAskAndAnswerAcrossClones(t *testing.T) {
 		t.Fatalf("agent inbox: %+v", in)
 	}
 }
+
+func TestSaveAndDeleteBoard(t *testing.T) {
+	e := newEnv(t, nil)
+	svc, dir := e.clone()
+	me := svc.CallerFor("tester", "")
+	b, err := svc.SaveBoard(ctx, me, BoardIn{Store: svc.WS.Stores[0].Name, Key: "agents-wip", Title: "Agents: work in progress",
+		Filter: "is:started assignee:agent/*", Swimlanes: "assignee", Columns: []string{"in_progress", "review"}, CardFields: []string{"priority"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.ID != "test/agents-wip" || b.Title != "Agents: work in progress" || len(b.Columns) != 2 {
+		t.Fatalf("saved: %+v", b)
+	}
+	data, _ := os.ReadFile(filepath.Join(dir, "boards", "agents-wip.yml"))
+	want := "name: \"Agents: work in progress\"\nfilter: is:started assignee:agent/*\nswimlanes: assignee\ncolumns:\n  - in_progress\n  - review\ncard_fields:\n  - priority\n"
+	if string(data) != want {
+		t.Fatalf("file:\n%s\nwant:\n%s", data, want)
+	}
+	if f, ok := svc.BoardFilter("test/agents-wip"); !ok || f != "is:started assignee:agent/*" {
+		t.Fatalf("BoardFilter: %q %v", f, ok)
+	}
+	// Pushed: a fresh clone has it.
+	other, _ := e.clone()
+	if len(other.Boards()) != 1 {
+		t.Fatalf("fresh clone boards: %+v", other.Boards())
+	}
+	if _, err := svc.SaveBoard(ctx, me, BoardIn{Store: "test", Key: "Bad Key", Title: "x"}); err == nil {
+		t.Fatal("invalid key accepted")
+	}
+	if _, err := svc.SaveBoard(ctx, me, BoardIn{Store: "test", Key: "q", Title: "x", Filter: "nosuchkey:1"}); err == nil {
+		t.Fatal("invalid filter accepted")
+	}
+	if err := svc.DeleteBoard(ctx, me, "agents-wip"); err != nil {
+		t.Fatal(err)
+	}
+	if len(svc.Boards()) != 0 {
+		t.Fatal("board still listed after delete")
+	}
+	log := run(t, dir, "log", "--format=%s%n%b", "-2")
+	if !strings.Contains(log, "ka: remove board agents-wip") || !strings.Contains(log, "Ka-Actor: tester") {
+		t.Fatalf("log:\n%s", log)
+	}
+}

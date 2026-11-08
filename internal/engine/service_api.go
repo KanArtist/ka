@@ -53,7 +53,9 @@ func (s *Service) Stores(ctx context.Context) []StoreOut {
 
 // BoardOut is a saved board.
 type BoardOut struct {
-	Name        string   `json:"name"`
+	ID          string   `json:"id" doc:"store/key: unique across the workspace."`
+	Name        string   `json:"name" doc:"The key (file name without .yml)."`
+	Title       string   `json:"title" doc:"The display name."`
 	Store       string   `json:"store"`
 	Description string   `json:"description,omitempty"`
 	Filter      string   `json:"filter,omitempty"`
@@ -64,12 +66,11 @@ type BoardOut struct {
 	CardFields  []string `json:"card_fields,omitempty"`
 }
 
-// Boards lists saved boards. A name defined in several stores resolves to the
-// first store, as BoardFilter does.
+// Boards lists saved boards from every store, namespaced by store (PRD
+// §9.3: boards are a union; the same key in two stores is two boards).
 func (s *Service) Boards() []BoardOut {
 	s.ix.mu.RLock()
 	defer s.ix.mu.RUnlock()
-	seen := map[string]bool{}
 	out := []BoardOut{}
 	for _, st := range s.ix.stores {
 		ks := s.ix.ks[st]
@@ -82,13 +83,9 @@ func (s *Service) Boards() []BoardOut {
 		}
 		sort.Strings(names)
 		for _, n := range names {
-			b := ks.Boards[n]
-			if b == nil || seen[n] {
-				continue
+			if b := ks.Boards[n]; b != nil {
+				out = append(out, boardOut(st, n, b))
 			}
-			seen[n] = true
-			out = append(out, BoardOut{Name: n, Store: st.Name, Description: b.Description, Filter: b.Filter, GroupBy: b.GroupBy,
-				Sort: b.Sort, Swimlanes: b.Swimlanes, Columns: b.Columns, CardFields: b.CardFields})
 		}
 	}
 	return out
