@@ -32,7 +32,7 @@ Each package manager is skipped when its secret is unset, and for prereleases.
 |---|---|---|
 | `TAP_SSH_KEY` | Private half of a write deploy key ("goreleaser") | `JumpKickOSS/homebrew-tap` |
 | `SCOOP_SSH_KEY` | Private half of a write deploy key ("goreleaser") | `JumpKickOSS/scoop-bucket` |
-| `WINGET_GITHUB_TOKEN` | A fine-grained token with contents and pull-request write on the fork | `JumpKickOSS/winget-pkgs` (a fork of `microsoft/winget-pkgs`) |
+| `WINGET_GITHUB_TOKEN` | A classic token with the `public_repo` scope | `JumpKickOSS/winget-pkgs` (a fork of `microsoft/winget-pkgs`) |
 
 Deploy keys can push to one repository only, so a leaked key cannot touch anything else. To
 rotate one:
@@ -43,9 +43,11 @@ gh repo deploy-key add key.pub -R JumpKickOSS/homebrew-tap --allow-write -t gore
 gh secret set TAP_SSH_KEY -R JumpKickOSS/ka < key && rm key key.pub
 ```
 
-The winget token has to be created in the browser (Settings → Developer settings →
-Fine-grained tokens, resource owner JumpKickOSS, repository `winget-pkgs`), then
-`gh secret set WINGET_GITHUB_TOKEN -R JumpKickOSS/ka`. A new package's first winget pull request
+The winget token has to be a classic token (Settings → Developer settings → Personal access
+tokens → Tokens (classic), scope `public_repo` only): it pushes a branch to the fork and opens a
+pull request on `microsoft/winget-pkgs`, and fine-grained tokens cannot open pull requests on
+public repositories outside their owner. Then `gh secret set WINGET_GITHUB_TOKEN -R JumpKickOSS/ka`.
+A new package's first winget pull request
 is reviewed by the winget maintainers before it merges.
 
 `go install github.com/JumpKickOSS/ka/cmd/ka@v1.0.0` also works and reports the tag as its version.
