@@ -58,8 +58,15 @@ type Config struct {
 	Locked              []string
 	Runtime             *Node // class 3; not validated here
 
-	// Sources maps a dotted key path to the layer that last set it.
-	Sources map[string]string
+	// Sources maps a dotted key path to the layer that last set it, and
+	// SourceLines to the line in that layer (0 for built-in defaults).
+	Sources     map[string]string
+	SourceLines map[string]int
+	SourceNotes map[string]string // e.g. "patched with $append/$remove"
+	// Layers names the layers merged, lowest first (built-in defaults first).
+	Layers []string
+	// Effective is the merged config tree (for `ka config explain`).
+	Effective *Node
 	// LockedBy maps a locked path to the layer that locked it.
 	LockedBy map[string]string
 }
@@ -99,9 +106,9 @@ func ResolveConfig(layers []ConfigLayer) (*Config, []Diagnostic) {
 	if err != nil {
 		panic("kaspec: built-in defaults do not parse: " + err.Error())
 	}
-	m := &merger{lockedBy: map[string]string{}, sources: map[string]string{}}
+	m := &merger{lockedBy: map[string]string{}, sources: map[string]string{}, lines: map[string]int{}, notes: map[string]string{}}
 	merged := cloneNode(def)
-	m.recordSources(merged, "", "built-in defaults")
+	m.recordSources(merged, "", "built-in defaults", 0)
 	for _, l := range layers {
 		if l.Node == nil {
 			continue
@@ -136,6 +143,13 @@ func ResolveConfig(layers []ConfigLayer) (*Config, []Diagnostic) {
 	cfg, dd := decodeConfig(merged, layers)
 	diags = append(diags, dd...)
 	cfg.Sources = m.sources
+	cfg.SourceLines = m.lines
+	cfg.SourceNotes = m.notes
+	cfg.Effective = merged
+	cfg.Layers = []string{"built-in defaults"}
+	for _, l := range layers {
+		cfg.Layers = append(cfg.Layers, l.Name)
+	}
 	cfg.LockedBy = m.lockedBy
 	locked := make([]string, 0, len(m.lockedBy))
 	for p := range m.lockedBy {
@@ -150,6 +164,8 @@ type merger struct {
 	layer, path string
 	lockedBy    map[string]string
 	sources     map[string]string
+	lines       map[string]int
+	notes       map[string]string
 	diags       []Diagnostic
 }
 
@@ -186,21 +202,32 @@ func (m *merger) lockedErr(p string, line int, l, by string) {
 		"%s is locked by %s (lock: %s); this override is ignored", p, by, l))
 }
 
-func (m *merger) recordSources(n *Node, prefix, layer string) {
+func (m *merger) recordSources(n *Node, prefix, layer string, line int) {
 	if prefix != "" {
-		m.sources[prefix] = layer
+		m.set(prefix, layer, line)
 	}
 	if n != nil && n.Kind == MapNode {
 		for _, k := range n.Keys {
-			m.recordSources(n.Map[k], join(prefix, k), layer)
+			kl := 0
+			if layer != "built-in defaults" {
+				kl = n.KeyLines[k]
+			}
+			m.recordSources(n.Map[k], join(prefix, k), layer, kl)
 		}
 	}
+}
+
+func (m *merger) set(p, layer string, line int) {
+	m.sources[p] = layer
+	m.lines[p] = line
 }
 
 func (m *merger) forgetSources(prefix string) {
 	for k := range m.sources {
 		if k == prefix || strings.HasPrefix(k, prefix+".") {
 			delete(m.sources, k)
+			delete(m.lines, k)
+			delete(m.notes, k)
 		}
 	}
 }
@@ -233,17 +260,18 @@ func (m *merger) merge(base, layer *Node, prefix string) *Node {
 			}
 			deleteKey(out, k)
 			m.forgetSources(p)
-			m.sources[p] = m.layer + " (deleted)"
+			m.set(p, m.layer+" (deleted)", line)
 		case isPatch(lv):
 			out.Map[k] = m.applyPatch(bv, lv, p, line)
 			if _, ok := out.KeyLines[k]; !ok {
 				out.Keys = append(out.Keys, k)
 			}
 			out.KeyLines[k] = line
-			m.sources[p] = m.layer
+			m.set(p, m.layer, line)
+			m.notes[p] = "patched with $append/$remove"
 		case lv.Kind == MapNode && bv != nil && bv.Kind == MapNode:
 			out.Map[k] = m.merge(bv, lv, p)
-			m.sources[p] = m.layer
+			m.set(p, m.layer, line)
 		default:
 			if l, by := m.locksBelow(p); l != "" {
 				m.lockedErr(p, line, l, by)
@@ -255,7 +283,7 @@ func (m *merger) merge(base, layer *Node, prefix string) *Node {
 			out.Map[k] = cloneNode(lv)
 			out.KeyLines[k] = line
 			m.forgetSources(p)
-			m.recordSources(lv, p, m.layer)
+			m.recordSources(lv, p, m.layer, line)
 		}
 	}
 	return out

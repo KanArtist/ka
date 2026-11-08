@@ -56,11 +56,19 @@ type Remote struct {
 // plus the given files (store-relative path -> content).
 func NewRemote(t testing.TB, files map[string]string) *Remote {
 	t.Helper()
+	return NewStoreRemote(t, engine.InitOptions{Name: "test", Project: "jk", Prefix: "JK"}, files)
+}
+
+// NewStoreRemote creates a bare remote holding a store made with o (o.Dir
+// is ignored) plus the given extra files.
+func NewStoreRemote(t testing.TB, o engine.InitOptions, files map[string]string) *Remote {
+	t.Helper()
 	r := &Remote{t: t, Root: t.TempDir()}
 	r.Path = filepath.Join(r.Root, "remote.git")
 	Git(t, r.Root, "init", "-q", "--bare", "-b", "main", r.Path)
 	seed := filepath.Join(r.Root, "seed")
-	if _, err := engine.InitStore(context.Background(), engine.InitOptions{Dir: seed, Name: "test", Project: "jk", Prefix: "JK"}); err != nil {
+	o.Dir = seed
+	if _, err := engine.InitStore(context.Background(), o); err != nil {
 		t.Fatal(err)
 	}
 	for p, c := range files {

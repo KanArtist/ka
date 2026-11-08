@@ -56,6 +56,34 @@ as `agent/<name>`: in MCP, `<name>` is the client's `clientInfo.name` ("Claude C
 `agent/claude-code`); in the CLI, `--as agent/claude` or `$KA_ACTOR`. Agents record the
 principal as `on_behalf_of`. `$KA_SESSION` sets the CLI session ID.
 
+## Config layering
+
+A project's data config (workflow, kinds, labels, fields, claims, template) is merged along the
+store's own `extends` chain, never the workspace: built-in defaults, then each parent (depth
+first, left to right), then the store's `.ka/config.yml`, then the project's `project.yml`. Later
+layers win, except for keys a parent `locked:`. Maps merge key by key, `null` deletes, lists are
+replaced, and `{$append: [...]}` / `{$remove: [...]}` patch string lists (PRD §9.3).
+
+`ka config explain [--project KEY] [KEY]` prints each effective value and the file and line that
+set it, plus locks and runtime settings (`sync.push`, `sync.fetch_interval`) with the workspace
+or store recommendation they came from:
+
+```
+$ ka config explain --project jk
+project jk (store jk)
+layers: built-in defaults → org/.ka/config.yml → jk/.ka/config.yml → jk/projects/jk/project.yml
+
+fields.estimate     {type: string, description: ...}   org/.ka/config.yml:17
+kinds               [feature, bug, chore, spike]       jk/.ka/config.yml:1   (patched with $append/$remove)
+fields.team                                            <deleted by> jk/.ka/config.yml:3
+workflow.statuses   [triage (triage), backlog ...]     org/.ka/config.yml:30 (locked by org/.ka/config.yml)
+sync.push           debounce:2s                        ~/.config/ka/workspace.yml
+```
+
+The same report is `ka_schema {explain: true}` over MCP and `GET /api/v1/projects/{key}/config`.
+A parent named by URL is cloned (read-only) even when it is not in the workspace; a parent named
+by a relative path (`../org`) is read from that checkout.
+
 ## The index
 
 All tickets, comments, projects, configs and actors are loaded into memory, in parallel. The
@@ -190,6 +218,11 @@ room the rest leaves. Over every ready ticket of the migrated `jk` store, the ma
   - S2: progress notes and acceptance checks reach a watching client in about 15 ms;
   - S3: a `ka_ask` with options appears in the human's inbox; the human answers as the UI does;
     and the agent's waiting `ka_ask` returns the chosen option.
+- **S7** builds an org store (shared config with a lock, actors, an `in-flight` board, a project
+  of its own) and two project stores extending it. It checks inherited and patched kinds, the
+  lock, `ka config explain`, a jk ticket blocked by a gyggly ticket (unblocked when that closes),
+  and one board spanning all three stores. `KA_S7_STORES=<migrate-v0 --out dir>` runs the same
+  checks over real migration output (split or single layout).
 - **S5** is a simulator: 20 agents in 12 processes on 6 clones perform about 270 random
   operations (next, claim, progress, check, close, create, label, comment, sync). It then checks
   four things: every accepted change is present in a fresh clone; IDs are unique; history is
@@ -200,7 +233,7 @@ room the rest leaves. Over every ready ticket of the migrated `jk` store, the ma
 - The web UI arrives in M2. The daemon, REST API, SSE events, MCP over HTTP, the `ka mcp` proxy
   and presence have landed ([api.md](api.md)). CLI commands still run in-process; the daemon
   notices their commits within 250 ms.
-- `ka watch`, `ka open`, `ka config explain`, `ka project move`, `ka migrate`, `ka hooks install`,
+- `ka watch`, `ka project move`, `ka migrate`, `ka hooks install`,
   `ka completion`, `ka check --ci` annotations and SARIF, and interactive prompts for missing
   arguments are not implemented. Each is a ticket in the `ka` store (`ka ls label:m1-follow-up`,
   `label:m2`, `label:m3`, `label:later`).

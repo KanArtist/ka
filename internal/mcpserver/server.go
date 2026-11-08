@@ -605,11 +605,21 @@ func (s *Server) addTools() {
 		})
 
 	s.add("ka_schema", "Describe the workspace: projects, statuses and categories, kinds, labels, custom fields, actors.",
-		object(obj{"project": enum("", v.projects)}),
+		object(obj{"project": enum("", v.projects), "explain": obj{"type": "boolean", "description": "Instead: each effective config value and the layer that set it"}}),
 		func(ctx context.Context, c engine.Caller, args json.RawMessage) (*mcp.CallToolResult, error) {
-			var in struct{ Project string }
+			var in struct {
+				Project string
+				Explain bool
+			}
 			if err := decode(args, &in); err != nil {
 				return nil, err
+			}
+			if in.Explain {
+				ex, err := s.svc.ConfigExplain(in.Project, "")
+				if err != nil {
+					return nil, err
+				}
+				return textResult(render.ConfigExplain(ex), ex), nil
 			}
 			out, err := s.svc.Schema(c, in.Project)
 			if err != nil {

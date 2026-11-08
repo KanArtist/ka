@@ -126,6 +126,17 @@ func (s *Server) workspaceRoutes() {
 			}
 			return &body[engine.ProjectSchema]{out.Projects[0]}, nil
 		})
+	reg(s, get("explainConfig", "/projects/{key}/config", "Effective config of a project and the layer that set each value (ka config explain)", "workspace"),
+		func(ctx context.Context, in *struct {
+			Key string `path:"key"`
+			K   string `query:"key" doc:"Only this key and the keys under it."`
+		}) (*body[engine.ConfigExplainOut], error) {
+			out, err := s.svc.ConfigExplain(in.Key, in.K)
+			if err != nil {
+				return nil, err
+			}
+			return &body[engine.ConfigExplainOut]{*out}, nil
+		})
 	reg(s, get("listBoards", "/boards", "Saved boards", "workspace"),
 		func(ctx context.Context, in *struct{}) (*body[boardList], error) {
 			return &body[boardList]{boardList{s.svc.Boards()}}, nil

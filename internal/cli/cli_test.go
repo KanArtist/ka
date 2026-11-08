@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -129,5 +131,25 @@ func TestMoveDoesNotReadOpenStdin(t *testing.T) {
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("ka move blocked reading stdin")
+	}
+}
+
+func TestConfigExplain(t *testing.T) {
+	testkit.GitEnv(t)
+	dir := filepath.Join(t.TempDir(), "tickets")
+	ka(t, dir, "init", "--project", "demo", dir)
+	os.WriteFile(filepath.Join(dir, ".ka", "config.yml"), []byte("kinds: [feature, bug]\nlocked: [kinds]\n"), 0o644)
+	testkit.Git(t, dir, "add", "-A")
+	testkit.Git(t, dir, "commit", "-qm", "init")
+	r := ka(t, dir, "config", "explain")
+	if r.code != 0 || !regexp.MustCompile(`kinds\s+\[feature, bug\]\s+\S*\.ka/config\.yml:1`).MatchString(r.out) || !strings.Contains(r.out, "claims.stale_after") {
+		t.Fatalf("config explain: %+v", r)
+	}
+	r = ka(t, dir, "config", "explain", "--json", "claims")
+	if r.code != 0 || !strings.Contains(r.out, `"key": "claims.stale_after"`) || strings.Contains(r.out, `"key": "kinds"`) {
+		t.Fatalf("config explain claims: %+v", r)
+	}
+	if r = ka(t, dir, "config", "explain", "nope"); r.code == 0 {
+		t.Fatalf("unknown key accepted: %+v", r)
 	}
 }

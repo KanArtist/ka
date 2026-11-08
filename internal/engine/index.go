@@ -177,7 +177,11 @@ func findParent(stores []*Store, base string, p kaspec.Parent) *Store {
 				return s
 			}
 		}
-		return nil
+		if isStoreDir(dir) {
+			return nil
+		}
+		// A local path that is not a store checkout (a bare repository, say)
+		// is a remote URL like any other.
 	}
 	for _, s := range stores {
 		if s.URL != "" && sameURL(s.URL, p.URL) {
@@ -185,6 +189,12 @@ func findParent(stores []*Store, base string, p kaspec.Parent) *Store {
 		}
 	}
 	return nil
+}
+
+// isStoreDir reports whether dir is a store checkout.
+func isStoreDir(dir string) bool {
+	_, err := os.Stat(filepath.Join(dir, ".ka", "store.yml"))
+	return err == nil
 }
 
 func localParentPath(base, url string) (string, bool) {

@@ -417,9 +417,9 @@ func Open(ctx context.Context, o OpenOptions) (*Workspace, error) {
 				continue
 			}
 			sp := StoreSpec{URL: p.URL, Branch: p.Ref}
-			if dir, ok := localParentPath(s.Root, p.URL); ok {
+			if dir, ok := localParentPath(s.Root, p.URL); ok && !isGitDir(dir) {
 				sp = StoreSpec{Path: dir}
-				if _, err := os.Stat(filepath.Join(dir, ".ka", "store.yml")); err != nil {
+				if !isStoreDir(dir) {
 					continue // reported by ka check as config_parent_unavailable
 				}
 			} else if offline {
@@ -519,4 +519,14 @@ func (ws *Workspace) StoreByName(name string) *Store {
 		}
 	}
 	return nil
+}
+
+// isGitDir reports whether dir is a bare git repository (a local remote).
+func isGitDir(dir string) bool {
+	if isStoreDir(dir) {
+		return false
+	}
+	_, err := os.Stat(filepath.Join(dir, "HEAD"))
+	_, err2 := os.Stat(filepath.Join(dir, "objects"))
+	return err == nil && err2 == nil
 }
