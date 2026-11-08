@@ -1371,6 +1371,8 @@ type InboxItem struct {
 	Title    string     `json:"title"`
 	Comment  CommentOut `json:"comment"`
 	Question string     `json:"question,omitempty"` // for answers: the question's filename
+	// Restorable: a preserved operation that POST /tickets/{id}/restore can re-apply.
+	Restorable bool `json:"restorable,omitempty"`
 }
 
 // InboxOut is ka_inbox's output.

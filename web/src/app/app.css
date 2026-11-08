@@ -104,6 +104,10 @@
   color: var(--ink-agent);
   background: var(--ink-agent-wash);
 }
+.count.warn {
+  color: var(--st-blocked);
+  background: color-mix(in srgb, var(--st-blocked) 14%, transparent);
+}
 .foot {
   margin-top: auto;
   display: flex;
@@ -158,6 +162,7 @@
   white-space: nowrap;
 }
 .sync {
+  text-decoration: none;
   display: inline-flex;
   align-items: center;
   gap: 7px;

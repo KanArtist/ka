@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gofrs/flock"
@@ -38,6 +39,41 @@ type Store struct {
 	// Simulated clock and backoff for tests.
 	now   func() time.Time
 	sleep func(time.Duration)
+
+	// Network activity, for the Sync & health view.
+	actMu     sync.Mutex
+	lastFetch time.Time
+	lastPush  time.Time
+	lastErr   string
+	lastErrAt time.Time
+}
+
+// note records the outcome of a fetch or push.
+func (s *Store) note(fetched, pushed bool, err error) {
+	s.actMu.Lock()
+	defer s.actMu.Unlock()
+	now := time.Now()
+	if err != nil {
+		s.lastErr, s.lastErrAt = AsError(err).Error(), now
+		return
+	}
+	if fetched {
+		s.lastFetch = now
+	}
+	if pushed {
+		s.lastPush = now
+	}
+	if fetched || pushed {
+		s.lastErr = ""
+	}
+}
+
+// Activity reports when the store last fetched and pushed, and the last
+// network error if it is newer than both.
+func (s *Store) Activity() (lastFetch, lastPush time.Time, lastErr string) {
+	s.actMu.Lock()
+	defer s.actMu.Unlock()
+	return s.lastFetch, s.lastPush, s.lastErr
 }
 
 // SyncState summarizes a store's relation to its remote.
@@ -281,8 +317,10 @@ func (s *Store) Do(ctx context.Context, h hooks, o *Op, push bool) (*Result, err
 		return res, nil
 	}
 	if err := s.pushLocked(ctx, h, res, sha); err != nil {
+		s.note(false, false, err)
 		return res, err
 	}
+	s.note(true, true, nil)
 	return res, nil
 }
 
@@ -704,8 +742,10 @@ func (s *Store) sync(ctx context.Context, h hooks, push bool) (*Result, error) {
 	}
 	ir, err := s.integrateLocked(ctx, h, remote, branch, "")
 	if err != nil {
+		s.note(false, false, err)
 		return res, err
 	}
+	s.note(true, false, nil)
 	res.absorb(ir)
 	res.Preserved = append(res.Preserved, s.flushPreserved(ctx, h)...)
 	if !push {
@@ -714,8 +754,10 @@ func (s *Store) sync(ctx context.Context, h hooks, push bool) (*Result, error) {
 	}
 	if s.git.Head(ctx) != s.remoteHead(ctx, remote, branch) {
 		if err := s.pushLocked(ctx, h, res, ""); err != nil {
+			s.note(false, false, err)
 			return res, err
 		}
+		s.note(false, true, nil)
 	} else {
 		res.Pushed = true
 	}
@@ -759,7 +801,11 @@ func (s *Store) State(ctx context.Context) SyncState {
 	if err == nil {
 		fmt.Sscanf(out, "%d\t%d", &st.Ahead, &st.Behind)
 	}
+	_, _, lastErr := s.Activity()
 	switch {
+	case lastErr != "":
+		// The last fetch or push failed: work continues locally (PRD §10.1).
+		st.State, st.Detail = "degraded", lastErr
 	case st.Ahead == 0 && st.Behind == 0:
 		st.State = "synced"
 	case st.Behind == 0:

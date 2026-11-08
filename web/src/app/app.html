@@ -57,6 +57,14 @@
         }
       </a>
 
+      <a routerLink="/health" routerLinkActive="on" class="nav">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 8.5h2.5l1.5-3 2.5 6 1.5-3h3" /><rect x="1.5" y="2" width="13" height="12" rx="2" /></svg>
+        Sync &amp; health
+        @if (live.syncTrouble().length) {
+          <span class="count warn" [attr.aria-label]="live.syncTrouble().length + ' stores need attention'">{{ live.syncTrouble().length }}</span>
+        }
+      </a>
+
       <div class="foot">
         @if (live.you()) {
           <span class="me"><ka-avatar [actor]="live.you()" [size]="18" /> {{ live.you() }}</span>
@@ -80,9 +88,9 @@
       <button type="button" class="btn small new" (click)="actions.creating.set({})" title="Create a ticket (c)">
         <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10" /></svg>New
       </button>
-      <span class="sync" [class]="syncLabel().cls" role="status">
+      <a routerLink="/health" class="sync" [class]="syncLabel().cls" role="status" title="Sync & health">
         <span class="pulse"></span>{{ syncLabel().text }}
-      </span>
+      </a>
     </header>
 
     <main class="main" [class.peeking]="!!peek()">

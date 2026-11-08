@@ -451,6 +451,17 @@ func (s *Server) ticketRoutes() {
 		out, err := s.svc.Comment(ctx, s.caller(in.CallerHeaders), engine.CommentIn{ID: in.ID, Type: in.Body.Type, Body: in.Body.Body, Supersedes: in.Body.Supersedes, Retracts: in.Body.Retracts})
 		return &body[*engine.WriteOut]{out}, err
 	})
+	reg(s, post("restorePreserved", "/tickets/{id}/restore", "Re-apply an operation a sync preserved instead of publishing", "sync"),
+		func(ctx context.Context, in *struct {
+			CallerHeaders
+			TicketID
+			Body struct {
+				Comment string `json:"comment" minLength:"1" doc:"The system comment's filename that preserved the operation."`
+			}
+		}) (*body[*engine.WriteOut], error) {
+			out, err := s.svc.RestorePreserved(ctx, s.caller(in.CallerHeaders), in.ID, in.Body.Comment)
+			return &body[*engine.WriteOut]{out}, err
+		})
 	reg(s, post("checkAcceptance", "/tickets/{id}/acceptance", "Mark acceptance items done or not done (ka_check)", "tickets"),
 		func(ctx context.Context, in *struct {
 			CallerHeaders

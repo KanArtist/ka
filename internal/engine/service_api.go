@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"sort"
+	"time"
 )
 
 // Reads that the REST API exposes and the CLI and MCP get through other
@@ -39,14 +40,21 @@ type StoreOut struct {
 	ReadOnly      bool   `json:"read_only,omitempty"`
 	PushMode      string `json:"push_mode" doc:"immediate, manual or debounce:<delay>"`
 	FetchInterval string `json:"fetch_interval" doc:"How often the daemon fetches."`
+	LastFetch     string `json:"last_fetch,omitempty" doc:"When this process last fetched successfully."`
+	LastPush      string `json:"last_push,omitempty" doc:"When this process last pushed successfully."`
+	LastError     string `json:"last_error,omitempty" doc:"The last fetch or push error, if newer than the last success."`
+	PushPending   bool   `json:"push_pending,omitempty" doc:"A debounced push is scheduled."`
 }
 
 // Stores lists the workspace's stores with their sync state.
 func (s *Service) Stores(ctx context.Context) []StoreOut {
 	out := make([]StoreOut, 0, len(s.WS.Stores))
 	for _, st := range s.WS.Stores {
-		out = append(out, StoreOut{SyncState: st.State(ctx), Root: st.Root, URL: st.URL, Managed: st.Managed, ReadOnly: st.ReadOnly,
-			PushMode: st.PushSetting(), FetchInterval: st.fetchEvery().String()})
+		so := StoreOut{SyncState: st.State(ctx), Root: st.Root, URL: st.URL, Managed: st.Managed, ReadOnly: st.ReadOnly,
+			PushMode: st.PushSetting(), FetchInterval: st.fetchEvery().String(), PushPending: s.debouncePending(st)}
+		f, p, e := st.Activity()
+		so.LastFetch, so.LastPush, so.LastError = isoTime(f), isoTime(p), e
+		out = append(out, so)
 	}
 	return out
 }
@@ -140,4 +148,11 @@ func (s *Service) ETag(id string) (string, error) {
 func sorted(v []string) []string {
 	sort.Strings(v)
 	return v
+}
+
+func isoTime(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format("2006-01-02T15:04:05Z")
 }

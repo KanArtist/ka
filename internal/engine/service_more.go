@@ -234,8 +234,9 @@ func (s *Service) Sync(ctx context.Context, force bool) *SyncOut {
 		for _, ce := range r.Comments {
 			if ce.Comment != nil && ce.Comment.Type == "system" && ce.Comment.Author == SystemActor && ce.Comment.Created >= week {
 				co := commentOut(ce)
+				_, perr := preservedOp(co.Body)
 				co.Body = clip(co.Body, 200)
-				out.Conflicts = append(out.Conflicts, InboxItem{ID: id, Title: r.T.Title, Comment: co})
+				out.Conflicts = append(out.Conflicts, InboxItem{ID: id, Title: r.T.Title, Comment: co, Restorable: perr == nil})
 			}
 		}
 	}

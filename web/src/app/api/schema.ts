@@ -142,6 +142,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/docs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Files under projects/<key>/docs/ */
+        get: operations["listDocs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/events": {
         parameters: {
             query?: never;
@@ -310,6 +327,23 @@ export interface paths {
         };
         /** Effective config of a project and the layer that set each value (ka config explain) */
         get: operations["explainConfig"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{key}/doc": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One project doc and the tickets that mention it */
+        get: operations["getDoc"];
         put?: never;
         post?: never;
         delete?: never;
@@ -558,6 +592,23 @@ export interface paths {
         put?: never;
         /** Release a claim (ka_release) */
         post: operations["releaseTicket"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tickets/{id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Re-apply an operation a sync preserved instead of publishing */
+        post: operations["restorePreserved"];
         delete?: never;
         options?: never;
         head?: never;
@@ -916,6 +967,37 @@ export interface components {
             title: string;
             updated?: string;
         };
+        DocEntry: {
+            /** @description Relative to the project's docs/ directory, slash-separated. */
+            path: string;
+            project: string;
+            /** Format: int64 */
+            size: number;
+            /** @description The first markdown heading, else the file name. */
+            title: string;
+        };
+        DocOut: {
+            /** @description Tickets whose description, links or comments mention store_path. */
+            backlinks: components["schemas"]["Ref"][] | null;
+            /** @description The file's text (markdown for .md files). */
+            body: string;
+            /** @description Relative to the project's docs/ directory, slash-separated. */
+            path: string;
+            project: string;
+            /** Format: int64 */
+            size: number;
+            store: string;
+            /** @description The path tickets use to link it: projects/<key>/docs/<path>. */
+            store_path: string;
+            /** @description False for binary files, whose body is empty. */
+            text: boolean;
+            /** @description The first markdown heading, else the file name. */
+            title: string;
+            truncated?: boolean;
+        };
+        DocsOut: {
+            docs: components["schemas"]["DocEntry"][] | null;
+        };
         Error: {
             code: string;
             data?: {
@@ -964,6 +1046,7 @@ export interface components {
             comment: components["schemas"]["CommentOut"];
             id: string;
             question?: string;
+            restorable?: boolean;
             title: string;
         };
         InboxOut: {
@@ -1068,6 +1151,10 @@ export interface components {
             /** @description Move to this status as well. */
             status?: string;
         };
+        RestorePreservedRequest: {
+            /** @description The system comment's filename that preserved the operation. */
+            comment: string;
+        };
         SchemaOut: {
             agents?: string[] | null;
             default_project?: string;
@@ -1138,9 +1225,17 @@ export interface components {
             /** @description How often the daemon fetches. */
             fetch_interval: string;
             head?: string;
+            /** @description The last fetch or push error, if newer than the last success. */
+            last_error?: string;
+            /** @description When this process last fetched successfully. */
+            last_fetch?: string;
+            /** @description When this process last pushed successfully. */
+            last_push?: string;
             managed: boolean;
             /** @description immediate, manual or debounce:<delay> */
             push_mode: string;
+            /** @description A debounced push is scheduled. */
+            push_pending?: boolean;
             read_only?: boolean;
             remote?: string;
             root: string;
@@ -1590,6 +1685,38 @@ export interface operations {
             };
         };
     };
+    listDocs: {
+        parameters: {
+            query?: {
+                /** @description Only this project's docs. */
+                project?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocsOut"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     events: {
         parameters: {
             query?: {
@@ -1963,6 +2090,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ConfigExplainOut"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getDoc: {
+        parameters: {
+            query: {
+                /** @description Relative to the project's docs/ directory. */
+                path: string;
+            };
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocOut"];
                 };
             };
             /** @description Error */
@@ -2672,6 +2833,47 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ReleaseTicketRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WriteOut"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    restorePreserved: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Act as this actor; default: the daemon's human. Agents use agent/<name> and are recorded as acting on behalf of the human. */
+                "X-Ka-Actor"?: string;
+                /** @description A session ID, recorded in the Ka-Session trailer. */
+                "X-Ka-Session"?: string;
+            };
+            path: {
+                /** @description A ticket ID, such as KA-6FVER. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RestorePreservedRequest"];
             };
         };
         responses: {

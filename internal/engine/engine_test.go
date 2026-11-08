@@ -396,3 +396,44 @@ func TestDocsAndBacklinks(t *testing.T) {
 		}
 	}
 }
+
+func TestRestorePreservedOperation(t *testing.T) {
+	e := newEnv(t, nil)
+	a, _ := e.clone()
+	id := must[*CreateOut](t)(a.Create(ctx, agent("a"), []CreateIn{{Title: "contested", Status: "ready"}})).Created[0].ID
+	b, _ := e.clone()
+	// b claims offline; a claims and publishes first.
+	b.NoPush = true
+	must[*ClaimOut](t)(b.Claim(ctx, agent("b"), id, false))
+	must[*ClaimOut](t)(a.Claim(ctx, agent("a"), id, false))
+	b.NoPush = false
+	out := b.Sync(ctx, true)
+	if len(out.Preserved) != 1 {
+		t.Fatalf("expected b's claim to be preserved: %+v", out)
+	}
+	d := must[*Detail](t)(b.Get(GetIn{ID: id, Include: []string{"comments"}}))
+	if d.Claim == nil || d.Claim.By != "agent/a" || len(d.Comments) != 1 {
+		t.Fatalf("after sync: %+v", d)
+	}
+	name := d.Comments[0].Name
+	// While a holds the claim, restoring fails on the same precondition.
+	if _, err := b.RestorePreserved(ctx, b.CallerFor("tester", ""), id, name); err == nil {
+		t.Fatal("restore should fail while the claim is held")
+	}
+	must[*WriteOut](t)(a.Release(ctx, agent("a"), id, "", false))
+	b.Sync(ctx, true)
+	w, err := b.RestorePreserved(ctx, agent("b"), id, name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !w.Pushed {
+		t.Fatalf("restore not pushed: %+v", w)
+	}
+	c, _ := e.clone()
+	if d := must[*Detail](t)(c.Get(GetIn{ID: id})); d.Claim == nil || d.Claim.By != "agent/b" {
+		t.Fatalf("restored claim: %+v", d.Claim)
+	}
+	if _, err := b.RestorePreserved(ctx, agent("b"), id, "nope.md"); err == nil {
+		t.Fatal("unknown comment accepted")
+	}
+}

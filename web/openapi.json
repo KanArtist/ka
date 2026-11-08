@@ -1177,6 +1177,111 @@
         ],
         "type": "object"
       },
+      "DocEntry": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "description": "Relative to the project's docs/ directory, slash-separated.",
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "size": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "title": {
+            "description": "The first markdown heading, else the file name.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project",
+          "path",
+          "title",
+          "size"
+        ],
+        "type": "object"
+      },
+      "DocOut": {
+        "additionalProperties": false,
+        "properties": {
+          "backlinks": {
+            "description": "Tickets whose description, links or comments mention store_path.",
+            "items": {
+              "$ref": "#/components/schemas/Ref"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "body": {
+            "description": "The file's text (markdown for .md files).",
+            "type": "string"
+          },
+          "path": {
+            "description": "Relative to the project's docs/ directory, slash-separated.",
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "size": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "store": {
+            "type": "string"
+          },
+          "store_path": {
+            "description": "The path tickets use to link it: projects/\u003ckey\u003e/docs/\u003cpath\u003e.",
+            "type": "string"
+          },
+          "text": {
+            "description": "False for binary files, whose body is empty.",
+            "type": "boolean"
+          },
+          "title": {
+            "description": "The first markdown heading, else the file name.",
+            "type": "string"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "store",
+          "store_path",
+          "body",
+          "text",
+          "backlinks",
+          "project",
+          "path",
+          "title",
+          "size"
+        ],
+        "type": "object"
+      },
+      "DocsOut": {
+        "additionalProperties": false,
+        "properties": {
+          "docs": {
+            "items": {
+              "$ref": "#/components/schemas/DocEntry"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "docs"
+        ],
+        "type": "object"
+      },
       "Error": {
         "additionalProperties": false,
         "properties": {
@@ -1323,6 +1428,9 @@
           },
           "question": {
             "type": "string"
+          },
+          "restorable": {
+            "type": "boolean"
           },
           "title": {
             "type": "string"
@@ -1691,6 +1799,20 @@
         },
         "type": "object"
       },
+      "RestorePreservedRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "comment": {
+            "description": "The system comment's filename that preserved the operation.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "comment"
+        ],
+        "type": "object"
+      },
       "SchemaOut": {
         "additionalProperties": false,
         "properties": {
@@ -1975,12 +2097,28 @@
           "head": {
             "type": "string"
           },
+          "last_error": {
+            "description": "The last fetch or push error, if newer than the last success.",
+            "type": "string"
+          },
+          "last_fetch": {
+            "description": "When this process last fetched successfully.",
+            "type": "string"
+          },
+          "last_push": {
+            "description": "When this process last pushed successfully.",
+            "type": "string"
+          },
           "managed": {
             "type": "boolean"
           },
           "push_mode": {
             "description": "immediate, manual or debounce:\u003cdelay\u003e",
             "type": "string"
+          },
+          "push_pending": {
+            "description": "A debounced push is scheduled.",
+            "type": "boolean"
           },
           "read_only": {
             "type": "boolean"
@@ -2887,6 +3025,49 @@
         ]
       }
     },
+    "/api/v1/docs": {
+      "get": {
+        "operationId": "listDocs",
+        "parameters": [
+          {
+            "description": "Only this project's docs.",
+            "explode": false,
+            "in": "query",
+            "name": "project",
+            "schema": {
+              "description": "Only this project's docs.",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocsOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Files under projects/\u003ckey\u003e/docs/",
+        "tags": [
+          "workspace"
+        ]
+      }
+    },
     "/api/v1/events": {
       "get": {
         "description": "Each SSE message has `id` (the event's sequence number), `event` (its type) and `data` (the Event as JSON). Reconnect with Last-Event-ID to replay what you missed; if it is too old you get a `reset` event and should refetch. Every API response carries Ka-Event-Seq, the last event ID at that moment. A `: ping` comment is sent every 15 s. Data payloads: TicketEvent (ticket.*), ClaimEvent (claim.changed), CommentEvent (comment.created, question.*), SyncState (sync.state), Change (presence.changed).",
@@ -3504,6 +3685,58 @@
           }
         },
         "summary": "Effective config of a project and the layer that set each value (ka config explain)",
+        "tags": [
+          "workspace"
+        ]
+      }
+    },
+    "/api/v1/projects/{key}/doc": {
+      "get": {
+        "operationId": "getDoc",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Relative to the project's docs/ directory.",
+            "explode": false,
+            "in": "query",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "description": "Relative to the project's docs/ directory.",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "One project doc and the tickets that mention it",
         "tags": [
           "workspace"
         ]
@@ -4767,6 +5000,80 @@
         "summary": "Release a claim (ka_release)",
         "tags": [
           "tickets"
+        ]
+      }
+    },
+    "/api/v1/tickets/{id}/restore": {
+      "post": {
+        "operationId": "restorePreserved",
+        "parameters": [
+          {
+            "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+            "in": "header",
+            "name": "X-Ka-Actor",
+            "schema": {
+              "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A session ID, recorded in the Ka-Session trailer.",
+            "in": "header",
+            "name": "X-Ka-Session",
+            "schema": {
+              "description": "A session ID, recorded in the Ka-Session trailer.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A ticket ID, such as KA-6FVER.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "A ticket ID, such as KA-6FVER.",
+              "examples": [
+                "KA-6FVER"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RestorePreservedRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WriteOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Re-apply an operation a sync preserved instead of publishing",
+        "tags": [
+          "sync"
         ]
       }
     },
