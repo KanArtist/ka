@@ -13,6 +13,7 @@ import (
 	"github.com/JumpKickOSS/ka/internal/api"
 	"github.com/JumpKickOSS/ka/internal/engine"
 	"github.com/JumpKickOSS/ka/internal/mcpserver"
+	"github.com/JumpKickOSS/ka/internal/presence"
 )
 
 func cmdDaemon(ctx context.Context, x *IO, args []string) int {
@@ -61,8 +62,25 @@ func daemonRun(ctx context.Context, x *IO, args []string) int {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	mcpserver.Version = Version
-	mcpSrv := mcpserver.New(svc, mcpserver.Options{}) // actors come from each client, not the daemon's environment
-	srv := api.New(svc, api.Options{Token: api.NewToken(), Version: Version, Logger: log, Shutdown: cancel, MCP: mcpSrv.HTTPHandler()})
+	hub := engine.NewEventHub(10000)
+	svc.SetEvents(hub)
+	pres := presence.New(hub)
+	// Actors come from each client, not the daemon's environment.
+	mcpSrv := mcpserver.New(svc, mcpserver.Options{Presence: pres})
+	srv := api.New(svc, api.Options{Token: api.NewToken(), Version: Version, Logger: log, Shutdown: cancel,
+		Events: hub, MCP: mcpSrv.HTTPHandler(), Presence: pres})
+	go func() {
+		t := time.NewTicker(time.Minute)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				pres.Sweep(2 * time.Hour)
+			}
+		}
+	}()
 	addr := ln.Addr().String()
 	rt := &api.Runtime{Version: Version, PID: os.Getpid(), Addr: addr, URL: "http://" + addr, Workspace: svc.WS.Source,
 		WorkspaceHash: api.WorkspaceHash(svc.WS.Source), Token: srv.Token(), Started: time.Now().UTC().Format(time.RFC3339)}

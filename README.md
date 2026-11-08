@@ -18,11 +18,11 @@ Agents are the primary users; humans get a live window into what they are doing.
 | Engine: workspaces, index, queries, operations, sync with operation replay, merge driver | [`internal/engine/`](internal/engine/) |
 | `ka mcp`: 15 MCP tools with workspace-specific schemas | [`internal/mcpserver/`](internal/mcpserver/) |
 | The `ka` CLI | [`internal/cli/`](internal/cli/) |
-| `ka daemon`: REST `/api/v1`, OpenAPI 3.1, SSE events, MCP over HTTP, local token auth (M2) | [`internal/api/`](internal/api/) |
+| `ka daemon`: REST `/api/v1`, OpenAPI 3.1, SSE events, MCP over HTTP, presence, local token auth (M2) | [`internal/api/`](internal/api/) |
 | PRD scenarios, the multi-clone simulator, token budgets | [`internal/scenario/`](internal/scenario/) |
 | One-time v0 importer (repeatable until cut-over) | [`tools/migrate-v0/`](tools/migrate-v0/) |
 
-Presence and the web UI are the rest of M2 ([PRD §21](docs/prd.md#21-milestones)).
+The web UI is the rest of M2 ([PRD §21](docs/prd.md#21-milestones)).
 
 ## Install
 

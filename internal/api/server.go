@@ -24,6 +24,7 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
 	"github.com/JumpKickOSS/ka/internal/engine"
+	"github.com/JumpKickOSS/ka/internal/presence"
 )
 
 // DefaultAddr is where the daemon listens unless told otherwise.
@@ -46,6 +47,8 @@ type Options struct {
 	Heartbeat time.Duration
 	// MCP, when set, is mounted at /mcp (MCP over Streamable HTTP).
 	MCP http.Handler
+	// Presence lists live agent sessions (GET /api/v1/presence).
+	Presence *presence.Tracker
 }
 
 // Server serves one workspace's service over HTTP.

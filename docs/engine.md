@@ -179,8 +179,8 @@ room the rest leaves. Over every ready ticket of the migrated `jk` store, the ma
 
 ## Not in M1
 
-- Presence and the web UI arrive in M2. The daemon, REST API, SSE events, MCP over HTTP and the
-  `ka mcp` proxy have landed ([api.md](api.md)). CLI commands still run in-process; the daemon
+- The web UI arrives in M2. The daemon, REST API, SSE events, MCP over HTTP, the `ka mcp` proxy
+  and presence have landed ([api.md](api.md)). CLI commands still run in-process; the daemon
   notices their commits within 250 ms.
 - `runtime.sync.push: debounce` is not implemented. Stores push immediately unless the workspace
   sets `push: manual`.

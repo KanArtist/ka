@@ -18,6 +18,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/JumpKickOSS/ka/internal/engine"
+	"github.com/JumpKickOSS/ka/internal/presence"
 	"github.com/JumpKickOSS/ka/internal/render"
 	"github.com/JumpKickOSS/ka/pkg/kaspec"
 )
@@ -29,6 +30,8 @@ var Version = "dev"
 type Options struct {
 	Actor   string // override the agent actor (default agent/<clientInfo.name>)
 	MaxWait time.Duration
+	// Presence, when set, records each session's calls (daemon mode).
+	Presence *presence.Tracker
 }
 
 // Server wraps an MCP server around a service.
@@ -47,8 +50,14 @@ func New(svc *engine.Service, opt Options) *Server {
 		opt.MaxWait = 15 * time.Minute
 	}
 	s := &Server{svc: svc, opt: opt, session: kaspec.RandomBase32(12)}
-	s.MCP = mcp.NewServer(&mcp.Implementation{Name: "ka", Title: "KanArtist", Version: Version},
-		&mcp.ServerOptions{Instructions: instructions})
+	so := &mcp.ServerOptions{Instructions: instructions}
+	if opt.Presence != nil {
+		so.KeepAlive = 30 * time.Second // notice clients that vanish
+	}
+	s.MCP = mcp.NewServer(&mcp.Implementation{Name: "ka", Title: "KanArtist", Version: Version}, so)
+	if opt.Presence != nil {
+		s.MCP.AddReceivingMiddleware(s.trackPresence)
+	}
 	s.addTools()
 	s.addResources()
 	s.addPrompts()
@@ -73,31 +82,88 @@ type nopWriteCloser struct{ io.Writer }
 func (nopWriteCloser) Close() error { return nil }
 
 func (s *Server) caller(req *mcp.CallToolRequest) engine.Caller {
+	if req == nil {
+		return s.callerFor(nil, nil)
+	}
+	return s.callerFor(req.Session, req.Extra)
+}
+
+// callerFor derives the caller from the session's clientInfo, its ID, and,
+// over HTTP (directly or through the ka mcp proxy), the X-Ka-Actor and
+// X-Ka-Session headers, which carry --as / KA_ACTOR and KA_SESSION.
+func (s *Server) callerFor(ss *mcp.ServerSession, extra *mcp.RequestExtra) engine.Caller {
 	actor := s.opt.Actor
 	if actor == "" {
 		name := "mcp"
-		if req != nil && req.Session != nil {
-			if ip := req.Session.InitializeParams(); ip != nil && ip.ClientInfo != nil && ip.ClientInfo.Name != "" {
+		if ss != nil {
+			if ip := ss.InitializeParams(); ip != nil && ip.ClientInfo != nil && ip.ClientInfo.Name != "" {
 				name = ip.ClientInfo.Name
 			}
 		}
 		actor = engine.NormalizeAgent(name)
 	}
 	session := s.session
-	if req != nil && req.Session != nil && req.Session.ID() != "" {
-		session = sanitizeSession(req.Session.ID())
+	if ss != nil && ss.ID() != "" {
+		session = sanitizeSession(ss.ID())
 	}
-	// Over HTTP (directly, or through the ka mcp proxy), headers can name the
-	// actor and session, as KA_ACTOR / --as and KA_SESSION do for stdio.
-	if req != nil && req.Extra != nil && req.Extra.Header != nil {
-		if a := req.Extra.Header.Get("X-Ka-Actor"); a != "" && s.opt.Actor == "" {
+	if extra != nil && extra.Header != nil {
+		if a := extra.Header.Get("X-Ka-Actor"); a != "" && s.opt.Actor == "" {
 			actor = a
 		}
-		if id := req.Extra.Header.Get("X-Ka-Session"); id != "" {
+		if id := extra.Header.Get("X-Ka-Session"); id != "" {
 			session = sanitizeSession(id)
 		}
 	}
 	return s.svc.CallerFor(actor, session)
+}
+
+// trackPresence records every request a session makes, and its end.
+func (s *Server) trackPresence(next mcp.MethodHandler) mcp.MethodHandler {
+	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+		res, err := next(ctx, method, req)
+		ss, _ := req.GetSession().(*mcp.ServerSession)
+		if ss == nil || ss.ID() == "" || method == "ping" {
+			return res, err
+		}
+		c := s.callerFor(ss, req.GetExtra())
+		who := presence.Session{Actor: c.Actor, OnBehalfOf: c.OnBehalfOf}
+		if ip := ss.InitializeParams(); ip != nil && ip.ClientInfo != nil {
+			who.Client = strings.TrimSpace(ip.ClientInfo.Name + " " + ip.ClientInfo.Version)
+		}
+		call := presence.Call{Method: method}
+		if p, ok := req.GetParams().(*mcp.CallToolParamsRaw); ok && p != nil {
+			call.Tool = p.Name
+			var args struct {
+				ID string `json:"id"`
+			}
+			json.Unmarshal(p.Arguments, &args)
+			call.Ticket = strings.ToUpper(args.ID)
+		}
+		if tr, ok := res.(*mcp.CallToolResult); ok && tr != nil {
+			if tr.IsError {
+				if m, ok := tr.StructuredContent.(obj); ok {
+					if e, ok := m["error"].(*engine.Error); ok {
+						call.Error = e.Code
+					}
+				}
+			} else if call.Tool == "ka_next" || call.Ticket == "" {
+				// ka_next names its ticket only in the result.
+				if m, ok := tr.StructuredContent.(*engine.NextOut); ok && m.Ticket != nil {
+					call.Ticket = m.Ticket.ID
+				}
+			}
+		} else if err != nil {
+			call.Error = "error"
+		}
+		if s.opt.Presence.Seen(ss.ID(), who, call) {
+			id := ss.ID()
+			go func() {
+				ss.Wait()
+				s.opt.Presence.Closed(id)
+			}()
+		}
+		return res, err
+	}
 }
 
 // HTTPHandler serves MCP over Streamable HTTP (mounted at /mcp by the daemon).

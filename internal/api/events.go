@@ -11,6 +11,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/JumpKickOSS/ka/internal/engine"
+	"github.com/JumpKickOSS/ka/internal/presence"
 )
 
 // SeqHeader carries the hub's last event ID on every API response, so a
@@ -102,7 +103,7 @@ func writeEvent(w http.ResponseWriter, e engine.Event) error {
 func (s *Server) documentEvents() {
 	reg := s.api.OpenAPI().Components.Schemas
 	evSchema := huma.SchemaFromType(reg, reflect.TypeFor[engine.Event]())
-	for _, t := range []any{engine.TicketEvent{}, engine.ClaimEvent{}, engine.CommentEvent{}, engine.SyncState{}} {
+	for _, t := range []any{engine.TicketEvent{}, engine.ClaimEvent{}, engine.CommentEvent{}, engine.SyncState{}, presence.Change{}} {
 		huma.SchemaFromType(reg, reflect.TypeOf(t))
 	}
 	str := &huma.Schema{Type: huma.TypeString}
@@ -114,7 +115,7 @@ func (s *Server) documentEvents() {
 		Description: "Each SSE message has `id` (the event's sequence number), `event` (its type) and `data` (the Event as JSON). " +
 			"Reconnect with Last-Event-ID to replay what you missed; if it is too old you get a `reset` event and should refetch. " +
 			"Every API response carries " + SeqHeader + ", the last event ID at that moment. A `: ping` comment is sent every 15 s. " +
-			"Data payloads: TicketEvent (ticket.*), ClaimEvent (claim.changed), CommentEvent (comment.created, question.*), SyncState (sync.state).",
+			"Data payloads: TicketEvent (ticket.*), ClaimEvent (claim.changed), CommentEvent (comment.created, question.*), SyncState (sync.state), Change (presence.changed).",
 		Tags: []string{"events"},
 		Parameters: []*huma.Param{
 			{Name: "types", In: "query", Description: "Comma-separated event types; a trailing .* matches a prefix (ticket.*).", Schema: str},

@@ -3,8 +3,8 @@
 `ka daemon` serves one workspace over HTTP: REST under `/api/v1`, described by an OpenAPI 3.1
 document. It is the same `engine.Service` that `ka mcp` and the CLI use, so behavior cannot
 diverge (PRD §12.1). Live changes stream from `GET /api/v1/events` (Server-Sent Events), and MCP
-is served over Streamable HTTP at `/mcp`. Presence and the web UI build on it (see the M2
-tickets).
+is served over Streamable HTTP at `/mcp`, with live presence for every agent session. The web UI
+builds on it (see the M2 tickets).
 
 ## Running it
 
@@ -96,6 +96,7 @@ workspace. The daemon removes the file when it stops.
 | `GET /links/resolve?link=…` | ResolveLink | `ka_resolve_link` |
 | `GET /check`, `POST /fix` | Validate, Fix | `ka check`, `ka fix` |
 | `GET /events` (SSE) | SetEvents, WatchLocal | |
+| `GET /presence` | (daemon only) | |
 | `GET /daemon`, `POST /daemon/shutdown` | | `ka daemon status`, `stop` |
 | `GET /openapi.json` | | `ka daemon openapi` |
 
@@ -119,6 +120,19 @@ shares one index, its events and (soon) presence. `--as` / `$KA_ACTOR` and `$KA_
 (`$KA_NO_DAEMON`), the engine runs in-process, as in M1. `--offline`, `--no-push` and `--map`
 also force in-process mode, because they change how the engine behaves. The MCP scenario tests
 and token budgets run both ways (`TestScenariosViaDaemon`).
+
+## Presence (`GET /api/v1/presence`)
+
+The daemon tracks every MCP session connected to it, directly or through the `ka mcp` proxy. For
+each one it records the actor, the human it works for, the client (`clientInfo` name and version),
+when it connected and was last seen, its last method and tool call, the ticket that call was
+about (for `ka_next`, the ticket it got), the error code if the call failed, and a call count.
+
+Changes stream as `presence.changed` events with `state` `connected`, `active` or `disconnected`.
+A session leaves presence when it closes, or when the daemon's 30-second keep-alive pings stop
+reaching it; one idle for 2 hours is swept as a last resort. Presence is live state only: it is
+never written to git, and it starts empty when the daemon restarts. Sessions of a `ka mcp
+--no-daemon` don't appear, because they never talk to the daemon.
 
 ## Events (`GET /api/v1/events`)
 
@@ -145,7 +159,7 @@ refetching.
 | `sync.conflict_preserved` | `{preserved: [paths]}` |
 | `store.changed` | config, projects or boards changed; refetch the schema |
 | `reset` | refetch your snapshot |
-| `presence.changed` | reserved (KA-PK41Y) |
+| `presence.changed` | `{state, session}` (see Presence) |
 
 Every event has `id`, `type`, `at`, and, where they apply, `store`, `project`, `ticket` and
 `actor` (who caused it, when known: the operation's actor, a single committer's `Ka-Actor`, a

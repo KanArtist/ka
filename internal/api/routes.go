@@ -10,6 +10,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/JumpKickOSS/ka/internal/engine"
+	"github.com/JumpKickOSS/ka/internal/presence"
 	"github.com/JumpKickOSS/ka/pkg/kaspec"
 )
 
@@ -473,7 +474,15 @@ type daemonInfo struct {
 	Workspace string `json:"workspace"`
 }
 
+type presenceList struct {
+	Sessions []presence.Session `json:"sessions" doc:"Live agent sessions on this daemon, most recently active first. Ephemeral: never written to git."`
+}
+
 func (s *Server) adminRoutes() {
+	reg(s, get("listPresence", "/presence", "Connected agent sessions and their last action (live state)", "workspace"),
+		func(ctx context.Context, in *struct{}) (*body[presenceList], error) {
+			return &body[presenceList]{presenceList{s.opts.Presence.List()}}, nil
+		})
 	reg(s, get("getSync", "/sync", "Each store's sync state, without fetching", "sync"),
 		func(ctx context.Context, in *struct{}) (*body[storeList], error) {
 			return &body[storeList]{storeList{s.svc.Stores(ctx)}}, nil
