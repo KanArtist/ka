@@ -7,6 +7,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"slices"
 	"strconv"
@@ -58,6 +60,18 @@ func (s *Server) Run(ctx context.Context) error {
 	return s.MCP.Run(ctx, &mcp.StdioTransport{})
 }
 
+// RunIO serves over the given streams (os.Stdin and os.Stdout use Run).
+func (s *Server) RunIO(ctx context.Context, in io.Reader, out io.Writer) error {
+	if in == io.Reader(os.Stdin) && out == io.Writer(os.Stdout) {
+		return s.Run(ctx)
+	}
+	return s.MCP.Run(ctx, &mcp.IOTransport{Reader: io.NopCloser(in), Writer: nopWriteCloser{out}})
+}
+
+type nopWriteCloser struct{ io.Writer }
+
+func (nopWriteCloser) Close() error { return nil }
+
 func (s *Server) caller(req *mcp.CallToolRequest) engine.Caller {
 	actor := s.opt.Actor
 	if actor == "" {
@@ -73,7 +87,22 @@ func (s *Server) caller(req *mcp.CallToolRequest) engine.Caller {
 	if req != nil && req.Session != nil && req.Session.ID() != "" {
 		session = sanitizeSession(req.Session.ID())
 	}
+	// Over HTTP (directly, or through the ka mcp proxy), headers can name the
+	// actor and session, as KA_ACTOR / --as and KA_SESSION do for stdio.
+	if req != nil && req.Extra != nil && req.Extra.Header != nil {
+		if a := req.Extra.Header.Get("X-Ka-Actor"); a != "" && s.opt.Actor == "" {
+			actor = a
+		}
+		if id := req.Extra.Header.Get("X-Ka-Session"); id != "" {
+			session = sanitizeSession(id)
+		}
+	}
 	return s.svc.CallerFor(actor, session)
+}
+
+// HTTPHandler serves MCP over Streamable HTTP (mounted at /mcp by the daemon).
+func (s *Server) HTTPHandler() http.Handler {
+	return mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return s.MCP }, nil)
 }
 
 func sanitizeSession(id string) string {

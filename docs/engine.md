@@ -141,7 +141,8 @@ assignments first. The chosen ticket moves to the first `started` status as it i
 ## MCP
 
 Configure it in Claude Code with `claude mcp add ka -- ka mcp`. Run it from inside a store or a
-code repo with `.ka.yml`, or set a user workspace.
+code repo with `.ka.yml`, or set a user workspace. When a `ka daemon` runs for the same workspace,
+`ka mcp` proxies to it ([api.md](api.md#mcp-over-http-mcp)).
 
 Tools:
 
@@ -178,8 +179,9 @@ room the rest leaves. Over every ready ticket of the migrated `jk` store, the ma
 
 ## Not in M1
 
-- MCP over HTTP, presence and the web UI arrive in M2, as does proxying `ka mcp` to a daemon.
-  The daemon, REST API and SSE events have landed ([api.md](api.md)).
+- Presence and the web UI arrive in M2. The daemon, REST API, SSE events, MCP over HTTP and the
+  `ka mcp` proxy have landed ([api.md](api.md)). CLI commands still run in-process; the daemon
+  notices their commits within 250 ms.
 - `runtime.sync.push: debounce` is not implemented. Stores push immediately unless the workspace
   sets `push: manual`.
 - `ka watch`, `ka open`, `ka config explain`, `ka project move`, `ka migrate`, `ka hooks install`,

@@ -44,6 +44,8 @@ type Options struct {
 	Events *engine.EventHub
 	// Heartbeat is the SSE keep-alive interval (default 15 s).
 	Heartbeat time.Duration
+	// MCP, when set, is mounted at /mcp (MCP over Streamable HTTP).
+	MCP http.Handler
 }
 
 // Server serves one workspace's service over HTTP.
@@ -82,6 +84,9 @@ func New(svc *engine.Service, opts Options) *Server {
 	s.routes()
 	s.documentEvents()
 	s.mux.HandleFunc("GET /api/v1/events", s.events)
+	if opts.MCP != nil {
+		s.mux.Handle("/mcp", opts.MCP)
+	}
 	s.mux.HandleFunc("GET /healthz", s.healthz)
 	s.mux.HandleFunc("GET /auth", s.auth)
 	return s

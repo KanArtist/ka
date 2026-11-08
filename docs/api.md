@@ -2,8 +2,9 @@
 
 `ka daemon` serves one workspace over HTTP: REST under `/api/v1`, described by an OpenAPI 3.1
 document. It is the same `engine.Service` that `ka mcp` and the CLI use, so behavior cannot
-diverge (PRD §12.1). Live changes stream from `GET /api/v1/events` (Server-Sent Events). MCP over
-HTTP, presence and the web UI build on it (see the M2 tickets).
+diverge (PRD §12.1). Live changes stream from `GET /api/v1/events` (Server-Sent Events), and MCP
+is served over Streamable HTTP at `/mcp`. Presence and the web UI build on it (see the M2
+tickets).
 
 ## Running it
 
@@ -100,6 +101,24 @@ workspace. The daemon removes the file when it stops.
 
 A test (`TestEveryServiceMethodHasAnEndpoint`) fails when a new exported `engine.Service` method
 has no endpoint. Another validates `openapi.json` against the official OpenAPI 3.1 schema.
+
+## MCP over HTTP (`/mcp`)
+
+The daemon serves the same MCP tools, resources and prompts as `ka mcp`, over Streamable HTTP at
+`/mcp`. It needs the bearer token. An HTTP client can connect directly:
+
+```bash
+claude mcp add --transport http ka http://127.0.0.1:7711/mcp --header "Authorization: Bearer $TOKEN"
+```
+
+Usually you don't need to: **`ka mcp` finds a running daemon for its workspace and proxies to
+it.** It bridges stdio to `/mcp` and passes messages through unchanged, so the client's
+`initialize` reaches the daemon and the actor is still `agent/<clientInfo.name>`. Every agent then
+shares one index, its events and (soon) presence. `--as` / `$KA_ACTOR` and `$KA_SESSION` travel as
+`X-Ka-Actor` and `X-Ka-Session` headers. With no daemon, or with `ka mcp --no-daemon`
+(`$KA_NO_DAEMON`), the engine runs in-process, as in M1. `--offline`, `--no-push` and `--map`
+also force in-process mode, because they change how the engine behaves. The MCP scenario tests
+and token budgets run both ways (`TestScenariosViaDaemon`).
 
 ## Events (`GET /api/v1/events`)
 

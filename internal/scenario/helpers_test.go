@@ -3,11 +3,13 @@ package scenario
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/JumpKickOSS/ka/internal/api"
 	"github.com/JumpKickOSS/ka/internal/engine"
 	"github.com/JumpKickOSS/ka/internal/mcpserver"
 )
@@ -21,12 +23,49 @@ type agentConn struct {
 	cs  *mcp.ClientSession
 }
 
+// viaDaemon makes connect go through a daemon: the client speaks stdio to
+// the ka mcp proxy, which forwards to the daemon's /mcp over HTTP.
+var viaDaemon bool
+
+// daemons holds one daemon per service (clone) while viaDaemon is set.
+var daemons = map[*engine.Service]string{}
+
+func daemonFor(t testing.TB, svc *engine.Service) string {
+	if url, ok := daemons[svc]; ok {
+		return url
+	}
+	dctx, cancel := context.WithCancel(ctx)
+	srv := api.New(svc, api.Options{Token: "scenario", Version: "test", MCP: mcpserver.New(svc, mcpserver.Options{}).HTTPHandler()})
+	ln, err := api.Listen("127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() { srv.Serve(dctx, ln); close(done) }()
+	url := "http://" + ln.Addr().String()
+	daemons[svc] = url
+	t.Cleanup(func() { cancel(); <-done; delete(daemons, svc) })
+	return url
+}
+
 func connect(t testing.TB, svc *engine.Service, clientName string) *agentConn {
 	t.Helper()
-	srv := mcpserver.New(svc, mcpserver.Options{})
-	ct, st := mcp.NewInMemoryTransports()
-	if _, err := srv.MCP.Connect(ctx, st, nil); err != nil {
-		t.Fatal(err)
+	var ct mcp.Transport
+	if viaDaemon {
+		url := daemonFor(t, svc)
+		c1, c2 := net.Pipe()
+		p := &mcpserver.Proxy{Endpoint: url + "/mcp", Token: "scenario"}
+		done := make(chan struct{})
+		go func() { p.Run(ctx, c2, c2); c2.Close(); close(done) }()
+		t.Cleanup(func() { c1.Close(); <-done })
+		ct = &mcp.IOTransport{Reader: c1, Writer: c1}
+	} else {
+		srv := mcpserver.New(svc, mcpserver.Options{})
+		var st *mcp.InMemoryTransport
+		ct, st = mcp.NewInMemoryTransports()
+		if _, err := srv.MCP.Connect(ctx, st, nil); err != nil {
+			t.Fatal(err)
+		}
 	}
 	cs, err := mcp.NewClient(&mcp.Implementation{Name: clientName, Version: "1"}, nil).Connect(ctx, ct, nil)
 	if err != nil {

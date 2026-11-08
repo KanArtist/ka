@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -473,9 +474,29 @@ func sortedKeys(m map[string]string) []string {
 // ---- mcp, protocol helpers --------------------------------------------------------
 
 func cmdMCP(ctx context.Context, x *IO, args []string) int {
-	fl, c := newFlags("mcp", "", x)
+	fl, c := newFlags("mcp", "[--no-daemon]", x)
+	noDaemon := fl.Bool("no-daemon", os.Getenv("KA_NO_DAEMON") != "", "run the engine in-process even if a daemon is running ($KA_NO_DAEMON)")
 	if _, err := parse(fl, args); err != nil {
 		return 2
+	}
+	// With a daemon for this workspace, bridge to it: one index, presence
+	// and live events for everyone (PRD §8.3).
+	if !*noDaemon && !c.offline && !c.noPush && len(c.maps) == 0 {
+		if rt, _, err := runningDaemon(ctx, x, c); err == nil && rt != nil {
+			hdr := http.Header{}
+			if c.as != "" {
+				hdr.Set("X-Ka-Actor", c.as)
+			}
+			if sid := os.Getenv("KA_SESSION"); sid != "" {
+				hdr.Set("X-Ka-Session", sid)
+			}
+			p := &mcpserver.Proxy{Endpoint: rt.URL + "/mcp", Token: rt.Token, Header: hdr}
+			if err := p.Run(ctx, x.In, x.Out); err != nil && ctx.Err() == nil {
+				fmt.Fprintln(x.Err, "ka mcp:", err)
+				return 1
+			}
+			return 0
+		}
 	}
 	svc, _, err := open(ctx, x, c)
 	if err != nil {
@@ -486,7 +507,7 @@ func cmdMCP(ctx context.Context, x *IO, args []string) int {
 		opt.Actor = c.as
 	}
 	mcpserver.Version = Version
-	if err := mcpserver.New(svc, opt).Run(ctx); err != nil && ctx.Err() == nil {
+	if err := mcpserver.New(svc, opt).RunIO(ctx, x.In, x.Out); err != nil && ctx.Err() == nil {
 		fmt.Fprintln(x.Err, "ka mcp:", err)
 		return 1
 	}
