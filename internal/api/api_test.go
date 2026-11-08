@@ -245,7 +245,7 @@ func TestOpenAPIValidates(t *testing.T) {
 // plumbing with no meaning over HTTP).
 func TestEveryServiceMethodHasAnEndpoint(t *testing.T) {
 	plumbing := map[string]string{
-		"Index": "internal", "Human": "GET /workspace (you)", "CallerFor": "X-Ka-Actor", "CallerAs": "X-Ka-Principal", "ActorFor": "remote auth", "Reload": "internal",
+		"Index": "internal", "Human": "GET /workspace (you)", "CallerFor": "X-Ka-Actor", "CallerAs": "X-Ka-Principal", "ActorFor": "remote auth", "StoresForRepo": "POST /hooks/github", "Reload": "internal",
 		"TicketPath": "GET /tickets/{id}/source", "BoardFilter": "GET /boards/{name}", "Projects": "GET /workspace",
 		"ETag": "ETag headers", "SetEvents": "GET /events", "WatchLocal": "daemon", "FetchLoop": "daemon", "Flush": "daemon",
 	}

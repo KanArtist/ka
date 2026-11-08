@@ -51,6 +51,8 @@ type Options struct {
 	Presence *presence.Tracker
 	// Remote enables remote mode: API tokens and trusted proxies (PRD §15).
 	Remote *Remote
+	// WebhookSecret verifies GitHub webhooks at POST /api/v1/hooks/github.
+	WebhookSecret string
 }
 
 // Server serves one workspace's service over HTTP.
@@ -94,6 +96,7 @@ func New(svc *engine.Service, opts Options) *Server {
 	}
 	s.mux.HandleFunc("GET /healthz", s.healthz)
 	s.mux.HandleFunc("GET /auth", s.auth)
+	s.mux.HandleFunc("POST "+GitHubHookPath, s.githubHook)
 	return s
 }
 
@@ -180,7 +183,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch r.URL.Path {
-	case "/healthz", "/auth":
+	case "/healthz", "/auth", GitHubHookPath: // the webhook checks its own HMAC
 	default:
 		principal, ok := s.authenticate(r)
 		if !ok {

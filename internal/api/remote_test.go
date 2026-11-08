@@ -2,6 +2,9 @@ package api
 
 import (
 	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -132,3 +135,47 @@ func TestRemoteNeedsAuth(t *testing.T) {
 }
 
 func engineGet(id string) engine.GetIn { return engine.GetIn{ID: id} }
+
+func TestGitHubWebhook(t *testing.T) {
+	testkit.GitEnv(t)
+	r := testkit.NewRemote(t, nil)
+	svc := testkit.Service(t, r.Clone())
+	const secret = "s3cret"
+	h := New(svc, Options{Token: testToken, Version: "test", WebhookSecret: secret}).Handler()
+	hook := func(event string, body []byte, sig string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest("POST", "http://127.0.0.1:7711"+GitHubHookPath, bytes.NewReader(body))
+		req.Host = "127.0.0.1:0"
+		req.Header.Set("X-GitHub-Event", event)
+		if sig != "" {
+			req.Header.Set("X-Hub-Signature-256", sig)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+	sign := func(b []byte) string {
+		m := hmac.New(sha256.New, []byte(secret))
+		m.Write(b)
+		return "sha256=" + hex.EncodeToString(m.Sum(nil))
+	}
+	push := []byte(`{"ref":"refs/heads/main","repository":{"clone_url":"` + strings.ReplaceAll(r.Path, `\`, `\\`) + `/","ssh_url":"git@example.com:x/y.git"}}`)
+	if rec := hook("push", push, ""); rec.Code != 401 {
+		t.Fatalf("unsigned: %d", rec.Code)
+	}
+	if rec := hook("push", push, "sha256=00"); rec.Code != 401 {
+		t.Fatalf("bad signature: %d", rec.Code)
+	}
+	rec := hook("push", push, sign(push))
+	if rec.Code != 202 || !strings.Contains(rec.Body.String(), `"fetching":["`+svc.WS.Stores[0].Name+`"]`) {
+		t.Fatalf("push: %d %s", rec.Code, rec.Body)
+	}
+	ping := []byte(`{"zen":"hi"}`)
+	if rec := hook("ping", ping, sign(ping)); rec.Code != 202 {
+		t.Fatalf("ping: %d", rec.Code)
+	}
+	// Without a secret configured, webhooks are refused.
+	h = New(svc, Options{Token: testToken, Version: "test"}).Handler()
+	if rec := hook("push", push, sign(push)); rec.Code != 403 {
+		t.Fatalf("unconfigured: %d", rec.Code)
+	}
+}

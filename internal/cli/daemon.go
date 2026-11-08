@@ -46,8 +46,17 @@ func daemonRun(ctx context.Context, x *IO, args []string) int {
 	fl.Var(&proxies, "trusted-proxy", "remote mode: a reverse proxy (CIDR or IP) trusted to assert the user in --proxy-user-header (repeatable)")
 	proxyHeader := fl.String("proxy-user-header", "X-Forwarded-User", "the header a trusted proxy sets to the user's handle or email")
 	verbose := fl.Bool("v", false, "log every request")
+	hookSecretFile := fl.String("webhook-secret-file", "", "verify GitHub webhooks (POST /api/v1/hooks/github) with the secret in this file ($KA_WEBHOOK_SECRET also works)")
 	if _, err := parse(fl, args); err != nil {
 		return 2
+	}
+	hookSecret := os.Getenv("KA_WEBHOOK_SECRET")
+	if *hookSecretFile != "" {
+		b, err := os.ReadFile(*hookSecretFile)
+		if err != nil {
+			return fail(x, c, err)
+		}
+		hookSecret = strings.TrimSpace(string(b))
 	}
 	svc, _, err := open(ctx, x, c)
 	if err != nil {
@@ -98,7 +107,7 @@ func daemonRun(ctx context.Context, x *IO, args []string) int {
 	// Actors come from each client, not the daemon's environment.
 	mcpSrv := mcpserver.New(svc, mcpserver.Options{Presence: pres})
 	srv := api.New(svc, api.Options{Token: api.NewToken(), Version: Version, Logger: log, Shutdown: cancel,
-		Events: hub, MCP: mcpSrv.HTTPHandler(), Presence: pres, Remote: remote})
+		Events: hub, MCP: mcpSrv.HTTPHandler(), Presence: pres, Remote: remote, WebhookSecret: hookSecret})
 	go func() {
 		t := time.NewTicker(time.Minute)
 		defer t.Stop()

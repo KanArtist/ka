@@ -77,6 +77,11 @@ ka daemon --listen 0.0.0.0:7711 --public-url https://ka.example.com
 - The principal travels to handlers and the MCP server in `X-Ka-Principal`, which the daemon sets
   itself and strips from every incoming request.
 - The local runtime token still works on the machine itself (`ka open`, the `ka mcp` bridge).
+- **GitHub webhooks.** Start the daemon with `--webhook-secret-file FILE` (or
+  `$KA_WEBHOOK_SECRET`) and add a webhook in the store repository's settings: payload URL
+  `https://ka.example.com/api/v1/hooks/github`, content type `application/json`, the same
+  secret, push events. Pushes are verified by `X-Hub-Signature-256` (no API token needed) and
+  fetch the matching stores within a second instead of waiting for the next fetch interval.
 - Write authority is "anyone authenticated can write, with the daemon's git credentials"; forge
   branch protection still applies.
 

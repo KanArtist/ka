@@ -261,3 +261,44 @@ func (st *Store) fetchEvery() time.Duration {
 	}
 	return DefaultFetchInterval
 }
+
+// StoresForRepo names the stores whose remote is one of urls, compared as
+// host/path whatever the scheme (git@host:org/repo.git and
+// https://host/org/repo are the same repository). Forge webhooks use it.
+func (s *Service) StoresForRepo(urls ...string) []string {
+	want := map[string]bool{}
+	for _, u := range urls {
+		if k := repoKey(u); k != "" {
+			want[k] = true
+		}
+	}
+	var out []string
+	for _, st := range s.WS.Stores {
+		if st.URL != "" && want[repoKey(st.URL)] {
+			out = append(out, st.Name)
+		}
+	}
+	return out
+}
+
+func repoKey(u string) string {
+	u = strings.TrimSpace(u)
+	if u == "" {
+		return ""
+	}
+	if i := strings.Index(u, "://"); i >= 0 {
+		u = u[i+3:]
+		if at := strings.LastIndex(strings.SplitN(u, "/", 2)[0], "@"); at >= 0 {
+			u = u[at+1:]
+		}
+	} else if at := strings.Index(u, "@"); at >= 0 && strings.Contains(u[at:], ":") {
+		u = strings.Replace(u[at+1:], ":", "/", 1) // scp-style git@host:org/repo
+	}
+	if h, rest, ok := strings.Cut(u, "/"); ok {
+		if hh, _, ok := strings.Cut(h, ":"); ok { // drop a port
+			h = hh
+		}
+		u = h + "/" + rest
+	}
+	return strings.ToLower(strings.TrimSuffix(strings.TrimSuffix(u, "/"), ".git"))
+}

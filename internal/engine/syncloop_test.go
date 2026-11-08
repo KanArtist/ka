@@ -172,3 +172,16 @@ func waitFor(t *testing.T, ok func() bool) {
 		time.Sleep(20 * time.Millisecond)
 	}
 }
+
+func TestRepoKey(t *testing.T) {
+	want := "github.com/jumpkickoss/ka-org"
+	for _, u := range []string{"git@github.com:JumpKickOSS/ka-org.git", "https://github.com/JumpKickOSS/ka-org", "https://github.com/JumpKickOSS/ka-org.git/",
+		"ssh://git@github.com:22/JumpKickOSS/ka-org.git", "https://token@github.com/JumpKickOSS/ka-org.git"} {
+		if got := repoKey(u); got != want {
+			t.Errorf("repoKey(%q) = %q", u, got)
+		}
+	}
+	if repoKey("/srv/git/ka.git") != "/srv/git/ka" {
+		t.Errorf("local path: %q", repoKey("/srv/git/ka.git"))
+	}
+}
