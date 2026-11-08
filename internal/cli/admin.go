@@ -77,6 +77,7 @@ func cmdCheck(ctx context.Context, x *IO, args []string) int {
 	ci := fl.Bool("ci", false, "for CI: fail on warnings, and print GitHub annotations when run in GitHub Actions")
 	format := fl.String("format", "", "output: text (default), json, github (workflow annotations) or sarif (code scanning)")
 	output := fl.String("o", "", "write the report to this file instead of stdout (the summary still prints)")
+	staged := fl.Bool("staged", false, "check the stores as staged in the git index (for the pre-commit hook)")
 	nowFlag := fl.String("now", "", "evaluate stale claims as of this RFC 3339 time (default: now)")
 	pos, err := parse(fl, args)
 	if err != nil {
@@ -107,7 +108,15 @@ func cmdCheck(ctx context.Context, x *IO, args []string) int {
 	}
 	var ws *kaspec.Workspace
 	var diags []kaspec.Diagnostic
-	if len(pos) > 0 {
+	if *staged {
+		sws, cleanup, err := stagedStores(ctx, x.Dir, c.maps)
+		if err != nil {
+			return fail(x, c, err)
+		}
+		defer cleanup()
+		ws = sws
+		diags = kaspec.Check(ws, kaspec.CheckOptions{Now: now})
+	} else if len(pos) > 0 {
 		var dirs []string
 		for _, a := range pos {
 			if !filepath.IsAbs(a) {
@@ -197,11 +206,15 @@ func cmdCheck(ctx context.Context, x *IO, args []string) int {
 }
 
 func cmdFmt(ctx context.Context, x *IO, args []string) int {
-	fl, _ := newFlags("fmt", "[--check] [STORE_DIR...]", x)
+	fl, _ := newFlags("fmt", "[--check] [--staged] [STORE_DIR...]", x)
 	checkOnly := fl.Bool("check", false, "list files that are not canonical; change nothing")
+	staged := fl.Bool("staged", false, "format staged tickets and comments and stage the result (for the pre-commit hook)")
 	pos, err := parse(fl, args)
 	if err != nil {
 		return 2
+	}
+	if *staged {
+		return fmtStaged(ctx, x)
 	}
 	var dirs []string
 	if len(pos) == 0 {
@@ -226,33 +239,15 @@ func cmdFmt(ctx context.Context, x *IO, args []string) int {
 			}
 			rel, _ := filepath.Rel(root, p)
 			rel = filepath.ToSlash(rel)
-			parts := strings.Split(rel, "/")
-			isTicket := len(parts) == 5 && parts[2] == "tickets" && parts[4] == "ticket.md"
-			isComment := len(parts) == 6 && parts[2] == "tickets" && parts[4] == "comments"
-			if !isTicket && !isComment {
-				return nil
-			}
 			data, err := os.ReadFile(p)
 			if err != nil {
 				return err
 			}
-			norm := kaspec.NormalizeEncoding(data)
-			var out []byte
-			var diags []kaspec.Diagnostic
-			if isTicket {
-				var t *kaspec.Ticket
-				t, diags = kaspec.ParseTicket(rel, norm)
-				if t != nil {
-					out = kaspec.FormatTicket(t)
-				}
-			} else {
-				var cm *kaspec.Comment
-				cm, diags = kaspec.ParseComment(rel, norm)
-				if cm != nil {
-					out = kaspec.FormatComment(cm)
-				}
+			out, isStore, ok := formatFile(rel, data)
+			if !isStore {
+				return nil
 			}
-			if kaspec.HasErrors(diags, false) || out == nil {
+			if !ok {
 				fmt.Fprintf(x.Err, "skip %s: has errors (run ka check)\n", rel)
 				skipped++
 				return nil

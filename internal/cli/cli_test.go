@@ -182,7 +182,7 @@ func TestCheckCIFormats(t *testing.T) {
 				Level     string `json:"level"`
 				Locations []struct {
 					PhysicalLocation struct {
-						ArtifactLocation struct{ URI string } `json:"artifactLocation"`
+						ArtifactLocation struct{ URI string }    `json:"artifactLocation"`
 						Region           struct{ StartLine int } `json:"region"`
 					} `json:"physicalLocation"`
 				} `json:"locations"`
@@ -199,5 +199,56 @@ func TestCheckCIFormats(t *testing.T) {
 	}
 	if r = ka(t, dir, "check", "--format", "xml", dir); r.code != 2 {
 		t.Fatalf("bad format accepted: %+v", r)
+	}
+}
+
+func TestHooksAndStaged(t *testing.T) {
+	testkit.GitEnv(t)
+	dir := filepath.Join(t.TempDir(), "tickets")
+	ka(t, dir, "init", "--project", "demo", dir)
+	testkit.Git(t, dir, "add", "-A")
+	testkit.Git(t, dir, "commit", "-qm", "init")
+
+	if r := ka(t, dir, "hooks", "install"); r.code != 0 {
+		t.Fatalf("install: %+v", r)
+	}
+	hook := filepath.Join(dir, ".git", "hooks", "pre-commit")
+	if b, err := os.ReadFile(hook); err != nil || !strings.Contains(string(b), "ka check --staged") {
+		t.Fatalf("hook: %s %v", b, err)
+	}
+	if r := ka(t, dir, "hooks", "status"); !strings.Contains(r.out, "installed") {
+		t.Fatalf("status: %+v", r)
+	}
+
+	// A hand-written ticket with keys out of order: fmt --staged fixes and restages it.
+	p := filepath.Join(dir, "projects", "demo", "tickets", "DEMO-7QK3M", "ticket.md")
+	os.MkdirAll(filepath.Dir(p), 0o755)
+	os.WriteFile(p, []byte("---\ntitle: Hand written\nid: DEMO-7QK3M\nstatus: ready\ncreated: 2026-11-07T12:00:00Z\nupdated: 2026-11-07T12:00:00Z\n---\n"), 0o644)
+	testkit.Git(t, dir, "add", "-A")
+	if r := ka(t, dir, "fmt", "--staged"); r.code != 0 || !strings.Contains(r.out, "formatted projects/demo/tickets/DEMO-7QK3M/ticket.md") {
+		t.Fatalf("fmt --staged: %+v", r)
+	}
+	if staged := testkit.Git(t, dir, "show", ":projects/demo/tickets/DEMO-7QK3M/ticket.md"); !strings.HasPrefix(staged, "---\nid: DEMO-7QK3M\ntitle: Hand written") {
+		t.Fatalf("staged after fmt:\n%s", staged)
+	}
+	if r := ka(t, dir, "check", "--staged"); r.code != 0 {
+		t.Fatalf("check --staged (clean): %+v", r)
+	}
+
+	// The index decides: a bad kind staged fails even if the worktree is fixed.
+	os.WriteFile(p, []byte("---\nid: DEMO-7QK3M\ntitle: Hand written\nstatus: ready\nkind: nonsense\ncreated: 2026-11-07T12:00:00Z\nupdated: 2026-11-07T12:00:00Z\n---\n"), 0o644)
+	testkit.Git(t, dir, "add", "-A")
+	os.WriteFile(p, []byte("---\nid: DEMO-7QK3M\ntitle: Hand written\nstatus: ready\ncreated: 2026-11-07T12:00:00Z\nupdated: 2026-11-07T12:00:00Z\n---\n"), 0o644)
+	if r := ka(t, dir, "check", "--staged"); r.code != 1 || !strings.Contains(r.out, "unknown_kind") || !strings.Contains(r.out, "projects/demo/tickets/DEMO-7QK3M/ticket.md") {
+		t.Fatalf("check --staged (bad): %+v", r)
+	}
+
+	// An unrelated hook is not replaced without --force; ours uninstalls.
+	if r := ka(t, dir, "hooks", "uninstall"); r.code != 0 {
+		t.Fatalf("uninstall: %+v", r)
+	}
+	os.WriteFile(hook, []byte("#!/bin/sh\necho mine\n"), 0o755)
+	if r := ka(t, dir, "hooks", "install"); r.code != 1 || !strings.Contains(r.err, "--force") {
+		t.Fatalf("install over a foreign hook: %+v", r)
 	}
 }
