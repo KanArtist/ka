@@ -252,3 +252,31 @@ func TestHooksAndStaged(t *testing.T) {
 		t.Fatalf("install over a foreign hook: %+v", r)
 	}
 }
+
+func TestCompletion(t *testing.T) {
+	testkit.GitEnv(t)
+	dir := filepath.Join(t.TempDir(), "tickets")
+	ka(t, dir, "init", "--project", "demo", dir)
+	testkit.Git(t, dir, "add", "-A")
+	testkit.Git(t, dir, "commit", "-qm", "init")
+	r := ka(t, dir, "new", "-t", "Complete me", "--no-push")
+	id := strings.Fields(r.out)[0]
+	for _, c := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"__complete", "cl"}, "claim\n"},
+		{[]string{"__complete", "new", "--pri"}, "--priority\n"},
+		{[]string{"__complete", "show", strings.ToLower(id[:6])}, id + "\n"},
+		{[]string{"__complete", "move", id, "in_"}, "in_progress\n"},
+	} {
+		if r := ka(t, dir, c.args...); r.code != 0 || r.out != c.want {
+			t.Errorf("%v: %q (want %q) %s", c.args, r.out, c.want, r.err)
+		}
+	}
+	for _, sh := range []string{"bash", "zsh", "fish", "powershell"} {
+		if r := ka(t, dir, "completion", sh); r.code != 0 || !strings.Contains(r.out, "__complete") {
+			t.Errorf("completion %s: %+v", sh, r)
+		}
+	}
+}

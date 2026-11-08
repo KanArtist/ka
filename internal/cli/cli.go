@@ -72,6 +72,8 @@ func init() {
 		{"agents-md", "[--project KEY]", "print the hand-writing protocol for AGENTS.md", cmdAgentsMD, false},
 		{"template", "[--project KEY]", "print a blank ticket", cmdTemplate, false},
 		{"version", "", "print the version", cmdVersion, false},
+		{"completion", "bash|zsh|fish|powershell", "print a shell completion script", cmdCompletion, false},
+		{"__complete", "WORDS...", "completion candidates (used by the completion scripts)", cmdComplete, true},
 		{"merge-driver", "%O %A %B %P", "git merge driver (registered by ka init / ka doctor --fix)", cmdMergeDriver, true},
 	}
 }
