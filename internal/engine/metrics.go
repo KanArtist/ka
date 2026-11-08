@@ -41,7 +41,9 @@ func (m *OpStats) Snapshot() ([]OpCount, map[string]float64) {
 	for k, n := range m.counts {
 		out = append(out, OpCount{k[0], k[1], n})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Op < out[j].Op || out[i].Op == out[j].Op && out[i].Result < out[j].Result })
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].Op < out[j].Op || out[i].Op == out[j].Op && out[i].Result < out[j].Result
+	})
 	secs := make(map[string]float64, len(m.seconds))
 	for k, v := range m.seconds {
 		secs[k] = v
