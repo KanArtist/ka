@@ -12,6 +12,7 @@ import {
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { Summary } from '../../api/api';
+import { Actions } from '../../actions';
 import { Live } from '../../live';
 import { Avatar, actorName, isAgent } from '../../ui/actor';
 import { Clock, ago, exact } from '../../ui/time';
@@ -40,10 +41,11 @@ const CLOSED_WINDOW_MS = 14 * 86_400_000;
 const PRIORITY_ORDER = ['P0', 'P1', 'P2', 'P3'];
 
 /**
- * The board (PRD §13.2), read-only in M2: columns by status, optional
+ * The board (PRD §13.2): columns by status, optional
  * swimlanes, and cards with priority, kind, labels, claim age, acceptance
  * progress and blocked state. When an event moves a card, it glides to
- * its new column wearing the actor's mark for a moment.
+ * its new column wearing the actor's mark for a moment. Cards can be dragged
+ * between columns (and priority or assignee lanes), or moved with Shift+arrows.
  */
 @Component({
   selector: 'ka-board',
@@ -54,6 +56,7 @@ const PRIORITY_ORDER = ['P0', 'P1', 'P2', 'P3'];
 })
 export class Board {
   protected live = inject(Live);
+  private actions = inject(Actions);
   private clock = inject(Clock);
   private host = viewChild.required<ElementRef<HTMLElement>>('host');
 
@@ -67,6 +70,12 @@ export class Board {
   protected readonly exact = exact;
   protected readonly isAgent = isAgent;
   protected readonly actorName = actorName;
+
+  /** Drag and drop: the card being dragged and the column under it. */
+  protected readonly dragging = signal('');
+  protected readonly dropAt = signal('');
+  /** Announced to screen readers after a move. */
+  protected readonly announce = signal('');
 
   /** Cards that just moved: id -> actor, for the arrival mark. */
   protected readonly moved = signal<ReadonlyMap<string, string>>(new Map());
@@ -186,6 +195,123 @@ export class Board {
     if (!t.acceptance) return null;
     const [d, n] = t.acceptance.split('/').map(Number);
     return n ? { done: d, total: n } : null;
+  }
+
+  // ---- moving cards (PRD §13.2: drag and drop, with keyboard equivalents) ----
+
+  /** Whether t can be edited here (its project is writable). */
+  protected canMove(t: Summary): boolean {
+    const p = this.live.schema()?.projects?.find((x) => x.key === t.project);
+    return !!p && !p.read_only && !p.archived;
+  }
+
+  /** Whether t may land in column status of row: the status exists in its project, and the lane can change. */
+  private accepts(t: Summary, row: Row, status: string): boolean {
+    const p = this.live.schema()?.projects?.find((x) => x.key === t.project);
+    if (!p?.statuses?.some((s) => s.name === status)) return false;
+    const lane = this.lane();
+    const cur = laneKey(t, lane);
+    if (cur === row.key) return true;
+    return lane === 'priority' || lane === 'assignee' || lane === 'none';
+  }
+
+  protected dragStart(e: DragEvent, t: Summary): void {
+    if (!this.canMove(t)) {
+      e.preventDefault();
+      return;
+    }
+    this.dragging.set(t.id);
+    e.dataTransfer?.setData('text/plain', t.id);
+    if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+  }
+
+  protected dragOver(e: DragEvent, row: Row, c: Column): void {
+    const t = this.live.tickets().get(this.dragging());
+    if (!t || !this.accepts(t, row, c.status)) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+    this.dropAt.set(row.key + '\u0000' + c.status);
+  }
+
+  protected dragLeave(row: Row, c: Column): void {
+    if (this.dropAt() === row.key + '\u0000' + c.status) this.dropAt.set('');
+  }
+
+  protected drop(e: DragEvent, row: Row, c: Column): void {
+    e.preventDefault();
+    const t = this.live.tickets().get(this.dragging());
+    this.dragEnd();
+    if (t) void this.move(t, c.status, row.key);
+  }
+
+  protected dragEnd(): void {
+    this.dragging.set('');
+    this.dropAt.set('');
+  }
+
+  protected isDropTarget(row: Row, c: Column): boolean {
+    return this.dropAt() === row.key + '\u0000' + c.status;
+  }
+
+  /** Move t to status (and to lane, when lanes are priority or assignee). */
+  private async move(t: Summary, status: string, lane?: string): Promise<void> {
+    const l = this.lane();
+    const field = l === 'priority' ? 'priority' : l === 'assignee' ? 'assignee' : '';
+    const laneChange = field && lane !== undefined && lane !== laneKey(t, l);
+    if (status === t.status && !laneChange) return;
+    const patch: Partial<Summary> = {};
+    if (status !== t.status) patch.status = status;
+    if (laneChange) (patch as any)[field] = lane || undefined;
+    const undo = this.live.patchTicket(t.id, patch);
+    this.moved.set(new Map(this.moved()).set(t.id, this.live.you()));
+    let ok = true;
+    if (status !== t.status) ok = await this.actions.transition(t, status);
+    if (ok && laneChange) ok = !!(await this.actions.set(t.id, { [field]: lane || null }));
+    if (!ok) {
+      undo();
+      this.announce.set(`${t.id} was not moved`);
+      return;
+    }
+    this.announce.set(`Moved ${t.id} to ${status}${laneChange ? `, ${this.laneLabel(lane!, l)}` : ''}`);
+  }
+
+  /**
+   * Keyboard on a focused card: arrows move focus between cards and
+   * columns; Shift+Left/Right moves the card to the previous or next status.
+   */
+  protected cardKey(e: KeyboardEvent, t: Summary, row: Row, ci: number): void {
+    const cols = row.columns;
+    if (e.shiftKey && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
+      e.preventDefault();
+      if (!this.canMove(t)) return;
+      const step = e.key === 'ArrowRight' ? 1 : -1;
+      for (let j = ci + step; j >= 0 && j < cols.length; j += step) {
+        if (this.accepts(t, row, cols[j].status)) {
+          void this.move(t, cols[j].status).then(() => this.focusCard(t.id));
+          return;
+        }
+      }
+      return;
+    }
+    const idx = cols[ci].cards.findIndex((c) => c.id === t.id);
+    let target: Summary | undefined;
+    if (e.key === 'ArrowDown' || e.key === 'j') target = cols[ci].cards[idx + 1];
+    else if (e.key === 'ArrowUp' || e.key === 'k') target = cols[ci].cards[idx - 1];
+    else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+      const step = e.key === 'ArrowRight' ? 1 : -1;
+      for (let j = ci + step; j >= 0 && j < cols.length && !target; j += step) {
+        const cs = cols[j].cards;
+        if (cs.length) target = cs[Math.min(idx, cs.length - 1)];
+      }
+    }
+    if (target) {
+      e.preventDefault();
+      this.focusCard(target.id);
+    }
+  }
+
+  private focusCard(id: string): void {
+    setTimeout(() => this.host().nativeElement.querySelector<HTMLElement>(`[data-card="${CSS.escape(id)}"] .hit`)?.focus());
   }
 
   private laneLabel(key: string, lane: Lane): string {

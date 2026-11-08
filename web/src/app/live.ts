@@ -166,6 +166,22 @@ export class Live {
     }
   }
 
+  /**
+   * Show a change before the daemon confirms it (a dragged card lands at
+   * once). The event stream overwrites it with the truth; call the returned
+   * function to undo it if the write fails.
+   */
+  patchTicket(id: string, patch: Partial<Summary>): () => void {
+    const old = this.tickets().get(id);
+    if (!old) return () => {};
+    this.putTicket({ ...old, ...patch });
+    return () => {
+      const cur = this.tickets().get(id);
+      // Only undo if nothing newer arrived meanwhile.
+      if (cur && Object.entries(patch).every(([k, v]) => (cur as any)[k] === v)) this.putTicket(old);
+    };
+  }
+
   private putTicket(t: Summary): void {
     const m = new Map(this.tickets());
     m.set(t.id, t);

@@ -1,4 +1,5 @@
 <section class="board" #host>
+  <p class="sr-only" aria-live="polite">{{ announce() }}</p>
   <header class="head">
     <h1>Board</h1>
     <div class="controls">
@@ -47,11 +48,36 @@
         </h2>
       }
       <div class="cols">
-        @for (c of r.columns; track c.status) {
-          <ol class="col" [attr.aria-label]="c.status + (r.label ? ', ' + r.label : '')">
+        @for (c of r.columns; track c.status; let ci = $index) {
+          <ol
+            class="col"
+            [class.drop]="isDropTarget(r, c)"
+            [attr.aria-label]="c.status + (r.label ? ', ' + r.label : '')"
+            (dragover)="dragOver($event, r, c)"
+            (dragleave)="dragLeave(r, c)"
+            (drop)="drop($event, r, c)"
+          >
             @for (t of c.cards; track t.id) {
-              <li class="card" [attr.data-card]="t.id" [class.blocked]="t.blocked" [class.marked]="moved().has(t.id)" [class.agentmark]="isAgent(moved().get(t.id))">
-                <a [routerLink]="[]" [queryParams]="{ peek: t.id }" queryParamsHandling="merge" class="hit" [attr.aria-label]="t.id + ' ' + t.title"></a>
+              <li
+                class="card"
+                [attr.data-card]="t.id"
+                [class.blocked]="t.blocked"
+                [class.marked]="moved().has(t.id)"
+                [class.agentmark]="isAgent(moved().get(t.id))"
+                [class.lifted]="dragging() === t.id"
+                [attr.draggable]="canMove(t)"
+                (dragstart)="dragStart($event, t)"
+                (dragend)="dragEnd()"
+              >
+                <a
+                  [routerLink]="[]"
+                  [queryParams]="{ peek: t.id }"
+                  queryParamsHandling="merge"
+                  class="hit"
+                  draggable="false"
+                  [attr.aria-label]="t.id + ' ' + t.title + ', ' + t.status + (canMove(t) ? '. Shift+arrow keys move it.' : '')"
+                  (keydown)="cardKey($event, t, r, ci)"
+                ></a>
                 <div class="line1">
                   <span class="id">{{ t.id }}</span>
                   @if (t.priority) {

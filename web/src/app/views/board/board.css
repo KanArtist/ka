@@ -242,3 +242,17 @@ select {
   color: var(--muted);
   padding: 24px 0;
 }
+
+/* ---- drag and drop ---- */
+.card[draggable='true'] {
+  cursor: grab;
+}
+.card.lifted {
+  opacity: 0.45;
+}
+.col.drop {
+  background: color-mix(in srgb, var(--ink-human) 7%, transparent);
+  outline: 1px dashed color-mix(in srgb, var(--ink-human) 55%, transparent);
+  outline-offset: 2px;
+  border-radius: var(--r-md);
+}
