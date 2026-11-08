@@ -660,7 +660,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** The workspace: stores, projects, default project and the daemon's human */
+        /** The workspace: stores, projects, default project and who you are */
         get: operations["getWorkspace"];
         put?: never;
         post?: never;
@@ -1492,7 +1492,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Act as this actor; default: the daemon's human. Agents use agent/<name> and are recorded as acting on behalf of the human. */
+                /** @description Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/<name> and are recorded as acting on behalf of that person. */
                 "X-Ka-Actor"?: string;
                 /** @description A session ID, recorded in the Ka-Session trailer. */
                 "X-Ka-Session"?: string;
@@ -1535,7 +1535,7 @@ export interface operations {
                 store?: string;
             };
             header?: {
-                /** @description Act as this actor; default: the daemon's human. Agents use agent/<name> and are recorded as acting on behalf of the human. */
+                /** @description Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/<name> and are recorded as acting on behalf of that person. */
                 "X-Ka-Actor"?: string;
                 /** @description A session ID, recorded in the Ka-Session trailer. */
                 "X-Ka-Session"?: string;
@@ -1800,7 +1800,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Act as this actor; default: the daemon's human. Agents use agent/<name> and are recorded as acting on behalf of the human. */
+                /** @description Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/<name> and are recorded as acting on behalf of that person. */
                 "X-Ka-Actor"?: string;
                 /** @description A session ID, recorded in the Ka-Session trailer. */
                 "X-Ka-Session"?: string;
@@ -1871,7 +1871,7 @@ export interface operations {
                 since?: string;
             };
             header?: {
-                /** @description Act as this actor; default: the daemon's human. Agents use agent/<name> and are recorded as acting on behalf of the human. */
+                /** @description Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/<name> and are recorded as acting on behalf of that person. */
                 "X-Ka-Actor"?: string;
                 /** @description A session ID, recorded in the Ka-Session trailer. */
                 "X-Ka-Session"?: string;
@@ -1936,7 +1936,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Act as this actor; default: the daemon's human. Agents use agent/<name> and are recorded as acting on behalf of the human. */
+                /** @description Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/<name> and are recorded as acting on behalf of that person. */
                 "X-Ka-Actor"?: string;
                 /** @description A session ID, recorded in the Ka-Session trailer. */
                 "X-Ka-Session"?: string;
@@ -2003,7 +2003,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Act as this actor; default: the daemon's human. Agents use agent/<name> and are recorded as acting on behalf of the human. */
+                /** @description Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/<name> and are recorded as acting on behalf of that person. */
                 "X-Ka-Actor"?: string;
                 /** @description A session ID, recorded in the Ka-Session trailer. */
                 "X-Ka-Session"?: string;
@@ -2037,7 +2037,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Act as this actor; default: the daemon's human. Agents use agent/<name> and are recorded as acting on behalf of the human. */
+                /** @description Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/<name> and are recorded as acting on behalf of that person. */
                 "X-Ka-Actor"?: string;
                 /** @description A session ID, recorded in the Ka-Session trailer. */
                 "X-Ka-Session"?: string;
@@ -2141,7 +2141,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Act as this actor; default: the daemon's human. Agents use agent/<name> and are recorded as acting on behalf of the human. */
+                /** @description Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/<name> and are recorded as acting on behalf of that person. */
                 "X-Ka-Actor"?: string;
                 /** @description A session ID, recorded in the Ka-Session trailer. */
                 "X-Ka-Session"?: string;
@@ -2184,7 +2184,7 @@ export interface operations {
                 project?: string;
             };
             header?: {
-                /** @description Act as this actor; default: the daemon's human. Agents use agent/<name> and are recorded as acting on behalf of the human. */
+                /** @description Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/<name> and are recorded as acting on behalf of that person. */
                 "X-Ka-Actor"?: string;
                 /** @description A session ID, recorded in the Ka-Session trailer. */
                 "X-Ka-Session"?: string;
@@ -2389,7 +2389,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Act as this actor; default: the daemon's human. Agents use agent/<name> and are recorded as acting on behalf of the human. */
+                /** @description Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/<name> and are recorded as acting on behalf of that person. */
                 "X-Ka-Actor"?: string;
                 /** @description A session ID, recorded in the Ka-Session trailer. */
                 "X-Ka-Session"?: string;
@@ -2427,7 +2427,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Act as this actor; default: the daemon's human. Agents use agent/<name> and are recorded as acting on behalf of the human. */
+                /** @description Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/<name> and are recorded as acting on behalf of that person. */
                 "X-Ka-Actor"?: string;
                 /** @description A session ID, recorded in the Ka-Session trailer. */
                 "X-Ka-Session"?: string;
@@ -2465,7 +2465,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Act as this actor; default: the daemon's human. Agents use agent/<name> and are recorded as acting on behalf of the human. */
+                /** @description Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/<name> and are recorded as acting on behalf of that person. */
                 "X-Ka-Actor"?: string;
                 /** @description A session ID, recorded in the Ka-Session trailer. */
                 "X-Ka-Session"?: string;
@@ -2539,7 +2539,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Act as this actor; default: the daemon's human. Agents use agent/<name> and are recorded as acting on behalf of the human. */
+                /** @description Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/<name> and are recorded as acting on behalf of that person. */
                 "X-Ka-Actor"?: string;
                 /** @description A session ID, recorded in the Ka-Session trailer. */
                 "X-Ka-Session"?: string;
@@ -2582,7 +2582,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Act as this actor; default: the daemon's human. Agents use agent/<name> and are recorded as acting on behalf of the human. */
+                /** @description Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/<name> and are recorded as acting on behalf of that person. */
                 "X-Ka-Actor"?: string;
                 /** @description A session ID, recorded in the Ka-Session trailer. */
                 "X-Ka-Session"?: string;
@@ -2623,7 +2623,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Act as this actor; default: the daemon's human. Agents use agent/<name> and are recorded as acting on behalf of the human. */
+                /** @description Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/<name> and are recorded as acting on behalf of that person. */
                 "X-Ka-Actor"?: string;
                 /** @description A session ID, recorded in the Ka-Session trailer. */
                 "X-Ka-Session"?: string;
@@ -2664,7 +2664,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Act as this actor; default: the daemon's human. Agents use agent/<name> and are recorded as acting on behalf of the human. */
+                /** @description Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/<name> and are recorded as acting on behalf of that person. */
                 "X-Ka-Actor"?: string;
                 /** @description A session ID, recorded in the Ka-Session trailer. */
                 "X-Ka-Session"?: string;
@@ -2737,7 +2737,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Act as this actor; default: the daemon's human. Agents use agent/<name> and are recorded as acting on behalf of the human. */
+                /** @description Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/<name> and are recorded as acting on behalf of that person. */
                 "X-Ka-Actor"?: string;
                 /** @description A session ID, recorded in the Ka-Session trailer. */
                 "X-Ka-Session"?: string;
@@ -2778,7 +2778,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Act as this actor; default: the daemon's human. Agents use agent/<name> and are recorded as acting on behalf of the human. */
+                /** @description Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/<name> and are recorded as acting on behalf of that person. */
                 "X-Ka-Actor"?: string;
                 /** @description A session ID, recorded in the Ka-Session trailer. */
                 "X-Ka-Session"?: string;
@@ -2819,7 +2819,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Act as this actor; default: the daemon's human. Agents use agent/<name> and are recorded as acting on behalf of the human. */
+                /** @description Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/<name> and are recorded as acting on behalf of that person. */
                 "X-Ka-Actor"?: string;
                 /** @description A session ID, recorded in the Ka-Session trailer. */
                 "X-Ka-Session"?: string;
@@ -2860,7 +2860,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Act as this actor; default: the daemon's human. Agents use agent/<name> and are recorded as acting on behalf of the human. */
+                /** @description Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/<name> and are recorded as acting on behalf of that person. */
                 "X-Ka-Actor"?: string;
                 /** @description A session ID, recorded in the Ka-Session trailer. */
                 "X-Ka-Session"?: string;
@@ -2935,7 +2935,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
-                /** @description Act as this actor; default: the daemon's human. Agents use agent/<name> and are recorded as acting on behalf of the human. */
+                /** @description Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/<name> and are recorded as acting on behalf of that person. */
                 "X-Ka-Actor"?: string;
                 /** @description A session ID, recorded in the Ka-Session trailer. */
                 "X-Ka-Session"?: string;
@@ -2977,7 +2977,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Act as this actor; default: the daemon's human. Agents use agent/<name> and are recorded as acting on behalf of the human. */
+                /** @description Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/<name> and are recorded as acting on behalf of that person. */
                 "X-Ka-Actor"?: string;
                 /** @description A session ID, recorded in the Ka-Session trailer. */
                 "X-Ka-Session"?: string;
@@ -3017,7 +3017,12 @@ export interface operations {
     getWorkspace: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/<name> and are recorded as acting on behalf of that person. */
+                "X-Ka-Actor"?: string;
+                /** @description A session ID, recorded in the Ka-Session trailer. */
+                "X-Ka-Session"?: string;
+            };
             path?: never;
             cookie?: never;
         };

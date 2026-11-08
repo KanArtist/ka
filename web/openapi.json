@@ -2562,7 +2562,7 @@
   "info": {
     "description": "The ka daemon's REST API. It is the same service layer as the MCP tools and the CLI; errors are problem+json with the same codes.",
     "title": "KanArtist",
-    "version": "0.1.0-m1"
+    "version": "0.1.0-dev"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -2699,11 +2699,11 @@
         "operationId": "deleteBoard",
         "parameters": [
           {
-            "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+            "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
             "in": "header",
             "name": "X-Ka-Actor",
             "schema": {
-              "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+              "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
               "type": "string"
             }
           },
@@ -2820,11 +2820,11 @@
         "operationId": "saveBoard",
         "parameters": [
           {
-            "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+            "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
             "in": "header",
             "name": "X-Ka-Actor",
             "schema": {
-              "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+              "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
               "type": "string"
             }
           },
@@ -3238,11 +3238,11 @@
         "operationId": "fix",
         "parameters": [
           {
-            "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+            "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
             "in": "header",
             "name": "X-Ka-Actor",
             "schema": {
-              "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+              "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
               "type": "string"
             }
           },
@@ -3336,11 +3336,11 @@
         "operationId": "getInbox",
         "parameters": [
           {
-            "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+            "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
             "in": "header",
             "name": "X-Ka-Actor",
             "schema": {
-              "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+              "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
               "type": "string"
             }
           },
@@ -3442,11 +3442,11 @@
         "operationId": "next",
         "parameters": [
           {
-            "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+            "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
             "in": "header",
             "name": "X-Ka-Actor",
             "schema": {
-              "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+              "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
               "type": "string"
             }
           },
@@ -3534,11 +3534,11 @@
         "operationId": "listProjects",
         "parameters": [
           {
-            "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+            "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
             "in": "header",
             "name": "X-Ka-Actor",
             "schema": {
-              "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+              "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
               "type": "string"
             }
           },
@@ -3585,11 +3585,11 @@
         "operationId": "getProject",
         "parameters": [
           {
-            "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+            "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
             "in": "header",
             "name": "X-Ka-Actor",
             "schema": {
-              "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+              "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
               "type": "string"
             }
           },
@@ -3747,11 +3747,11 @@
         "operationId": "moveProject",
         "parameters": [
           {
-            "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+            "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
             "in": "header",
             "name": "X-Ka-Actor",
             "schema": {
-              "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+              "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
               "type": "string"
             }
           },
@@ -3816,11 +3816,11 @@
         "operationId": "getSchema",
         "parameters": [
           {
-            "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+            "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
             "in": "header",
             "name": "X-Ka-Actor",
             "schema": {
-              "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+              "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
               "type": "string"
             }
           },
@@ -4182,11 +4182,11 @@
         "operationId": "updateTickets",
         "parameters": [
           {
-            "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+            "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
             "in": "header",
             "name": "X-Ka-Actor",
             "schema": {
-              "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+              "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
               "type": "string"
             }
           },
@@ -4241,11 +4241,11 @@
         "operationId": "createTicket",
         "parameters": [
           {
-            "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+            "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
             "in": "header",
             "name": "X-Ka-Actor",
             "schema": {
-              "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+              "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
               "type": "string"
             }
           },
@@ -4302,11 +4302,11 @@
         "operationId": "createTickets",
         "parameters": [
           {
-            "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+            "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
             "in": "header",
             "name": "X-Ka-Actor",
             "schema": {
-              "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+              "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
               "type": "string"
             }
           },
@@ -4437,11 +4437,11 @@
         "operationId": "updateTicket",
         "parameters": [
           {
-            "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+            "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
             "in": "header",
             "name": "X-Ka-Actor",
             "schema": {
-              "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+              "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
               "type": "string"
             }
           },
@@ -4520,11 +4520,11 @@
         "operationId": "checkAcceptance",
         "parameters": [
           {
-            "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+            "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
             "in": "header",
             "name": "X-Ka-Actor",
             "schema": {
-              "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+              "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
               "type": "string"
             }
           },
@@ -4594,11 +4594,11 @@
         "operationId": "answerQuestion",
         "parameters": [
           {
-            "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+            "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
             "in": "header",
             "name": "X-Ka-Actor",
             "schema": {
-              "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+              "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
               "type": "string"
             }
           },
@@ -4668,11 +4668,11 @@
         "operationId": "claimTicket",
         "parameters": [
           {
-            "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+            "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
             "in": "header",
             "name": "X-Ka-Actor",
             "schema": {
-              "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+              "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
               "type": "string"
             }
           },
@@ -4786,11 +4786,11 @@
         "operationId": "createComment",
         "parameters": [
           {
-            "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+            "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
             "in": "header",
             "name": "X-Ka-Actor",
             "schema": {
-              "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+              "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
               "type": "string"
             }
           },
@@ -4860,11 +4860,11 @@
         "operationId": "askQuestion",
         "parameters": [
           {
-            "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+            "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
             "in": "header",
             "name": "X-Ka-Actor",
             "schema": {
-              "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+              "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
               "type": "string"
             }
           },
@@ -4934,11 +4934,11 @@
         "operationId": "releaseTicket",
         "parameters": [
           {
-            "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+            "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
             "in": "header",
             "name": "X-Ka-Actor",
             "schema": {
-              "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+              "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
               "type": "string"
             }
           },
@@ -5008,11 +5008,11 @@
         "operationId": "restorePreserved",
         "parameters": [
           {
-            "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+            "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
             "in": "header",
             "name": "X-Ka-Actor",
             "schema": {
-              "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+              "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
               "type": "string"
             }
           },
@@ -5140,11 +5140,11 @@
         "operationId": "replaceTicketSource",
         "parameters": [
           {
-            "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+            "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
             "in": "header",
             "name": "X-Ka-Actor",
             "schema": {
-              "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+              "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
               "type": "string"
             }
           },
@@ -5224,11 +5224,11 @@
         "operationId": "transitionTicket",
         "parameters": [
           {
-            "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+            "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
             "in": "header",
             "name": "X-Ka-Actor",
             "schema": {
-              "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+              "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
               "type": "string"
             }
           },
@@ -5296,6 +5296,26 @@
     "/api/v1/workspace": {
       "get": {
         "operationId": "getWorkspace",
+        "parameters": [
+          {
+            "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
+            "in": "header",
+            "name": "X-Ka-Actor",
+            "schema": {
+              "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A session ID, recorded in the Ka-Session trailer.",
+            "in": "header",
+            "name": "X-Ka-Session",
+            "schema": {
+              "description": "A session ID, recorded in the Ka-Session trailer.",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -5318,7 +5338,7 @@
             "description": "Error"
           }
         },
-        "summary": "The workspace: stores, projects, default project and the daemon's human",
+        "summary": "The workspace: stores, projects, default project and who you are",
         "tags": [
           "workspace"
         ]
