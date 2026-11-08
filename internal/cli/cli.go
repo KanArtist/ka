@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -27,6 +28,10 @@ type IO struct {
 	In       io.Reader
 	Out, Err io.Writer
 	Dir      string // working directory (default: cwd)
+	// Interactive makes commands prompt for missing arguments even when
+	// stdin is not a terminal (tests).
+	Interactive bool
+	reader      *bufio.Reader
 }
 
 type command struct {
@@ -233,7 +238,7 @@ func usageErr(x *IO, fl *flag.FlagSet, msg string) int {
 }
 
 func readText(x *IO, m string) string {
-	if m == "-" || (m == "" && x.In != nil && !isTTY(x.In)) {
+	if m == "-" || (m == "" && x.In != nil && !isTTY(x.In) && !x.Interactive) {
 		b, _ := io.ReadAll(x.In)
 		return strings.TrimSpace(string(b))
 	}

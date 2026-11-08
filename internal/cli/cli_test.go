@@ -297,3 +297,63 @@ func TestDescribeEvent(t *testing.T) {
 		}
 	}
 }
+
+// kaTTY runs ka as if a person were typing input at a terminal.
+func kaTTY(t *testing.T, dir, input string, args ...string) res {
+	t.Helper()
+	var out, errb bytes.Buffer
+	code := Run(context.Background(), &IO{Out: &out, Err: &errb, Dir: dir, In: strings.NewReader(input), Interactive: true}, args)
+	return res{code, out.String(), errb.String()}
+}
+
+func TestInteractivePrompts(t *testing.T) {
+	testkit.GitEnv(t)
+	dir := filepath.Join(t.TempDir(), "tickets")
+	ka(t, dir, "init", "--project", "demo", dir)
+	testkit.Git(t, dir, "add", "-A")
+	testkit.Git(t, dir, "commit", "-qm", "init")
+
+	// ka new with no title: title, kind 2 (bug), priority 3 (P1), a description.
+	r := kaTTY(t, dir, "Fix the flaky test\n3\n3\nIt fails one run in ten.\n\n", "new", "--no-push")
+	if r.code != 0 || !strings.Contains(r.err, "Title: ") || !strings.Contains(r.err, "Priority") {
+		t.Fatalf("new: %+v", r)
+	}
+	id := strings.Fields(r.out)[0]
+	sh := ka(t, dir, "show", id, "--json")
+	if !strings.Contains(sh.out, `"kind": "bug"`) || !strings.Contains(sh.out, `"priority": "P1"`) || !strings.Contains(sh.out, "one run in ten") {
+		t.Fatalf("created: %s", sh.out)
+	}
+
+	// ka move with no status: pick by name, then the close asks for a summary.
+	r = kaTTY(t, dir, "done\nFixed the race.\n\n", "move", id, "--no-push")
+	if r.code != 0 || !strings.Contains(r.err, "Move it to:") || !strings.Contains(r.err, "Summary") {
+		t.Fatalf("move: %+v", r)
+	}
+	if sh = ka(t, dir, "show", id, "--json", "--comments"); !strings.Contains(sh.out, `"status": "done"`) || !strings.Contains(sh.out, "Fixed the race.") {
+		t.Fatalf("after move: %s", sh.out)
+	}
+
+	// ka comment with no text.
+	if r = kaTTY(t, dir, "Line one\nline two\n\n", "comment", id, "--no-push"); r.code != 0 {
+		t.Fatalf("comment: %+v", r)
+	}
+
+	// ka answer with no choice: the question and its options are shown.
+	q := ka(t, dir, "new", "-t", "Pick a cache", "--no-push")
+	qid := strings.Fields(q.out)[0]
+	if a := ka(t, dir, "ask", qid, "-m", "Which cache?", "--option", "LRU", "--option", "LFU", "--no-push", "--as", "agent/claude"); a.code != 0 {
+		t.Fatalf("ask: %+v", a)
+	}
+	r = kaTTY(t, dir, "2\n", "answer", qid, "--no-push")
+	if r.code != 0 || !strings.Contains(r.err, "Which cache?") || !strings.Contains(r.err, "2) LFU") {
+		t.Fatalf("answer: %+v", r)
+	}
+	if sh = ka(t, dir, "show", qid, "--comments"); !strings.Contains(sh.out, "LFU") {
+		t.Fatalf("answer not recorded: %s", sh.out)
+	}
+
+	// Without a terminal nothing prompts: the command says what is missing.
+	if r = ka(t, dir, "new"); r.code != 2 || !strings.Contains(r.err, "title is required") {
+		t.Fatalf("non-interactive new: %+v", r)
+	}
+}

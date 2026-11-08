@@ -43,6 +43,11 @@ func cmdNew(ctx context.Context, x *IO, args []string) int {
 	if in.Title == "" {
 		in.Title = strings.Join(pos, " ")
 	}
+	if in.Title == "" && canPrompt(x, c) {
+		if code := promptNew(ctx, x, c, &in); code >= 0 {
+			return code
+		}
+	}
 	if in.Title == "" {
 		return usageErr(x, fl, "a title is required (-t)")
 	}
@@ -234,6 +239,9 @@ func cmdMove(ctx context.Context, x *IO, args []string) int {
 	if err != nil {
 		return 2
 	}
+	if len(pos) == 1 && canPrompt(x, c) {
+		pos = append(pos, "")
+	}
 	if len(pos) != 2 {
 		return usageErr(x, fl, "move needs an ID and a status")
 	}
@@ -241,7 +249,15 @@ func cmdMove(ctx context.Context, x *IO, args []string) int {
 	if err != nil {
 		return fail(x, c, err)
 	}
-	out, err := svc.Transition(ctx, caller, engine.TransitionIn{ID: pos[0], Status: pos[1], Resolution: *res, Summary: readExplicit(x, *m)})
+	summary := readExplicit(x, *m)
+	if canPrompt(x, c) {
+		st, r, s, ok := promptMove(x, svc, caller, pos[0], pos[1], *res, summary)
+		if !ok {
+			return 1
+		}
+		pos[1], *res, summary = st, r, s
+	}
+	out, err := svc.Transition(ctx, caller, engine.TransitionIn{ID: pos[0], Status: pos[1], Resolution: *res, Summary: summary})
 	if err != nil {
 		return fail(x, c, err)
 	}
@@ -267,7 +283,11 @@ func cmdComment(ctx context.Context, x *IO, args []string) int {
 	if err != nil {
 		return fail(x, c, err)
 	}
-	out, err := svc.Comment(ctx, caller, engine.CommentIn{ID: pos[0], Type: *typ, Body: readText(x, text)})
+	body := readText(x, text)
+	if body == "" && canPrompt(x, c) {
+		body = newPrompter(x).text("Comment on " + strings.ToUpper(pos[0]))
+	}
+	out, err := svc.Comment(ctx, caller, engine.CommentIn{ID: pos[0], Type: *typ, Body: body})
 	if err != nil {
 		return fail(x, c, err)
 	}
@@ -361,6 +381,11 @@ func cmdAnswer(ctx context.Context, x *IO, args []string) int {
 	in := engine.AnswerIn{ID: pos[0], Question: *q, Text: text}
 	if *choice >= 0 {
 		in.Choice = choice
+	}
+	if in.Choice == nil && in.Text == "" && canPrompt(x, c) {
+		if code := promptAnswer(ctx, x, c, &in); code >= 0 {
+			return code
+		}
 	}
 	return answer(ctx, x, c, in, "answered")
 }
