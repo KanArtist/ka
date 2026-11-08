@@ -330,7 +330,7 @@ button.box:disabled {
 @media (max-width: 900px) {
   .cols,
   .panel .cols {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .props {
     order: -1;
