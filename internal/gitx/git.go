@@ -187,6 +187,24 @@ func (r *Repo) Log(ctx context.Context, revRange string, reverse bool, paths ...
 	if err != nil {
 		return nil, err
 	}
+	return parseLog(out), nil
+}
+
+// Recent returns up to n commits reachable from HEAD, newest first,
+// optionally only those authored before a time (RFC 3339).
+func (r *Repo) Recent(ctx context.Context, n int, before string) ([]Commit, error) {
+	args := []string{"log", "--no-merges", "-n", strconv.Itoa(n), "--format=%H%x1f%an <%ae>%x1f%aI%x1f%B%x1e"}
+	if before != "" {
+		args = append(args, "--before="+before)
+	}
+	out, err := r.Run(ctx, append(args, "HEAD")...)
+	if err != nil {
+		return nil, err
+	}
+	return parseLog(out), nil
+}
+
+func parseLog(out string) []Commit {
 	var cs []Commit
 	for _, rec := range strings.Split(out, "\x1e") {
 		rec = strings.TrimLeft(rec, "\n")
@@ -202,7 +220,7 @@ func (r *Repo) Log(ctx context.Context, revRange string, reverse bool, paths ...
 		cs = append(cs, Commit{SHA: f[0], Author: f[1], Date: f[2], Subject: subject,
 			Body: strings.TrimLeft(body, "\n"), Trailers: ParseTrailers(msg)})
 	}
-	return cs, nil
+	return cs
 }
 
 // ParseTrailers reads "Key: value" lines from the last paragraph of a message.

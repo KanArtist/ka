@@ -1,6 +1,28 @@
 {
   "components": {
     "schemas": {
+      "ActivityOut": {
+        "additionalProperties": false,
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/Event"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "more": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "events",
+          "more"
+        ],
+        "type": "object"
+      },
       "ActorList": {
         "additionalProperties": false,
         "properties": {
@@ -997,6 +1019,49 @@
             "description": "The value at the given location"
           }
         },
+        "type": "object"
+      },
+      "Event": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "description": "Who caused it, when known.",
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          },
+          "commit": {
+            "type": "string"
+          },
+          "data": {},
+          "id": {
+            "description": "Monotonic per daemon; also the SSE id.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "project": {
+            "type": "string"
+          },
+          "store": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "ticket": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "at"
+        ],
         "type": "object"
       },
       "FixCategory": {
@@ -2089,6 +2154,62 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/activity": {
+      "get": {
+        "operationId": "getActivity",
+        "parameters": [
+          {
+            "description": "Default 100.",
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "description": "Default 100.",
+              "format": "int64",
+              "maximum": 500,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Only entries older than this (RFC 3339): the last event's at, to page back.",
+            "explode": false,
+            "in": "query",
+            "name": "before",
+            "schema": {
+              "description": "Only entries older than this (RFC 3339): the last event's at, to page back.",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Recent history from git, as events (newest first)",
+        "tags": [
+          "events"
+        ]
+      }
+    },
     "/api/v1/actors": {
       "get": {
         "operationId": "listActors",
@@ -2351,6 +2472,9 @@
                       "at": {
                         "type": "string"
                       },
+                      "commit": {
+                        "type": "string"
+                      },
                       "data": {},
                       "id": {
                         "description": "Monotonic per daemon; also the SSE id.",
@@ -2362,6 +2486,9 @@
                         "type": "string"
                       },
                       "store": {
+                        "type": "string"
+                      },
+                      "text": {
                         "type": "string"
                       },
                       "ticket": {

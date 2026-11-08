@@ -504,6 +504,14 @@ func (s *Server) adminRoutes() {
 		s.svc.Kick(in.Store)
 		return &struct{}{}, nil
 	})
+	reg(s, get("getActivity", "/activity", "Recent history from git, as events (newest first)", "events"),
+		func(ctx context.Context, in *struct {
+			Limit  int    `query:"limit" minimum:"0" maximum:"500" doc:"Default 100."`
+			Before string `query:"before" doc:"Only entries older than this (RFC 3339): the last event's at, to page back."`
+		}) (*body[*engine.ActivityOut], error) {
+			out, err := s.svc.Activity(ctx, engine.ActivityIn{Limit: in.Limit, Before: in.Before})
+			return &body[*engine.ActivityOut]{out}, err
+		})
 	reg(s, get("resolveLink", "/links/resolve", "Resolve a code link to a local path and a forge URL (ka_resolve_link)", "workspace"),
 		func(ctx context.Context, in *struct {
 			Link string `query:"link" required:"true" example:"repo://jk/src/cache.go#L10"`

@@ -391,3 +391,46 @@ func TestGitHookFetchesNow(t *testing.T) {
 		t.Fatalf("store: %+v", st)
 	}
 }
+
+// GET /activity turns git history into the same events as the live stream.
+func TestActivityHistory(t *testing.T) {
+	c := start(t)
+	agent := []string{"X-Ka-Actor", "agent/claude"}
+	id := str(c.ok("POST", "/api/v1/tickets", map[string]any{"title": "History", "status": "ready", "acceptance": []string{"a"}}, agent...).m["created"].([]any)[0].(map[string]any), "id")
+	c.ok("POST", "/api/v1/tickets/"+id+"/claim", map[string]any{}, agent...)
+	c.ok("POST", "/api/v1/tickets/"+id+"/comments", map[string]any{"type": "progress", "body": "Halfway there."}, agent...)
+	c.ok("PATCH", "/api/v1/tickets/"+id, map[string]any{"set": map[string]any{"priority": "P0"}, "add": map[string]any{"labels": []string{"x"}}})
+	c.ok("POST", "/api/v1/tickets/"+id+"/transition", map[string]any{"status": "done", "summary": "Finished."}, agent...)
+
+	r := c.ok("GET", "/api/v1/activity?limit=50", nil)
+	evs := r.m["events"].([]any)
+	types := map[string]map[string]any{}
+	for _, e := range evs {
+		m := e.(map[string]any)
+		if str(m, "ticket") == id {
+			if _, seen := types[str(m, "type")]; !seen {
+				types[str(m, "type")] = m
+			}
+		}
+	}
+	for _, want := range []string{"ticket.created", "claim.changed", "comment.created", "ticket.updated", "ticket.moved"} {
+		if types[want] == nil {
+			t.Fatalf("activity lacks %s: %s", want, r.raw)
+		}
+	}
+	if m := types["ticket.moved"]; str(m, "data", "from") != "in_progress" || str(m, "data", "to") != "done" || str(m, "actor") != "agent/claude" || str(m, "commit") == "" {
+		t.Fatalf("moved: %+v", m)
+	}
+	if m := types["comment.created"]; str(m, "data", "comment", "body") == "" {
+		t.Fatalf("comment: %+v", m)
+	}
+	if m := types["ticket.updated"]; str(m, "actor") != "tester" || m["data"].(map[string]any)["changes"].(map[string]any)["priority"] == nil {
+		t.Fatalf("updated: %+v", m)
+	}
+	// Paging back from the oldest entry ends.
+	last := evs[len(evs)-1].(map[string]any)
+	r = c.ok("GET", "/api/v1/activity?limit=50&before="+str(last, "at"), nil)
+	if r.m["more"] != false {
+		t.Fatalf("paging: %s", r.raw)
+	}
+}

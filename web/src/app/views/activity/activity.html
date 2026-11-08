@@ -1,0 +1,78 @@
+<section class="activity">
+  <header class="head">
+    <h1>Activity</h1>
+    <div class="filters" role="group" aria-label="Filters">
+      @if (projects().length > 1) {
+        <select [value]="project()" (change)="project.set($any($event.target).value)" aria-label="Project">
+          <option value="">All projects</option>
+          @for (p of projects(); track p) {
+            <option [value]="p">{{ p }}</option>
+          }
+        </select>
+      }
+      <div class="seg" role="radiogroup" aria-label="Who">
+        <button type="button" role="radio" [attr.aria-checked]="who() === 'all'" (click)="who.set('all')">Everyone</button>
+        <button type="button" role="radio" [attr.aria-checked]="who() === 'agents'" (click)="who.set('agents')" class="ag">Agents</button>
+        <button type="button" role="radio" [attr.aria-checked]="who() === 'people'" (click)="who.set('people')" class="hu">People</button>
+      </div>
+      <div class="kinds">
+        @for (k of kinds; track k.id) {
+          <button type="button" class="kind" [attr.aria-pressed]="!hidden().has(k.id)" (click)="toggle(k.id)">{{ k.label }}</button>
+        }
+      </div>
+    </div>
+  </header>
+
+  @if (error()) {
+    <p class="note warn">Could not load history: {{ error() }}</p>
+  }
+
+  <ol class="stream" aria-live="polite" aria-relevant="additions">
+    @for (g of groups(); track g.key; let i = $index) {
+      @if (newDay(i, groups())) {
+        <li class="day" aria-hidden="false"><h2>{{ g.day }}</h2></li>
+      }
+      <li class="group" [class.agent]="isAgent(g.actor)">
+        <div class="who">
+          <ka-actor [actor]="g.actor" [size]="20" />
+        </div>
+        <div class="body">
+          @if (g.ticket) {
+            <a class="ticket" [routerLink]="['/ticket', g.ticket]">
+              <span class="dot" [attr.data-cat]="category(g) || null"></span>
+              <span class="id">{{ g.ticket }}</span>
+              <span class="title">{{ title(g) }}</span>
+            </a>
+          } @else if (g.store) {
+            <span class="ticket plain"><span class="id">{{ g.store }}</span></span>
+          }
+          <ul class="lines">
+            @for (it of g.items; track it.key) {
+              <li class="line" [class.fresh]="it.fresh" [attr.data-tone]="it.line.tone || null">
+                <span class="verb">{{ it.line.verb }}</span>
+                @if (it.line.quote) {
+                  <q class="quote">{{ it.line.quote }}</q>
+                }
+              </li>
+            }
+          </ul>
+        </div>
+        <time class="when" [attr.datetime]="g.latest" [title]="exact(g.latest)">{{ ago(g.latest, now()) }}</time>
+      </li>
+    } @empty {
+      <li class="empty">
+        @if (history().length || live.events().length) {
+          Nothing matches these filters.
+        } @else {
+          No activity yet. When an agent calls <code>ka_next</code> or someone runs <code>ka new</code>, it shows up here.
+        }
+      </li>
+    }
+  </ol>
+
+  @if (more()) {
+    <button type="button" class="older" (click)="older()" [disabled]="loadingOlder()">
+      {{ loadingOlder() ? 'Loading…' : 'Show older activity' }}
+    </button>
+  }
+</section>

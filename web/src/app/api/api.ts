@@ -41,6 +41,8 @@ export interface KaEvent {
   ticket?: string;
   actor?: string;
   data?: any;
+  commit?: string; // history entries only
+  text?: string; // history entries only: the commit subject
 }
 
 /** An API error, carrying the engine's code and fix. */

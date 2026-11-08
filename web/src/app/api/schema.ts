@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+    "/api/v1/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Recent history from git, as events (newest first) */
+        get: operations["getActivity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/actors": {
         parameters: {
             query?: never;
@@ -553,6 +570,10 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        ActivityOut: {
+            events: components["schemas"]["Event"][] | null;
+            more: boolean;
+        };
         ActorList: {
             actors: components["schemas"]["ActorOut"][] | null;
         };
@@ -801,6 +822,23 @@ export interface components {
             message?: string;
             /** @description The value at the given location */
             value?: unknown;
+        };
+        Event: {
+            /** @description Who caused it, when known. */
+            actor?: string;
+            at: string;
+            commit?: string;
+            data?: unknown;
+            /**
+             * Format: int64
+             * @description Monotonic per daemon; also the SSE id.
+             */
+            id: number;
+            project?: string;
+            store?: string;
+            text?: string;
+            ticket?: string;
+            type: string;
         };
         FixCategory: {
             commit?: string;
@@ -1090,6 +1128,40 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    getActivity: {
+        parameters: {
+            query?: {
+                /** @description Default 100. */
+                limit?: number;
+                /** @description Only entries older than this (RFC 3339): the last event's at, to page back. */
+                before?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityOut"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     listActors: {
         parameters: {
             query?: never;
@@ -1298,6 +1370,7 @@ export interface operations {
                         /** @description Who caused it, when known. */
                         actor?: string;
                         at: string;
+                        commit?: string;
                         data?: unknown;
                         /**
                          * Format: int64
@@ -1306,6 +1379,7 @@ export interface operations {
                         id: number;
                         project?: string;
                         store?: string;
+                        text?: string;
                         ticket?: string;
                         type: string;
                     }[];

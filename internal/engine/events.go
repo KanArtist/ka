@@ -47,6 +47,10 @@ type Event struct {
 	Ticket  string `json:"ticket,omitempty"`
 	Actor   string `json:"actor,omitempty" doc:"Who caused it, when known."`
 	Data    any    `json:"data,omitempty"`
+	// History entries (GET /activity) only: the commit, and its subject
+	// without the ticket ID.
+	Commit string `json:"commit,omitempty"`
+	Text   string `json:"text,omitempty"`
 }
 
 // FieldChange is one frontmatter field's old and new value.
