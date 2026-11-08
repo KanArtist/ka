@@ -179,3 +179,33 @@ func TestGitHubWebhook(t *testing.T) {
 		t.Fatalf("unconfigured: %d", rec.Code)
 	}
 }
+
+func TestMetrics(t *testing.T) {
+	c := start(t)
+	r := c.ok("POST", "/api/v1/tickets", map[string]any{"title": "Measured"})
+	id := str(r.m["created"].([]any)[0].(map[string]any), "id")
+	c.ok("POST", "/api/v1/tickets/"+id+"/claim", map[string]any{})
+	c.do("POST", "/api/v1/tickets/"+id+"/claim", map[string]any{}, "X-Ka-Actor", "agent/other")
+	if res := c.do("GET", "/metrics", nil, "Authorization", "Bearer nope"); res.status != 401 {
+		t.Fatalf("metrics without the token: %d", res.status)
+	}
+	res := c.do("GET", "/metrics", nil)
+	body := string(res.raw)
+	for _, want := range []string{
+		`ka_http_requests_total{method="POST",route="/api/v1/tickets/{id}/claim",code="200"} 1`,
+		`ka_operations_total{op="claim",result="ok"} 1`,
+		`ka_operations_total{op="claim",result="claim_lost"} 1`,
+		`ka_operations_total{op="create",result="ok"} 1`,
+		`ka_http_request_duration_seconds_bucket{method="POST",route="/api/v1/tickets",le="+Inf"} 1`,
+		`ka_tickets{project="jk",category="started"} 1`,
+		"# TYPE ka_sse_clients gauge",
+		"go_goroutines ",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("metrics lack %q", want)
+		}
+	}
+	if t.Failed() {
+		t.Logf("metrics:\n%s", body)
+	}
+}

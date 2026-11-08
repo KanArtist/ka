@@ -38,6 +38,8 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	h.Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)
 
+	s.stats.sse.Add(1)
+	defer s.stats.sse.Add(-1)
 	hub := s.hub
 	cursor := hub.Seq()
 	if last != "" {

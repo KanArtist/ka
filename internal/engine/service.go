@@ -28,6 +28,7 @@ type Service struct {
 	WS       *Workspace
 	ix       *Index
 	writeMu  sync.Mutex
+	ops      OpStats
 	Now      func() time.Time
 	NoPush   bool          // commit locally only (ka --no-push)
 	PollStep time.Duration // ka_ask wait polling interval
@@ -507,9 +508,11 @@ func (s *Service) hooksBy(st *Store, actor string) hooks {
 	}
 }
 
-func (s *Service) do(ctx context.Context, st *Store, o *Op, push bool) (*Result, error) {
+func (s *Service) do(ctx context.Context, st *Store, o *Op, push bool) (res *Result, err error) {
+	start := time.Now()
+	defer func() { s.ops.record(o.Op, err, time.Since(start)) }()
 	deb := push && s.debounced(st)
-	res, err := st.Do(ctx, s.hooksBy(st, o.Actor), o, push && !deb && !s.NoPush && st.PushMode != "manual")
+	res, err = st.Do(ctx, s.hooksBy(st, o.Actor), o, push && !deb && !s.NoPush && st.PushMode != "manual")
 	if err == nil && deb && res.HasRemote && res.Commit != "" {
 		res.PushPending = true
 		s.schedulePush(st)
@@ -1026,7 +1029,9 @@ func (s *Service) claimLocked(ctx context.Context, c Caller, id string, steal bo
 	s.ix.mu.RUnlock()
 	o := stamp(&Op{Op: "claim", ID: strings.ToUpper(id), Steal: steal, Status: startStatus(pi.Cfg, cur)}, c, s.now())
 	// Claims always push synchronously (PRD §10.1), even in manual mode.
+	start := time.Now()
 	res, err := st.Do(ctx, s.hooks(st), o, !s.NoPush)
+	s.ops.record(o.Op, err, time.Since(start))
 	if err != nil {
 		return nil, err
 	}

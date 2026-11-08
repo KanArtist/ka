@@ -85,6 +85,24 @@ ka daemon --listen 0.0.0.0:7711 --public-url https://ka.example.com
 - Write authority is "anyone authenticated can write, with the daemon's git credentials"; forge
   branch protection still applies.
 
+## Metrics and logs
+
+`GET /metrics` serves Prometheus metrics; it needs the same token as the API (in Prometheus,
+`authorization: {credentials_file: …}`):
+
+| Metric | Meaning |
+|---|---|
+| `ka_http_requests_total{method,route,code}` | Requests; IDs and hashes in routes are folded to `{id}`, `{sha}`. |
+| `ka_http_request_duration_seconds{method,route}` | Latency histogram (the event stream is excluded). |
+| `ka_operations_total{op,result}`, `ka_operation_seconds_total{op}` | Ticket operations and their outcome (`ok` or an error code such as `claim_lost`). |
+| `ka_store_sync{store,state}`, `ka_store_ahead{store}` | Each store's sync state and unpushed commits. |
+| `ka_tickets{project,category}` | Tickets by status category. |
+| `ka_sse_clients`, `ka_presence_sessions`, `ka_event_seq` | Live clients, agent sessions, event sequence. |
+| `go_goroutines`, `go_memstats_heap_alloc_bytes`, `process_start_time_seconds` | Process health. |
+
+Logs are structured (`slog`): `ka daemon -v` logs every request (method, path, status, duration,
+peer, principal, actor), and `--log-format json` writes JSON lines for a log pipeline.
+
 ## Conventions
 
 - **Who is acting.** Requests act as the daemon's human (your git identity, mapped through the

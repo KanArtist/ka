@@ -46,6 +46,7 @@ func daemonRun(ctx context.Context, x *IO, args []string) int {
 	fl.Var(&proxies, "trusted-proxy", "remote mode: a reverse proxy (CIDR or IP) trusted to assert the user in --proxy-user-header (repeatable)")
 	proxyHeader := fl.String("proxy-user-header", "X-Forwarded-User", "the header a trusted proxy sets to the user's handle or email")
 	verbose := fl.Bool("v", false, "log every request")
+	logFormat := fl.String("log-format", "text", "log format: text or json")
 	hookSecretFile := fl.String("webhook-secret-file", "", "verify GitHub webhooks (POST /api/v1/hooks/github) with the secret in this file ($KA_WEBHOOK_SECRET also works)")
 	if _, err := parse(fl, args); err != nil {
 		return 2
@@ -71,7 +72,11 @@ func daemonRun(ctx context.Context, x *IO, args []string) int {
 	if *verbose {
 		level = slog.LevelDebug
 	}
-	log := slog.New(slog.NewTextHandler(x.Err, &slog.HandlerOptions{Level: level}))
+	var handler slog.Handler = slog.NewTextHandler(x.Err, &slog.HandlerOptions{Level: level})
+	if *logFormat == "json" {
+		handler = slog.NewJSONHandler(x.Err, &slog.HandlerOptions{Level: level})
+	}
+	log := slog.New(handler)
 	var remote *api.Remote
 	var ln net.Listener
 	if !loopbackAddr(*listen) || *publicURL != "" || len(proxies) > 0 {

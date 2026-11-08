@@ -64,6 +64,7 @@ type Server struct {
 	log       *slog.Logger
 	started   time.Time
 	hub       *engine.EventHub
+	stats     httpStats
 	heartbeat time.Duration
 
 	mu   sync.RWMutex
@@ -97,6 +98,7 @@ func New(svc *engine.Service, opts Options) *Server {
 	s.mux.HandleFunc("GET /healthz", s.healthz)
 	s.mux.HandleFunc("GET /auth", s.auth)
 	s.mux.HandleFunc("POST "+GitHubHookPath, s.githubHook)
+	s.mux.HandleFunc("GET /metrics", s.metrics)
 	return s
 }
 
@@ -158,7 +160,12 @@ func (s *Server) Handler() http.Handler {
 		start := time.Now()
 		rw := &statusWriter{ResponseWriter: w, status: 200}
 		s.serve(rw, r)
-		s.log.Debug("http", "method", r.Method, "path", r.URL.Path, "status", rw.status, "ms", time.Since(start).Milliseconds())
+		d := time.Since(start)
+		if r.URL.Path != "/api/v1/events" { // streams last as long as the client stays
+			s.stats.observe(r.Method, r.URL.Path, rw.status, d)
+		}
+		s.log.Debug("request", "method", r.Method, "path", r.URL.Path, "status", rw.status, "ms", d.Milliseconds(),
+			"remote", r.RemoteAddr, "principal", r.Header.Get(PrincipalHeader), "actor", r.Header.Get("X-Ka-Actor"))
 	})
 }
 
