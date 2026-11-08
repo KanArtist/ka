@@ -7,12 +7,13 @@ import { Prefs } from './prefs';
 import { Avatar } from './ui/actor';
 import { CloseDialog, CreateDialog } from './ui/dialogs';
 import { Palette } from './ui/palette';
+import { Shortcuts } from './ui/shortcuts';
 import { ToastStack } from './ui/toast';
 import { Peek } from './views/peek/peek';
 
 @Component({
   selector: 'app-root',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, Palette, Avatar, Peek, ToastStack, CloseDialog, CreateDialog],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, Palette, Avatar, Peek, ToastStack, CloseDialog, CreateDialog, Shortcuts],
   templateUrl: './app.html',
   styleUrl: './app.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -25,6 +26,7 @@ export class App {
   private router = inject(Router);
 
   protected readonly palette = signal(false);
+  protected readonly help = signal(false);
   /** The ticket in the side panel (?peek=ID), over whatever view is open. */
   protected readonly peek = signal('');
   protected readonly failed = signal('');
@@ -91,6 +93,18 @@ export class App {
       return;
     }
     if (this.palette() || isTyping(e) || this.actions.closing() || this.actions.creating() || e.defaultPrevented) return;
+    if (this.help()) {
+      if (e.key === 'Escape' || e.key === '?') {
+        e.preventDefault();
+        this.help.set(false);
+      }
+      return;
+    }
+    if (e.key === '?') {
+      e.preventDefault();
+      this.help.set(true);
+      return;
+    }
     if (e.key === 'c' && !e.metaKey && !e.ctrlKey && !e.altKey && !this.pendingG) {
       e.preventDefault();
       this.actions.creating.set({});

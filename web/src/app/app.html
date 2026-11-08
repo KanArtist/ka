@@ -74,6 +74,7 @@
         @if (live.you()) {
           <span class="me"><ka-avatar [actor]="live.you()" [size]="18" /> {{ live.you() }}</span>
         }
+        <button type="button" class="theme" (click)="help.set(true)" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">?</button>
         <button type="button" class="theme" (click)="prefs.toggleTheme()" [attr.aria-label]="prefs.theme() === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'">
           @if (prefs.theme() === 'dark') {
             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13 9.5A5.5 5.5 0 0 1 6.5 3a5.5 5.5 0 1 0 6.5 6.5z" /></svg>
@@ -116,6 +117,9 @@
 
   @if (palette()) {
     <ka-palette (close)="palette.set(false)" />
+  }
+  @if (help()) {
+    <ka-shortcuts (close)="help.set(false)" />
   }
   <ka-close-dialog />
   <ka-create-dialog />

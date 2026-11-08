@@ -379,7 +379,7 @@ export class Peek {
   @HostListener('document:keydown', ['$event'])
   protected onKey(e: KeyboardEvent): void {
     if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented || this.menu() || this.editingBody() || this.editingTitle()) return;
-    if (this.actions.closing() || this.actions.creating() || isTyping(e) || document.querySelector('ka-palette')) return;
+    if (this.actions.closing() || this.actions.creating() || isTyping(e) || document.querySelector('ka-palette, ka-shortcuts')) return;
     const map: Record<string, () => void> = {
       s: () => this.openMenu('status', this.statusBtn()?.nativeElement),
       p: () => this.openMenu('priority', this.priorityBtn()?.nativeElement),
