@@ -1,15 +1,18 @@
 import { ChangeDetectionStrategy, Component, HostListener, computed, effect, inject, signal } from '@angular/core';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { Actions } from './actions';
 import { Api } from './api/api';
 import { Live } from './live';
 import { Prefs } from './prefs';
 import { Avatar } from './ui/actor';
+import { CloseDialog, CreateDialog } from './ui/dialogs';
 import { Palette } from './ui/palette';
+import { ToastStack } from './ui/toast';
 import { Peek } from './views/peek/peek';
 
 @Component({
   selector: 'app-root',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, Palette, Avatar, Peek],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, Palette, Avatar, Peek, ToastStack, CloseDialog, CreateDialog],
   templateUrl: './app.html',
   styleUrl: './app.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -18,6 +21,7 @@ export class App {
   protected live = inject(Live);
   protected api = inject(Api);
   protected prefs = inject(Prefs);
+  protected actions = inject(Actions);
   private router = inject(Router);
 
   protected readonly palette = signal(false);
@@ -86,7 +90,12 @@ export class App {
       this.palette.update((v) => !v);
       return;
     }
-    if (this.palette() || isTyping(e)) return;
+    if (this.palette() || isTyping(e) || this.actions.closing() || this.actions.creating() || e.defaultPrevented) return;
+    if (e.key === 'c' && !e.metaKey && !e.ctrlKey && !e.altKey && !this.pendingG) {
+      e.preventDefault();
+      this.actions.creating.set({});
+      return;
+    }
     if (e.key === 'Escape' && this.peek()) {
       e.preventDefault();
       this.closePeek();

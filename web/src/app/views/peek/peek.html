@@ -2,7 +2,7 @@
   <header class="top">
     <span class="id">{{ id() }}</span>
     @if (detail(); as d) {
-      <span class="status" [attr.data-cat]="category()"><span class="dot" [attr.data-cat]="category()"></span>{{ d.status }}</span>
+      <button #statusBtn type="button" class="status prop-btn" [attr.data-cat]="category()" [disabled]="!writable()" (click)="openMenu('status', statusBtn)" title="Change status (s)"><span class="dot" [attr.data-cat]="category()"></span>{{ d.status }}</button>
       @if (d.blocked) {
         <span class="flag blocked">blocked</span>
       }
@@ -26,12 +26,65 @@
       }
     </div>
   } @else if (detail(); as d) {
-    <h1 class="title">{{ d.title }}</h1>
+    @if (editingTitle()) {
+      <input
+        #titleIn
+        class="title title-edit field"
+        [value]="d.title"
+        aria-label="Title"
+        maxlength="300"
+        (keydown.enter)="saveTitle(titleIn.value)"
+        (keydown.escape)="$event.stopPropagation(); editingTitle.set(false)"
+        (blur)="saveTitle(titleIn.value)"
+        autofocus
+      />
+    } @else {
+      <h1 class="title" [class.editable]="writable()" (click)="writable() && editingTitle.set(true)" [title]="writable() ? 'Click to edit the title' : ''">{{ d.title }}</h1>
+    }
 
     <div class="cols">
       <div class="main">
-        @if (description()) {
-          <div class="md" [innerHTML]="description()"></div>
+        @if (editingBody()) {
+          <div class="body-editor">
+            <textarea
+              class="field mono"
+              rows="14"
+              aria-label="Description (markdown)"
+              [value]="bodyDraft()"
+              (input)="bodyDraft.set($any($event.target).value)"
+              (keydown)="bodyKey($event)"
+              autofocus
+            ></textarea>
+            @if (bodyConflict()) {
+              <div class="conflict" role="alert">
+                <p><strong>Someone changed this ticket while you were editing.</strong> Your text is still here; nothing was overwritten.</p>
+                <p class="muted">Load their version to see it below, then save again to replace it with yours, or cancel.</p>
+                <button type="button" class="btn small" (click)="takeTheirs()">Load their version</button>
+              </div>
+            }
+            @if (bodyError()) {
+              <p class="error-text">{{ bodyError() }}</p>
+            }
+            <div class="editor-actions">
+              <span class="muted">Markdown. Saved only if nobody changed the ticket since you opened it.</span>
+              <span class="spacer"></span>
+              <button type="button" class="btn quiet" (click)="editingBody.set(false)">Cancel</button>
+              <button type="button" class="btn primary" (click)="saveBody()" [disabled]="saving() || bodyConflict()">Save <kbd>⌘↵</kbd></button>
+            </div>
+            @if (bodyConflict() === false && description() && bodyDraft() !== (d.body ?? '')) {
+              <details class="theirs">
+                <summary class="muted">Current version</summary>
+                <div class="md" [innerHTML]="description()"></div>
+              </details>
+            }
+          </div>
+        } @else if (description()) {
+          <div class="md desc" [class.editable]="writable()" (dblclick)="editBody()" [innerHTML]="description()"></div>
+          @if (writable()) {
+            <button type="button" class="btn quiet small edit-desc" (click)="editBody()">Edit description <kbd>e</kbd></button>
+          }
+        } @else if (writable()) {
+          <button type="button" class="add-desc" (click)="editBody()">Add a description…</button>
         } @else {
           <p class="muted">No description.</p>
         }
@@ -42,11 +95,11 @@
             <ul class="checks">
               @for (a of acceptance().items; track $index) {
                 <li [class.done]="a.done">
-                  <span class="box" role="img" [attr.aria-label]="a.done ? 'done' : 'not done'">
+                  <button type="button" class="box" role="checkbox" [attr.aria-checked]="a.done" [attr.aria-label]="a.text" [disabled]="!writable()" (click)="toggleCheck($index, !a.done)">
                     @if (a.done) {
                       <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 6.2 5 8.5l4.5-5" /></svg>
                     }
-                  </span>
+                  </button>
                   <span>{{ a.text }}</span>
                 </li>
               }
@@ -135,21 +188,46 @@
               <li class="muted">Nothing has happened to this ticket yet.</li>
             }
           </ol>
+          @if (writable()) {
+            <div class="composer">
+              <textarea
+                #commentBox
+                class="field"
+                rows="3"
+                placeholder="Leave a comment… (m)"
+                aria-label="Comment"
+                [value]="commentText()"
+                (input)="commentText.set(commentBox.value)"
+                (keydown)="commentKey($event)"
+              ></textarea>
+              <div class="composer-actions">
+                <div class="types" role="radiogroup" aria-label="Comment type">
+                  @for (t of ['note', 'progress', 'decision']; track t) {
+                    <button type="button" role="radio" class="type" [attr.aria-checked]="commentType() === t" (click)="commentType.set(t)">{{ t }}</button>
+                  }
+                </div>
+                <span class="spacer"></span>
+                <button type="button" class="btn primary small" (click)="postComment()" [disabled]="!commentText().trim() || saving()">Comment <kbd>⌘↵</kbd></button>
+              </div>
+            </div>
+          }
         </section>
       </div>
 
       <aside class="props" aria-label="Properties">
         <dl>
           <dt>Status</dt>
-          <dd><span class="dot" [attr.data-cat]="category()"></span>{{ d.status }}</dd>
-          @if (d.priority) {
-            <dt>Priority</dt>
-            <dd class="prio" [attr.data-p]="d.priority">{{ d.priority }}</dd>
-          }
-          @if (d.kind) {
-            <dt>Kind</dt>
-            <dd>{{ d.kind }}</dd>
-          }
+          <dd><button type="button" class="prop-btn" [disabled]="!writable()" (click)="openMenu('status', $any($event.currentTarget))" title="s"><span class="dot" [attr.data-cat]="category()"></span>{{ d.status }}</button></dd>
+          <dt>Priority</dt>
+          <dd>
+            <button #priorityBtn type="button" class="prop-btn prio" [attr.data-p]="d.priority || null" [disabled]="!writable()" (click)="openMenu('priority', priorityBtn)" title="p">
+              {{ d.priority || 'None' }}
+            </button>
+          </dd>
+          <dt>Kind</dt>
+          <dd>
+            <button #kindBtn type="button" class="prop-btn" [class.muted]="!d.kind" [disabled]="!writable()" (click)="openMenu('kind', kindBtn)" title="k">{{ d.kind || 'None' }}</button>
+          </dd>
           <dt>Claim</dt>
           <dd>
             @if (d.claim; as c) {
@@ -161,27 +239,42 @@
             } @else {
               <span class="muted">Unclaimed</span>
             }
+            @if (writable()) {
+              @if (!d.claim) {
+                <button type="button" class="btn small" (click)="claim()">Claim</button>
+              } @else if (claimedByMe()) {
+                <button type="button" class="btn small" (click)="release()">Release</button>
+              } @else if (d.claim.stale) {
+                <button type="button" class="btn small" (click)="claim(true)" title="Take over the stale claim">Take over</button>
+              } @else {
+                <button type="button" class="btn quiet small" (click)="release(true)" title="Release someone else's claim">Release</button>
+              }
+            }
           </dd>
           <dt>Assignee</dt>
           <dd>
-            @if (d.assignee) {
-              <ka-actor [actor]="d.assignee" [size]="16" />
-            } @else {
-              <span class="muted">Anyone</span>
-            }
+            <button #assigneeBtn type="button" class="prop-btn" [disabled]="!writable()" (click)="openMenu('assignee', assigneeBtn)" title="a">
+              @if (d.assignee) {
+                <ka-actor [actor]="d.assignee" [size]="16" />
+              } @else {
+                <span class="muted">Anyone</span>
+              }
+            </button>
           </dd>
           @if (d.owner) {
             <dt>Owner</dt>
             <dd><ka-actor [actor]="d.owner" [size]="16" /></dd>
           }
-          @if (d.labels?.length) {
-            <dt>Labels</dt>
-            <dd class="labels">
+          <dt>Labels</dt>
+          <dd class="labels">
+            <button #labelsBtn type="button" class="prop-btn labels-btn" [disabled]="!writable()" (click)="openMenu('labels', labelsBtn)" title="l">
               @for (l of d.labels; track l) {
                 <span class="label">{{ l }}</span>
+              } @empty {
+                <span class="muted">None</span>
               }
-            </dd>
-          }
+            </button>
+          </dd>
           @for (f of fields(); track f[0]) {
             <dt>{{ f[0] }}</dt>
             <dd>{{ f[1] }}</dd>
@@ -203,3 +296,17 @@
     <p class="loading muted">Loading {{ id() }}…</p>
   }
 </article>
+
+@if (menu(); as m) {
+  <ka-menu
+    [options]="menuOptions()"
+    [selected]="menuSelected()"
+    [multi]="m.kind === 'labels'"
+    [allowCustom]="m.kind === 'labels' && !!projectInfo()?.labels_open"
+    [anchor]="m.anchor"
+    [label]="'Set ' + m.kind"
+    [placeholder]="m.kind === 'labels' ? 'Filter or add a label…' : 'Set ' + m.kind + '…'"
+    (pickValue)="pick($event)"
+    (close)="menu.set(null)"
+  />
+}

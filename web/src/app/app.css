@@ -281,3 +281,15 @@
     display: none;
   }
 }
+.bar .new {
+  margin-left: auto;
+  margin-right: 4px;
+}
+.bar .new svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}

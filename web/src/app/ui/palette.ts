@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, ElementRef, computed, effect, inject, output, signal, viewChild } from '@angular/core';
 import { Router } from '@angular/router';
 import { Summary } from '../api/api';
+import { Actions } from '../actions';
 import { Live } from '../live';
 import { Prefs } from '../prefs';
 
@@ -164,6 +165,7 @@ export class Palette {
   protected live = inject(Live);
   private router = inject(Router);
   private prefs = inject(Prefs);
+  private actions = inject(Actions);
   private input = viewChild.required<ElementRef<HTMLInputElement>>('q');
 
   protected readonly query = signal('');
@@ -172,6 +174,16 @@ export class Palette {
   private readonly commands = computed<Item[]>(() => {
     const go = (path: string) => () => this.navigate([path]);
     return [
+      {
+        key: 'c:new',
+        kind: 'command',
+        label: 'Create a ticket',
+        hint: 'C',
+        run: () => {
+          this.close.emit();
+          this.actions.creating.set({});
+        },
+      },
       { key: 'c:activity', kind: 'command', label: 'Go to Activity', hint: 'G A', run: go('/activity') },
       { key: 'c:board', kind: 'command', label: 'Go to Board', hint: 'G B', run: go('/board') },
       { key: 'c:agents', kind: 'command', label: 'Go to Agents', hint: 'G G', run: go('/agents') },

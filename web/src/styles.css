@@ -268,3 +268,82 @@ kbd {
   padding: 3px 8px;
 }
 
+
+/* Controls shared by every view: buttons, text fields, popovers. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--fs-md);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.btn:hover:not(:disabled) {
+  background: var(--raised);
+  color: var(--text-strong);
+}
+.btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.btn.primary {
+  border-color: transparent;
+  background: var(--text-strong);
+  color: var(--bg);
+}
+.btn.primary:hover:not(:disabled) {
+  background: var(--text);
+  color: var(--bg);
+}
+.btn.quiet {
+  border-color: transparent;
+  background: none;
+  color: var(--muted);
+}
+.btn.quiet:hover:not(:disabled) {
+  background: var(--raised);
+  color: var(--text);
+}
+.btn.small {
+  height: 24px;
+  padding: 0 8px;
+  font-size: var(--fs-sm);
+}
+.btn kbd {
+  margin-left: 2px;
+}
+.field {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--bg);
+  color: var(--text-strong);
+  padding: 6px 9px;
+  line-height: 1.45;
+}
+.field:focus {
+  outline: none;
+  border-color: var(--focus);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 22%, transparent);
+}
+textarea.field {
+  resize: vertical;
+  min-height: 72px;
+}
+textarea.field.mono {
+  font-family: var(--mono);
+  font-size: var(--fs-sm);
+}
+select.field {
+  padding: 4px 6px;
+  height: 30px;
+}
+.error-text {
+  color: var(--st-blocked);
+}

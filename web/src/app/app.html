@@ -69,6 +69,9 @@
           <span class="store" [title]="s.remote ? s.remote + '/' + s.branch + ' · push ' + s.push_mode : 'local store'">{{ s.store }}</span>
         }
       </div>
+      <button type="button" class="btn small new" (click)="actions.creating.set({})" title="Create a ticket (c)">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10" /></svg>New
+      </button>
       <span class="sync" [class]="syncLabel().cls" role="status">
         <span class="pulse"></span>{{ syncLabel().text }}
       </span>
@@ -93,4 +96,7 @@
   @if (palette()) {
     <ka-palette (close)="palette.set(false)" />
   }
+  <ka-close-dialog />
+  <ka-create-dialog />
+  <ka-toasts />
 }
