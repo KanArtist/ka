@@ -91,9 +91,11 @@ per-response nonce. Its API types are generated from `openapi.json`.
 | `POST /sync` | Sync | `ka_sync` |
 | `POST /hooks/git?store=` | Kick (fetch now) | forge webhooks |
 | `GET /schema`, `GET /projects`, `GET /projects/{key}` | Schema | `ka_schema` |
+| `GET /projects/{key}/config?key=` | ConfigExplain | `ka config explain`, `ka_schema {explain}` |
+| `POST /projects/{key}/move` | MoveProject | `ka project move` |
 | `GET /boards`, `GET /boards/{name}` | Boards, BoardFilter + Search | `ka://board/{name}` |
 | `GET /actors` | Actors | |
-| `GET /tickets?q=…`, `GET /search?q=…` | Search | `ka_search`, `ka ls` |
+| `GET /tickets?q=…`, `GET /search?q=…` | Search (`include=fields` adds owner, created and custom fields, for the table view) | `ka_search`, `ka ls` |
 | `POST /tickets`, `POST /tickets/batch` | Create | `ka_create`, `ka new` |
 | `GET /tickets/{id}` | Get | `ka_get`, `ka show` |
 | `PATCH /tickets/{id}`, `PATCH /tickets` | Update | `ka_update`, `ka edit --set` |

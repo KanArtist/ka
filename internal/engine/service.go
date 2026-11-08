@@ -165,6 +165,11 @@ type Summary struct {
 	Acceptance string   `json:"acceptance,omitempty"` // "2/5"
 	Project    string   `json:"project"`
 	Updated    string   `json:"updated,omitempty"`
+	// Filled for ka_get, events, and searches with include=fields (the
+	// table view's columns); empty in agent-facing lists to save tokens.
+	Owner   string         `json:"owner,omitempty"`
+	Created string         `json:"created,omitempty"`
+	Fields  map[string]any `json:"fields,omitempty"`
 }
 
 // Claim is a claim as reported to callers.
@@ -190,7 +195,25 @@ func (s *Service) summary(v view, r *Rec) Summary {
 		}
 		sm.Acceptance = fmt.Sprintf("%d/%d", d, n)
 	}
+	if v.full {
+		sm.Owner, sm.Created, sm.Fields = t.Owner, t.Created, fieldsOut(t)
+	}
 	return sm
+}
+
+func fieldsOut(t *kaspec.Ticket) map[string]any {
+	if len(t.Fields) == 0 {
+		return nil
+	}
+	m := make(map[string]any, len(t.Fields))
+	for k, fv := range t.Fields {
+		if fv.IsList {
+			m[k] = fv.List
+		} else {
+			m[k] = fv.Scalar
+		}
+	}
+	return m
 }
 
 // SearchIn is ka_search's input.
@@ -199,6 +222,8 @@ type SearchIn struct {
 	Sort  []string `json:"sort,omitempty"`
 	Limit int      `json:"limit,omitempty"` // 0: 20; negative: all
 	All   bool     `json:"all,omitempty"`   // include closed tickets when the query does not say
+	// Full adds owner, created and custom fields to each summary.
+	Full bool `json:"-"`
 }
 
 // SearchOut is ka_search's output.
@@ -220,6 +245,7 @@ func (s *Service) Search(in SearchIn) (*SearchOut, error) {
 	s.ix.mu.RLock()
 	defer s.ix.mu.RUnlock()
 	v := s.view()
+	v.full = in.Full
 	var rs []*Rec
 	for _, r := range s.ix.tickets {
 		if q.match(v, r) {
@@ -301,7 +327,6 @@ func recCommentOut(r *Rec, ce *kaspec.CommentEntry) CommentOut {
 // Detail is a full ticket with its context digest.
 type Detail struct {
 	Summary
-	Owner         string                  `json:"owner,omitempty"`
 	ParentRef     *Ref                    `json:"parent_ref,omitempty"`
 	BlockedBy     []Ref                   `json:"blocked_by,omitempty"`
 	Blocks        []Ref                   `json:"blocks,omitempty"`
@@ -309,14 +334,12 @@ type Detail struct {
 	Related       []string                `json:"related,omitempty"`
 	Links         []string                `json:"links,omitempty"`
 	AcceptanceAll []kaspec.AcceptanceItem `json:"acceptance_items,omitempty"`
-	Fields        map[string]any          `json:"fields,omitempty"`
 	Body          string                  `json:"body,omitempty"`
 	OpenQuestions []CommentOut            `json:"open_questions,omitempty"`
 	Decisions     []CommentOut            `json:"decisions,omitempty"`
 	Recent        []CommentOut            `json:"recent_comments,omitempty"`
 	Comments      []CommentOut            `json:"comments,omitempty"`
 	CommentCount  int                     `json:"comment_count,omitempty"`
-	Created       string                  `json:"created,omitempty"`
 	CreatedBy     string                  `json:"created_by,omitempty"`
 	Store         string                  `json:"store"`
 	Path          string                  `json:"path"`
@@ -349,9 +372,10 @@ func (s *Service) ref(id string) Ref {
 
 func (s *Service) detail(r *Rec, include []string) *Detail {
 	v := s.view()
+	v.full = true
 	t := r.T
-	d := &Detail{Summary: s.summary(v, r), Owner: t.Owner, Related: t.Related, Links: t.Links, AcceptanceAll: t.Acceptance,
-		Body: t.Body, Created: t.Created, CreatedBy: t.CreatedBy, Store: r.Store.Name, Path: filepath.Join(r.Store.Root, filepath.FromSlash(r.Dir), "ticket.md")}
+	d := &Detail{Summary: s.summary(v, r), Related: t.Related, Links: t.Links, AcceptanceAll: t.Acceptance,
+		Body: t.Body, CreatedBy: t.CreatedBy, Store: r.Store.Name, Path: filepath.Join(r.Store.Root, filepath.FromSlash(r.Dir), "ticket.md")}
 	d.Acceptance = ""
 	if t.Parent != "" {
 		p := s.ref(t.Parent)
@@ -371,16 +395,6 @@ func (s *Service) detail(r *Rec, include []string) *Detail {
 	if slices.Contains(include, "children") || len(kids) <= 10 {
 		for _, c := range kids {
 			d.Children = append(d.Children, s.ref(c))
-		}
-	}
-	if len(t.Fields) > 0 {
-		d.Fields = map[string]any{}
-		for k, fv := range t.Fields {
-			if fv.IsList {
-				d.Fields[k] = fv.List
-			} else {
-				d.Fields[k] = fv.Scalar
-			}
 		}
 	}
 	d.CommentCount = len(r.Comments)

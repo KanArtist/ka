@@ -3,7 +3,7 @@
   <header class="head">
     <h1>Board</h1>
     <div class="controls">
-      <input class="filter" type="search" placeholder="Filter by title, ID or label" [value]="filter()" (input)="filter.set($any($event.target).value)" aria-label="Filter cards" />
+      <ka-query-bar />
       @if (projects().length > 1) {
         <select [value]="project()" (change)="project.set($any($event.target).value)" aria-label="Project">
           <option value="">All projects</option>
@@ -125,7 +125,7 @@
         }
       </div>
     } @empty {
-      <p class="empty">No tickets match. Clear the filter, or file one with <code>ka new</code>.</p>
+      <p class="empty">No tickets match. Clear the filter, or create one with <kbd>c</kbd>.</p>
     }
   </div>
 </section>

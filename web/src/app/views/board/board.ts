@@ -14,6 +14,7 @@ import { RouterLink } from '@angular/router';
 import { Summary } from '../../api/api';
 import { Actions } from '../../actions';
 import { Live } from '../../live';
+import { Query, QueryBar } from '../../query';
 import { Avatar, actorName, isAgent } from '../../ui/actor';
 import { Clock, ago, exact } from '../../ui/time';
 
@@ -49,7 +50,7 @@ const PRIORITY_ORDER = ['P0', 'P1', 'P2', 'P3'];
  */
 @Component({
   selector: 'ka-board',
-  imports: [RouterLink, Avatar],
+  imports: [RouterLink, Avatar, QueryBar],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './board.html',
   styleUrl: './board.css',
@@ -63,7 +64,7 @@ export class Board {
   protected readonly projects = computed(() => (this.live.schema()?.projects ?? []).filter((p) => !p.archived));
   protected readonly project = signal('');
   protected readonly lane = signal<Lane>('none');
-  protected readonly filter = signal('');
+  private query = inject(Query);
   protected readonly showCanceled = signal(false);
   protected readonly now = this.clock.now;
   protected readonly ago = ago;
@@ -96,13 +97,11 @@ export class Board {
 
   private readonly tickets = computed(() => {
     const project = this.project();
-    const q = this.filter().trim().toLowerCase();
+    const match = this.query.matches();
     const out: Summary[] = [];
     for (const t of this.live.tickets().values()) {
       if (project && t.project !== project) continue;
-      if (q && !t.id.toLowerCase().includes(q) && !t.title.toLowerCase().includes(q) && !(t.labels ?? []).some((l) => l.toLowerCase().includes(q))) {
-        continue;
-      }
+      if (!match(t)) continue;
       out.push(t);
     }
     return out;

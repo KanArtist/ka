@@ -299,6 +299,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{key}/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Effective config of a project and the layer that set each value (ka config explain) */
+        get: operations["explainConfig"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{key}/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Move a project to another store (ka project move) */
+        post: operations["moveProject"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/schema": {
         parameters: {
             query?: never;
@@ -753,6 +787,27 @@ export interface components {
             };
             truncated?: boolean;
         };
+        ConfigEntry: {
+            /** @description data (validation; resolved through extends) or runtime (this ka instance; the user wins). */
+            class: string;
+            key: string;
+            /** Format: int64 */
+            line?: number;
+            /** @description The layer whose lock fixes this value. */
+            locked_by?: string;
+            note?: string;
+            /** @description The layer that set the value: a file, built-in defaults, or the workspace. */
+            source: string;
+            value: string;
+        };
+        ConfigExplainOut: {
+            entries: components["schemas"]["ConfigEntry"][] | null;
+            /** @description The data config chain, lowest first. */
+            layers: string[] | null;
+            locked?: string[] | null;
+            project: string;
+            store: string;
+        };
         CreateCommentRequest: {
             body: string;
             retracts?: string;
@@ -896,6 +951,26 @@ export interface components {
             link: string;
             path?: string;
             url?: string;
+        };
+        MoveProjectOut: {
+            dry_run?: boolean;
+            /** Format: int64 */
+            files: number;
+            from: string;
+            from_commit?: string;
+            project: string;
+            push_error?: string;
+            /** @description Stores whose commit was pushed. */
+            pushed?: string[] | null;
+            /** Format: int64 */
+            tickets: number;
+            to: string;
+            to_commit?: string;
+        };
+        MoveProjectRequest: {
+            dry_run?: boolean;
+            /** @description The target store's name or URL. */
+            to: string;
         };
         NextIn: {
             peek?: boolean;
@@ -1054,9 +1129,14 @@ export interface components {
             assignee?: string;
             blocked?: boolean;
             claim?: components["schemas"]["Claim"];
+            created?: string;
+            fields?: {
+                [key: string]: unknown;
+            };
             id: string;
             kind?: string;
             labels?: string[] | null;
+            owner?: string;
             parent?: string;
             priority?: string;
             project: string;
@@ -1758,6 +1838,80 @@ export interface operations {
             };
         };
     };
+    explainConfig: {
+        parameters: {
+            query?: {
+                /** @description Only this key and the keys under it. */
+                key?: string;
+            };
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigExplainOut"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    moveProject: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Act as this actor; default: the daemon's human. Agents use agent/<name> and are recorded as acting on behalf of the human. */
+                "X-Ka-Actor"?: string;
+                /** @description A session ID, recorded in the Ka-Session trailer. */
+                "X-Ka-Session"?: string;
+            };
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MoveProjectRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MoveProjectOut"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     getSchema: {
         parameters: {
             query?: {
@@ -1806,6 +1960,8 @@ export interface operations {
                 limit?: number;
                 /** @description Include closed tickets when the query does not say. */
                 all?: boolean;
+                /** @description fields: add owner, created and custom fields to each ticket. */
+                include?: "fields"[] | null;
             };
             header?: never;
             path?: never;
@@ -1935,6 +2091,8 @@ export interface operations {
                 limit?: number;
                 /** @description Include closed tickets when the query does not say. */
                 all?: boolean;
+                /** @description fields: add owner, created and custom fields to each ticket. */
+                include?: "fields"[] | null;
             };
             header?: never;
             path?: never;

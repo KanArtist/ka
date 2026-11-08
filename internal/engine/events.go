@@ -127,6 +127,7 @@ type recChange struct {
 }
 
 func (s *Service) diffEvents(v view, at, actor string, old, nw *Rec) []Event {
+	v.full = true // events feed the UI, whose table shows owner and custom fields
 	base := func(typ string, r *Rec) Event {
 		return Event{Type: typ, At: at, Store: r.Store.Name, Project: r.Project.Key, Ticket: r.ID, Actor: actor}
 	}

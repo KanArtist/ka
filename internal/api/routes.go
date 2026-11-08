@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -190,14 +191,15 @@ func (s *Server) workspaceRoutes() {
 // ---- tickets -------------------------------------------------------------------
 
 type searchIn struct {
-	Q     string   `query:"q" doc:"A ka query: project:jk kind:bug -label:infra is:ready sort:-updated words" example:"is:ready"`
-	Sort  []string `query:"sort" doc:"Sort keys (priority, -updated, created, ...)."`
-	Limit int      `query:"limit" minimum:"-1" doc:"Maximum results; 0 means the default (20), -1 means all."`
-	All   bool     `query:"all" doc:"Include closed tickets when the query does not say."`
+	Q       string   `query:"q" doc:"A ka query: project:jk kind:bug -label:infra is:ready sort:-updated words" example:"is:ready"`
+	Sort    []string `query:"sort" doc:"Sort keys (priority, -updated, created, ...)."`
+	Limit   int      `query:"limit" minimum:"-1" doc:"Maximum results; 0 means the default (20), -1 means all."`
+	All     bool     `query:"all" doc:"Include closed tickets when the query does not say."`
+	Include []string `query:"include" enum:"fields" doc:"fields: add owner, created and custom fields to each ticket."`
 }
 
 func (s *Server) search(ctx context.Context, in *searchIn) (*body[*engine.SearchOut], error) {
-	out, err := s.svc.Search(engine.SearchIn{Query: in.Q, Sort: in.Sort, Limit: in.Limit, All: in.All})
+	out, err := s.svc.Search(engine.SearchIn{Query: in.Q, Sort: in.Sort, Limit: in.Limit, All: in.All, Full: slices.Contains(in.Include, "fields")})
 	return &body[*engine.SearchOut]{out}, err
 }
 

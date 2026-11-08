@@ -1,0 +1,160 @@
+<section class="table-view" #host>
+  <header class="head">
+    <h1>Table <span class="n">{{ total() }}</span></h1>
+    <div class="controls">
+      <ka-query-bar />
+      <label class="sel">
+        <span>Group</span>
+        <select [value]="group()" (change)="group.set($any($event.target).value)">
+          <option value="none">None</option>
+          <option value="status">Status</option>
+          <option value="project">Project</option>
+          <option value="assignee">Assignee</option>
+          <option value="priority">Priority</option>
+          <option value="kind">Kind</option>
+          <option value="parent">Parent</option>
+        </select>
+      </label>
+      <button type="button" class="btn small" (click)="openColumns($event)" aria-haspopup="dialog">Columns</button>
+    </div>
+  </header>
+
+  <div class="grid" role="table" aria-label="Tickets" [style.--tpl]="template()">
+    <div class="row headrow" role="row">
+      @for (c of cols(); track c.key) {
+        <div role="columnheader" [attr.aria-sort]="sortKey() === c.key ? (sortDesc() ? 'descending' : 'ascending') : null">
+          <button type="button" class="hbtn" (click)="sortBy(c.key)" [title]="'Sort by ' + c.label">
+            {{ c.label }}
+            @if (sortKey() === c.key) {
+              <span class="arrow" aria-hidden="true">{{ sortDesc() ? '↓' : '↑' }}</span>
+            }
+          </button>
+        </div>
+      }
+    </div>
+
+    @for (s of sections(); track s.key) {
+      <div role="rowgroup">
+        @if (group() !== 'none') {
+          <div class="ghead" role="row">
+            <button type="button" class="gbtn" (click)="toggle(s)" [attr.aria-expanded]="!isCollapsed(s)">
+              <span class="chev" [class.closed]="isCollapsed(s)" aria-hidden="true">▾</span>
+              @if (s.cat) {
+                <span class="dot" [attr.data-cat]="s.cat"></span>
+              }
+              @if (group() === 'assignee' && s.key) {
+                <ka-avatar [actor]="s.key" [size]="16" />
+              }
+              <span class="glabel" [attr.data-p]="group() === 'priority' ? s.key : null">{{ s.label || '—' }}</span>
+              <span class="n">{{ s.total }}</span>
+            </button>
+          </div>
+        }
+        @if (!isCollapsed(s)) {
+          @for (t of s.rows.slice(0, limit(s)); track t.id) {
+            <div
+              class="row trow"
+              role="row"
+              tabindex="0"
+              [attr.data-row]="t.id"
+              [class.closed]="live.isClosed(t)"
+              (click)="open(t)"
+              (keydown)="rowKey($event, t)"
+            >
+              @for (c of cols(); track c.key) {
+                <div role="cell" class="cell" [class]="'c-' + c.key.replace('.', '-')">
+                  @switch (c.key) {
+                    @case ('id') {
+                      <span class="id">{{ t.id }}</span>
+                    }
+                    @case ('title') {
+                      <span class="title">
+                        @if (t.blocked) {
+                          <span class="tag blocked">blocked</span>
+                        }
+                        {{ t.title }}
+                      </span>
+                    }
+                    @case ('status') {
+                      <button type="button" class="ebtn" (click)="editCell($event, t, c)"><span class="dot" [attr.data-cat]="cat(t)"></span>{{ t.status }}</button>
+                    }
+                    @case ('priority') {
+                      <button type="button" class="ebtn prio" [attr.data-p]="t.priority || null" (click)="editCell($event, t, c)">{{ t.priority || '—' }}</button>
+                    }
+                    @case ('kind') {
+                      <button type="button" class="ebtn" [class.faint]="!t.kind" (click)="editCell($event, t, c)">{{ t.kind || '—' }}</button>
+                    }
+                    @case ('assignee') {
+                      <button type="button" class="ebtn" (click)="editCell($event, t, c)">
+                        @if (t.assignee) {
+                          <ka-avatar [actor]="t.assignee" [size]="16" /><span class="ell" [class.agent]="isAgent(t.assignee)">{{ actorName(t.assignee) }}</span>
+                        } @else {
+                          <span class="faint">—</span>
+                        }
+                      </button>
+                    }
+                    @case ('claim') {
+                      @if (t.claim; as cl) {
+                        <span class="claim" [class.stale]="cl.stale" [title]="exact(cl.at)"><ka-avatar [actor]="cl.by" [size]="16" /> {{ ago(cl.at, now()) }}</span>
+                      }
+                    }
+                    @case ('labels') {
+                      <button type="button" class="ebtn labels" (click)="editCell($event, t, c)">
+                        @for (l of t.labels ?? []; track l) {
+                          <span class="tag">{{ l }}</span>
+                        } @empty {
+                          <span class="faint">—</span>
+                        }
+                      </button>
+                    }
+                    @case ('acceptance') {
+                      <span class="faint">{{ t.acceptance }}</span>
+                    }
+                    @case ('parent') {
+                      <span class="id">{{ t.parent }}</span>
+                    }
+                    @case ('owner') {
+                      @if (t.owner) {
+                        <span class="who"><ka-avatar [actor]="t.owner" [size]="16" /><span class="ell">{{ actorName(t.owner) }}</span></span>
+                      }
+                    }
+                    @case ('created') {
+                      <time class="faint" [attr.datetime]="t.created" [title]="exact(t.created ?? '')">{{ t.created ? ago(t.created, now()) : '' }}</time>
+                    }
+                    @case ('updated') {
+                      <time class="faint" [attr.datetime]="t.updated" [title]="exact(t.updated ?? '')">{{ t.updated ? ago(t.updated, now()) : '' }}</time>
+                    }
+                    @default {
+                      <span class="ell">{{ fieldText(value(t, c.key)) }}</span>
+                    }
+                  }
+                </div>
+              }
+            </div>
+          }
+          @if (s.rows.length > limit(s)) {
+            <div class="row morerow" role="row">
+              <button type="button" class="btn quiet small" (click)="more(s)">Show {{ s.rows.length - limit(s) }} more</button>
+            </div>
+          }
+        }
+      </div>
+    } @empty {
+      <p class="empty">No tickets match. Clear the filter, or create one with <kbd>c</kbd>.</p>
+    }
+  </div>
+</section>
+
+@if (menu(); as m) {
+  <ka-menu
+    [options]="menuOptions()"
+    [selected]="menuSelected()"
+    [multi]="m.kind === 'labels' || m.kind === 'columns'"
+    [allowCustom]="menuAllowsCustom()"
+    [anchor]="m.anchor"
+    [label]="m.kind === 'columns' ? 'Columns' : 'Set ' + m.kind"
+    [placeholder]="m.kind === 'columns' ? 'Show or hide columns…' : 'Set ' + m.kind + '…'"
+    (pickValue)="pick($event)"
+    (close)="menu.set(null)"
+  />
+}

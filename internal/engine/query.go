@@ -137,8 +137,9 @@ func anyMatch(patterns, vals []string) bool {
 
 // view gives the matcher access to derived state.
 type view struct {
-	ix  *Index
-	now time.Time
+	ix   *Index
+	now  time.Time
+	full bool // summaries carry owner, created and custom fields
 }
 
 func (v view) isBlocked(r *Rec) bool {

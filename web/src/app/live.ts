@@ -80,7 +80,7 @@ export class Live {
       this.api.get<WorkspaceOut>('/workspace'),
       this.api.get<SchemaOut>('/schema'),
       this.api.get<{ stores: StoreOut[] }>('/stores'),
-      this.api.get<SearchOut>('/tickets?all=true&limit=-1'),
+      this.api.get<SearchOut>('/tickets?all=true&limit=-1&include=fields'),
       this.api.get<{ sessions: Session[] }>('/presence'),
       this.api.get<InboxOut>('/inbox?since=7d'),
     ]);

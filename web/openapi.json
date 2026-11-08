@@ -667,6 +667,89 @@
         ],
         "type": "object"
       },
+      "ConfigEntry": {
+        "additionalProperties": false,
+        "properties": {
+          "class": {
+            "description": "data (validation; resolved through extends) or runtime (this ka instance; the user wins).",
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "line": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "locked_by": {
+            "description": "The layer whose lock fixes this value.",
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "source": {
+            "description": "The layer that set the value: a file, built-in defaults, or the workspace.",
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "value",
+          "class",
+          "source"
+        ],
+        "type": "object"
+      },
+      "ConfigExplainOut": {
+        "additionalProperties": false,
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/ConfigEntry"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "layers": {
+            "description": "The data config chain, lowest first.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "locked": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "project": {
+            "type": "string"
+          },
+          "store": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "project",
+          "store",
+          "layers",
+          "entries"
+        ],
+        "type": "object"
+      },
       "CreateCommentRequest": {
         "additionalProperties": false,
         "properties": {
@@ -1229,6 +1312,74 @@
         },
         "required": [
           "link"
+        ],
+        "type": "object"
+      },
+      "MoveProjectOut": {
+        "additionalProperties": false,
+        "properties": {
+          "dry_run": {
+            "type": "boolean"
+          },
+          "files": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "from": {
+            "type": "string"
+          },
+          "from_commit": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "push_error": {
+            "type": "string"
+          },
+          "pushed": {
+            "description": "Stores whose commit was pushed.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "tickets": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "to": {
+            "type": "string"
+          },
+          "to_commit": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "project",
+          "from",
+          "to",
+          "files",
+          "tickets"
+        ],
+        "type": "object"
+      },
+      "MoveProjectRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "dry_run": {
+            "type": "boolean"
+          },
+          "to": {
+            "description": "The target store's name or URL.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "to"
         ],
         "type": "object"
       },
@@ -1809,6 +1960,13 @@
           "claim": {
             "$ref": "#/components/schemas/Claim"
           },
+          "created": {
+            "type": "string"
+          },
+          "fields": {
+            "additionalProperties": {},
+            "type": "object"
+          },
           "id": {
             "type": "string"
           },
@@ -1823,6 +1981,9 @@
               "array",
               "null"
             ]
+          },
+          "owner": {
+            "type": "string"
           },
           "parent": {
             "type": "string"
@@ -3089,6 +3250,126 @@
         ]
       }
     },
+    "/api/v1/projects/{key}/config": {
+      "get": {
+        "operationId": "explainConfig",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only this key and the keys under it.",
+            "explode": false,
+            "in": "query",
+            "name": "key",
+            "schema": {
+              "description": "Only this key and the keys under it.",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigExplainOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Effective config of a project and the layer that set each value (ka config explain)",
+        "tags": [
+          "workspace"
+        ]
+      }
+    },
+    "/api/v1/projects/{key}/move": {
+      "post": {
+        "operationId": "moveProject",
+        "parameters": [
+          {
+            "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+            "in": "header",
+            "name": "X-Ka-Actor",
+            "schema": {
+              "description": "Act as this actor; default: the daemon's human. Agents use agent/\u003cname\u003e and are recorded as acting on behalf of the human.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A session ID, recorded in the Ka-Session trailer.",
+            "in": "header",
+            "name": "X-Ka-Session",
+            "schema": {
+              "description": "A session ID, recorded in the Ka-Session trailer.",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveProjectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MoveProjectOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Move a project to another store (ka project move)",
+        "tags": [
+          "workspace"
+        ]
+      }
+    },
     "/api/v1/schema": {
       "get": {
         "operationId": "getSchema",
@@ -3203,6 +3484,25 @@
             "schema": {
               "description": "Include closed tickets when the query does not say.",
               "type": "boolean"
+            }
+          },
+          {
+            "description": "fields: add owner, created and custom fields to each ticket.",
+            "explode": false,
+            "in": "query",
+            "name": "include",
+            "schema": {
+              "description": "fields: add owner, created and custom fields to each ticket.",
+              "items": {
+                "enum": [
+                  "fields"
+                ],
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
             }
           }
         ],
@@ -3388,6 +3688,25 @@
             "schema": {
               "description": "Include closed tickets when the query does not say.",
               "type": "boolean"
+            }
+          },
+          {
+            "description": "fields: add owner, created and custom fields to each ticket.",
+            "explode": false,
+            "in": "query",
+            "name": "include",
+            "schema": {
+              "description": "fields: add owner, created and custom fields to each ticket.",
+              "items": {
+                "enum": [
+                  "fields"
+                ],
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
             }
           }
         ],
