@@ -185,7 +185,7 @@ func (s *Service) diffEvents(v view, at, actor string, old, nw *Rec) []Event {
 		if seen[c.Name] || c.Comment == nil {
 			continue
 		}
-		co := commentOut(c)
+		co := recCommentOut(nw, c)
 		e := base(EvCommentCreated, nw)
 		e.Actor = co.Author
 		e.Data = CommentEvent{Ticket: ref, Comment: co}

@@ -185,6 +185,11 @@ room the rest leaves. Over every ready ticket of the migrated `jk` store, the ma
   - S6: a hand-written CRLF ticket is picked up, reported and fixed;
   - S8: closing unblocks dependents;
   - S9: `ka approve <ID>` works exactly as an agent would write it.
+- The M2 scenarios run through a daemon, with the agent on the `ka mcp` bridge and the human on
+  the UI's REST and SSE endpoints:
+  - S2: progress notes and acceptance checks reach a watching client in about 15 ms;
+  - S3: a `ka_ask` with options appears in the human's inbox; the human answers as the UI does;
+    and the agent's waiting `ka_ask` returns the chosen option.
 - **S5** is a simulator: 20 agents in 12 processes on 6 clones perform about 270 random
   operations (next, claim, progress, check, close, create, label, comment, sync). It then checks
   four things: every accepted change is present in a fresh clone; IDs are unique; history is

@@ -242,6 +242,8 @@ func Comment(c engine.CommentOut) string {
 		head += " to " + c.To
 	case c.Approved != nil:
 		head += map[bool]string{true: " (approved)", false: " (rejected)"}[*c.Approved]
+	case c.Choice != nil && c.ChoiceText != "":
+		head += fmt.Sprintf(" choice %d (%s)", *c.Choice, c.ChoiceText)
 	case c.Choice != nil:
 		head += fmt.Sprintf(" choice %d", *c.Choice)
 	}

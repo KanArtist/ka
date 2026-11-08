@@ -590,6 +590,9 @@
             "format": "int64",
             "type": "integer"
           },
+          "choice_text": {
+            "type": "string"
+          },
           "created": {
             "type": "string"
           },

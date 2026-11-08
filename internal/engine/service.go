@@ -265,6 +265,7 @@ type CommentOut struct {
 	Options    []string `json:"options,omitempty"`
 	Answers    string   `json:"answers,omitempty"`
 	Choice     *int64   `json:"choice,omitempty"`
+	ChoiceText string   `json:"choice_text,omitempty"` // the chosen option, from the question
 	Approved   *bool    `json:"approved,omitempty"`
 	Resolution string   `json:"resolution,omitempty"`
 	Body       string   `json:"body,omitempty"`
@@ -277,6 +278,24 @@ func commentOut(c *kaspec.CommentEntry) CommentOut {
 	k := c.Comment
 	return CommentOut{Name: c.Name, Type: k.Type, Author: k.Author, Created: k.Created, To: k.To, Options: k.Options,
 		Answers: k.Answers, Choice: k.Choice, Approved: k.Approved, Resolution: k.Resolution, Body: k.Body}
+}
+
+// recCommentOut is commentOut plus, for an answer that picked an option,
+// that option's text from the question it answers.
+func recCommentOut(r *Rec, ce *kaspec.CommentEntry) CommentOut {
+	co := commentOut(ce)
+	if co.Choice == nil || co.Answers == "" {
+		return co
+	}
+	for _, q := range r.Comments {
+		if q.Name == co.Answers && q.Comment != nil {
+			if i := int(*co.Choice); i >= 0 && i < len(q.Comment.Options) {
+				co.ChoiceText = q.Comment.Options[i]
+			}
+			break
+		}
+	}
+	return co
 }
 
 // Detail is a full ticket with its context digest.
@@ -367,7 +386,7 @@ func (s *Service) detail(r *Rec, include []string) *Detail {
 	d.CommentCount = len(r.Comments)
 	if slices.Contains(include, "comments") {
 		for _, c := range r.Comments {
-			d.Comments = append(d.Comments, commentOut(c))
+			d.Comments = append(d.Comments, recCommentOut(r, c))
 		}
 		return d
 	}
@@ -1220,7 +1239,7 @@ func (s *Service) findAnswer(id, question string) *CommentOut {
 	}
 	for _, ce := range r.Comments {
 		if ce.Comment != nil && ce.Comment.Answers == question {
-			co := commentOut(ce)
+			co := recCommentOut(r, ce)
 			return &co
 		}
 	}
@@ -1369,7 +1388,7 @@ func (s *Service) Inbox(c Caller, since string) *InboxOut {
 			if k == nil || k.Answers == "" || !mine[k.Answers] || (since != "" && k.Created < since) {
 				continue
 			}
-			out.Answers = append(out.Answers, InboxItem{ID: id, Title: r.T.Title, Comment: commentOut(ce), Question: k.Answers})
+			out.Answers = append(out.Answers, InboxItem{ID: id, Title: r.T.Title, Comment: recCommentOut(r, ce), Question: k.Answers})
 		}
 		for _, q := range openQuestions(r) {
 			if roles[q.Comment.To] || (q.Comment.To == "" && r.T.Owner == c.Actor) {

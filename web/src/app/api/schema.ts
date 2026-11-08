@@ -733,6 +733,7 @@ export interface components {
             body?: string;
             /** Format: int64 */
             choice?: number;
+            choice_text?: string;
             created: string;
             name: string;
             options?: string[] | null;

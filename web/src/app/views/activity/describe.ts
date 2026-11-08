@@ -131,7 +131,7 @@ function describeComment(c: any): Line {
     case 'question':
       return { verb: c.to ? `asked ${c.to}` : 'asked a question', quote, tone: 'question' };
     case 'answer':
-      return { verb: 'answered', quote };
+      return { verb: c.choice_text ? `answered “${c.choice_text}”` : 'answered', quote };
     case 'approval':
       return { verb: c.approved ? 'approved' : 'rejected', quote, tone: c.approved ? 'done' : 'warn' };
     case 'system':

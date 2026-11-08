@@ -1,0 +1,88 @@
+<section class="inbox">
+  <header class="head">
+    <h1>Inbox</h1>
+    @if (notifySupported) {
+      <label class="notify">
+        <input type="checkbox" [checked]="prefs.notify()" (change)="toggleNotify($any($event.target).checked)" />
+        Notify me in this browser when a question arrives
+      </label>
+    }
+  </header>
+
+  <h2>Waiting for you <span class="n">{{ questions().length }}</span></h2>
+  <ol class="questions">
+    @for (q of questions(); track key(q)) {
+      <li class="q" [class.approval]="isApproval(q)" [class.answered]="state(q).done">
+        <div class="meta">
+          <ka-actor [actor]="q.comment.author" [size]="20" />
+          <span class="muted">{{ isApproval(q) ? 'asks for your approval' : q.comment.to && q.comment.to.startsWith('role/') ? 'asks ' + q.comment.to : 'asks you' }}</span>
+          <time class="muted" [attr.datetime]="q.comment.created" [title]="exact(q.comment.created)">{{ ago(q.comment.created, now()) }}</time>
+          <span class="spacer"></span>
+          <a class="ticket" [routerLink]="[]" [queryParams]="{ peek: q.id }" queryParamsHandling="merge"><span class="id">{{ q.id }}</span> {{ q.title }}</a>
+        </div>
+        <div class="md body" [innerHTML]="html(q.comment.body)"></div>
+
+        @if (state(q).done; as label) {
+          <p class="done" role="status">You {{ label }}. The agent sees it on its next <code>ka_inbox</code> call.</p>
+        } @else {
+          <div class="actions">
+            @if (isApproval(q)) {
+              <button type="button" class="btn approve" [disabled]="state(q).busy" (click)="answer(q, { approved: true }, 'approved')">Approve</button>
+              <button type="button" class="btn reject" [disabled]="state(q).busy" (click)="answer(q, { approved: false }, 'rejected')">Reject</button>
+            } @else {
+              @for (o of q.comment.options ?? []; track $index; let i = $index) {
+                <button type="button" class="btn option" [disabled]="state(q).busy" (click)="answer(q, { choice: i }, 'answered “' + o + '”')">{{ o }}</button>
+              }
+            }
+          </div>
+          <form class="reply" (submit)="$event.preventDefault(); answer(q, {}, 'answered')">
+            <textarea
+              rows="1"
+              [placeholder]="isApproval(q) ? 'Add a note (optional), then approve or reject' : (q.comment.options?.length ? 'Or answer in your own words' : 'Your answer')"
+              [value]="draft(q)"
+              (input)="setDraft(q, $any($event.target).value)"
+              (keydown.control.enter)="answer(q, {}, 'answered')"
+              (keydown.meta.enter)="answer(q, {}, 'answered')"
+              [attr.aria-label]="'Answer ' + q.id"
+            ></textarea>
+            @if (!isApproval(q)) {
+              <button type="submit" class="btn send" [disabled]="state(q).busy || !draft(q).trim()">Send answer</button>
+            }
+          </form>
+          @if (state(q).error; as err) {
+            <p class="error" role="alert">{{ err }}</p>
+          }
+        }
+      </li>
+    } @empty {
+      <li class="empty">Nothing is waiting for you. When an agent calls <code>ka_ask</code>, its question appears here.</li>
+    }
+  </ol>
+
+  @if (justAnswered().length) {
+    <h2>Just answered</h2>
+    <ul class="answers">
+      @for (a of justAnswered(); track key(a.q)) {
+        <li>
+          <span class="done-mark" aria-hidden="true">✓</span>
+          <span class="you">You {{ a.label }}</span>
+          <a [routerLink]="[]" [queryParams]="{ peek: a.q.id }" queryParamsHandling="merge" class="ticket"><span class="id">{{ a.q.id }}</span> {{ a.q.title }}</a>
+        </li>
+      }
+    </ul>
+  }
+
+  @if (answers().length) {
+    <h2>Answers to your questions</h2>
+    <ul class="answers">
+      @for (a of answers(); track a.id + a.comment.name) {
+        <li>
+          <ka-actor [actor]="a.comment.author" [size]="18" />
+          <span class="muted">{{ answerVerb(a) }}{{ a.comment.choice_text ? ' “' + a.comment.choice_text + '”' : '' }}</span>
+          <a [routerLink]="[]" [queryParams]="{ peek: a.id }" queryParamsHandling="merge" class="ticket"><span class="id">{{ a.id }}</span> {{ a.title }}</a>
+          <time class="muted" [title]="exact(a.comment.created)">{{ ago(a.comment.created, now()) }}</time>
+        </li>
+      }
+    </ul>
+  }
+</section>

@@ -9,7 +9,7 @@ Agents are the primary users; humans get a live window into what they are doing.
 - **The daemon and REST API:** [docs/api.md](docs/api.md)
 - **Migrating from KanArtist v0:** [docs/migration.md](docs/migration.md)
 
-## Status: M1 done; M2 (daemon and live UI) in progress
+## Status: M1 done; M2 (daemon and live UI) built, in daily-use trial
 
 | Piece | Where |
 |---|---|
@@ -23,7 +23,9 @@ Agents are the primary users; humans get a live window into what they are doing.
 | PRD scenarios, the multi-clone simulator, token budgets | [`internal/scenario/`](internal/scenario/) |
 | One-time v0 importer (repeatable until cut-over) | [`tools/migrate-v0/`](tools/migrate-v0/) |
 
-The web UI's views (Activity, Board, Ticket peek, Agents, Inbox) are the rest of M2 ([PRD §21](docs/prd.md#21-milestones)).
+M2's pieces have all landed: the daemon, REST, SSE, MCP over HTTP, presence, and the web UI's
+Activity, Board, Ticket peek, Agents and Inbox views. M2 closes after measuring its latency targets
+and using it daily on the migrated stores ([PRD §21](docs/prd.md#21-milestones)).
 
 ## Install
 

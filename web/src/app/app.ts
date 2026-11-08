@@ -48,6 +48,24 @@ export class App {
       if (e instanceof NavigationEnd) readPeek();
     });
     this.live.start().catch((e) => this.failed.set(e?.message ?? String(e)));
+    // A question that arrives while the tab is in the background raises a
+    // browser notification, if the user turned them on in the Inbox.
+    let known: Set<string> | undefined;
+    effect(() => {
+      const qs = this.live.inbox()?.questions ?? [];
+      const keys = new Set(qs.map((q) => q.id + '/' + q.comment.name));
+      if (known && this.prefs.notify() && document.hidden && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        for (const q of qs) {
+          if (known.has(q.id + '/' + q.comment.name)) continue;
+          const n = new Notification(`${q.comment.author} asks: ${q.title}`, { body: q.comment.body?.slice(0, 200), tag: q.comment.name });
+          n.onclick = () => {
+            window.focus();
+            void this.router.navigate(['/inbox']);
+          };
+        }
+      }
+      known = keys;
+    });
     // The tab title carries the inbox count, so it shows from another tab.
     effect(() => {
       const n = this.live.inboxCount();
