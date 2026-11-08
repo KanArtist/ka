@@ -280,3 +280,20 @@ func TestCompletion(t *testing.T) {
 		}
 	}
 }
+
+func TestDescribeEvent(t *testing.T) {
+	for _, c := range []struct {
+		typ, data, want string
+	}{
+		{"ticket.moved", `{"ticket":{"title":"T"},"from":"ready","to":"review"}`, "moved it ready → review"},
+		{"ticket.updated", `{"changes":{"labels":{"from":["a"],"to":["a","b"]},"priority":{"to":"P1"}}}`, "labels +b, set priority to P1"},
+		{"ticket.updated", `{"changes":{"labels":{"to":{"add":["x"],"remove":["y"]}}},"body_changed":true}`, "labels +x −y, edited the description"},
+		{"claim.changed", `{"to":{"by":"agent/a"}}`, "claimed it"},
+		{"claim.changed", `{"from":{"by":"agent/a"}}`, "released it"},
+		{"comment.created", `{"comment":{"type":"answer","choice_text":"Yes"}}`, "answered “Yes”"},
+	} {
+		if v, _, _ := describeEvent(watchEvent{Type: c.typ, Data: json.RawMessage(c.data)}); v != c.want {
+			t.Errorf("%s %s: %q, want %q", c.typ, c.data, v, c.want)
+		}
+	}
+}

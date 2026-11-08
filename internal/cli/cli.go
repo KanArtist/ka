@@ -54,6 +54,7 @@ func init() {
 		{"answer", "ID [--choice N] [-m TEXT] [--question NAME]", "answer a ticket's open question", cmdAnswer, false},
 		{"approve", "ID [-m TEXT]", "approve a ticket's open request", cmdApprove, false},
 		{"reject", "ID [-m TEXT]", "reject a ticket's open request", cmdReject, false},
+		{"watch", "[--history N] [--agents|--people] [--all] [QUERY...]", "live activity stream in the terminal", cmdWatch, false},
 		{"inbox", "[--since 24h]", "answers to your questions and questions for you", cmdInbox, false},
 		{"schema", "[PROJECT]", "projects, statuses, kinds, labels and fields", cmdSchema, false},
 		{"sync", "", "fetch, replay and push every store", cmdSync, false},
