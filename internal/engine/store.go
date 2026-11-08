@@ -566,8 +566,8 @@ func (s *Store) reloadRange(ctx context.Context, h hooks, from, to string) {
 func (s *Store) preserveFailed(ctx context.Context, h hooks, f failedOp) string {
 	b, _ := json.MarshalIndent(f.op, "", "  ")
 	body := fmt.Sprintf("An operation by %s could not be applied after syncing and was not published.\n\n"+
-		"- Reason: %s\n- Original commit: %s (%s)\n\n```json\n%s\n```\n",
-		orDefault(f.op.Actor, "an unknown actor"), AsError(f.err).Error(), f.commit.SHA[:12], f.commit.Subject, b)
+		"- Reason: %s\n- Original commit: %s (%s)\n- To apply it now: ka restore %s <this comment's file name>, or Restore in Sync & health\n\n```json\n%s\n```\n",
+		orDefault(f.op.Actor, "an unknown actor"), AsError(f.err).Error(), f.commit.SHA[:12], f.commit.Subject, f.op.ID, b)
 	return s.writeSystemComment(ctx, h, f.op.ID, body, f.op.Actor)
 }
 

@@ -531,3 +531,23 @@ func cmdMergeDriver(ctx context.Context, x *IO, args []string) int {
 	}
 	return engine.RunMergeDriver(ctx, args[0], args[1], args[2], p)
 }
+
+func cmdRestore(ctx context.Context, x *IO, args []string) int {
+	fl, c := newFlags("restore", "ID COMMENT", x)
+	pos, err := parse(fl, args)
+	if err != nil {
+		return 2
+	}
+	if len(pos) != 2 {
+		return usageErr(x, fl, "restore needs the ticket ID and the preserved comment's file name (ka show ID --comments)")
+	}
+	svc, caller, err := open(ctx, x, c)
+	if err != nil {
+		return fail(x, c, err)
+	}
+	out, err := svc.RestorePreserved(ctx, caller, pos[0], pos[1])
+	if err != nil {
+		return fail(x, c, err)
+	}
+	return emit(x, c, out, render.Write("restored", out))
+}

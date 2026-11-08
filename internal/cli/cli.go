@@ -63,6 +63,7 @@ func init() {
 		{"inbox", "[--since 24h]", "answers to your questions and questions for you", cmdInbox, false},
 		{"schema", "[PROJECT]", "projects, statuses, kinds, labels and fields", cmdSchema, false},
 		{"sync", "", "fetch, replay and push every store", cmdSync, false},
+		{"restore", "ID COMMENT", "re-apply an operation a sync preserved instead of publishing", cmdRestore, false},
 		{"check", "[--ci] [--format text|json|github|sarif] [-o FILE] [--staged] [--map URL=DIR]... [STORE_DIR...]", "validate stores against the Store Spec", cmdCheck, false},
 		{"fmt", "[--check] [--staged] [STORE_DIR...]", "rewrite tickets and comments in canonical form", cmdFmt, false},
 		{"hooks", "install [--force] | uninstall | status", "a git pre-commit hook running ka fmt --staged and ka check --staged", cmdHooks, false},
