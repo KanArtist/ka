@@ -46,8 +46,8 @@ jobs:
           npm ci
           npm run gen:api
           npm run build
-          git diff --exit-code -- . ../internal/api/ui
-          test -z "$(git status --porcelain -- . ../internal/api/ui)" || (git status --porcelain -- . ../internal/api/ui && exit 1)
+          git diff --exit-code -- . ../ui
+          test -z "$(git status --porcelain -- . ../ui)" || (git status --porcelain -- . ../ui && exit 1)
 
   # The check action, run against a conformance store with ka built from
   # this checkout.
@@ -79,5 +79,26 @@ jobs:
         run: shellcheck install.sh
       - name: Install with the script
         run: |
-          KA_INSTALL_DIR="$RUNNER_TEMP/bin" sh install.sh
+          KA_VERSION=1.0.3 KA_INSTALL_DIR="$RUNNER_TEMP/bin" sh install.sh
           "$RUNNER_TEMP/bin/ka" version
+      # In a checkout that is not on a tag, the script builds it with Go.
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Build the checkout with the script
+        run: |
+          KA_INSTALL_DIR="$RUNNER_TEMP/src" sh install.sh
+          "$RUNNER_TEMP/src/ka" version
+          "$RUNNER_TEMP/src/ka" ui use . && "$RUNNER_TEMP/src/ka" ui status | grep -q "$PWD/ui"
+
+  install-ps1:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install a release with install.ps1
+        shell: pwsh
+        run: |
+          $env:KA_VERSION = '1.0.3'
+          $env:KA_INSTALL_DIR = "$env:RUNNER_TEMP\bin"
+          ./install.ps1
+          & "$env:RUNNER_TEMP\bin\ka.exe" version

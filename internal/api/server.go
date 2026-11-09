@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -66,6 +67,8 @@ type Server struct {
 	hub       *engine.EventHub
 	stats     httpStats
 	heartbeat time.Duration
+
+	ui atomic.Pointer[uiSource]
 
 	mu   sync.RWMutex
 	port int // the bound port, for Host and Origin checks

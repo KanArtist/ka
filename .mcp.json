@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "ka": {
+      "command": "ka",
+      "args": ["mcp"]
+    }
+  }
+}

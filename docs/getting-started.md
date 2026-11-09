@@ -9,10 +9,13 @@ share the store with a teammate.
 
 ## 1. Install
 
-You need git 2.40 or later.
+You need git 2.40 or later. The quickest route is to let a coding agent do it: clone
+`https://github.com/JumpKickOSS/ka`, start your agent in the clone and ask it to set KanArtist up
+([AGENTS.md](../AGENTS.md) has the steps). By hand:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/JumpKickOSS/ka/main/install.sh | sh   # Linux, macOS
+irm https://raw.githubusercontent.com/JumpKickOSS/ka/main/install.ps1 | iex         # Windows
 brew install jumpkickoss/tap/ka                  # macOS, Linux
 scoop bucket add jumpkick https://github.com/JumpKickOSS/scoop-bucket
 scoop install jumpkick/ka                        # Windows
@@ -62,8 +65,8 @@ arguments in a terminal and it asks for the title, kind and priority.
 ## 4. Connect an agent
 
 ```bash
-claude mcp add ka -- ka mcp        # Claude Code
-# Other MCP clients: command "ka", arguments ["mcp"], started in the store (or a repo with .ka.yml).
+ka setup        # registers the ka MCP server and skill with every coding agent on this machine
+# By hand: claude mcp add -s user ka -- ka mcp (other clients: command "ka", arguments ["mcp"]).
 ```
 
 Then ask the agent to "take the next ticket". The loop is:

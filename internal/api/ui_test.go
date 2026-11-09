@@ -23,7 +23,7 @@ func TestServesUI(t *testing.T) {
 		}
 	}
 	// Hashed assets are cached forever; unknown files are 404, not index.html.
-	ents, _ := fs.ReadDir(uiFS, ".")
+	ents, _ := fs.ReadDir(EmbeddedUI, ".")
 	for _, e := range ents {
 		if strings.HasPrefix(e.Name(), "main-") {
 			r := c.do("GET", "/"+e.Name(), nil, noAuth...)

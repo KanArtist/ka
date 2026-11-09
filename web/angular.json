@@ -58,7 +58,7 @@
               "src/styles.css"
             ],
             "outputPath": {
-              "base": "../internal/api/ui",
+              "base": "../ui",
               "browser": ""
             }
           },

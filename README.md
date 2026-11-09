@@ -36,10 +36,23 @@ Agents are the primary users; humans get a live window into what they are doing.
 
 ## Install
 
-Requires git 2.40+ at run time.
+The easy way: clone this repository and ask your coding agent to set KanArtist up.
+
+```bash
+git clone https://github.com/JumpKickOSS/ka && cd ka
+claude "set up KanArtist"         # or codex, cursor-agent, gemini, agy, copilot, grok, muse…
+```
+
+[AGENTS.md](AGENTS.md) tells the agent what to do: pin the checkout to the latest release, run
+the install script, run `ka setup` (which registers the ka MCP server and skill with every coding
+agent on the machine and serves the web UI from the checkout's `ui/`), and connect your ticket
+stores. To update, check out a newer tag and ask again.
+
+By hand (requires git 2.40+ at run time):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/JumpKickOSS/ka/main/install.sh | sh   # Linux, macOS
+irm https://raw.githubusercontent.com/JumpKickOSS/ka/main/install.ps1 | iex         # Windows (PowerShell)
 brew install jumpkickoss/tap/ka                  # macOS, Linux
 scoop bucket add jumpkick https://github.com/JumpKickOSS/scoop-bucket
 scoop install jumpkick/ka                        # Windows
@@ -50,7 +63,11 @@ docker run --rm ghcr.io/jumpkickoss/ka version   # the container image (a team d
 The script checks the download against the release's signed checksums (and the signature
 itself when `cosign` is installed), installs to `~/.local/bin` (`/usr/local/bin` as root) and
 upgrades when run again; `KA_VERSION` pins a release and `KA_INSTALL_DIR` picks the directory.
-Read it first if you prefer: [install.sh](install.sh).
+With Go 1.27+ installed, the scripts build from source when there is no release for your platform
+or version, with `KA_FROM_SOURCE=1`, or with `KA_VERSION=main` for the newest commit. Run from a
+checkout of this repository, they install the release matching the checked-out tag, or build the
+checkout when it isn't on a tag. Then run `ka setup`. Read them first if you prefer:
+[install.sh](install.sh), [install.ps1](install.ps1).
 
 Debian, Ubuntu, Fedora and RHEL can install the package (`amd64` or `arm64`):
 
@@ -68,8 +85,12 @@ source <(ka completion bash)          # optional; also zsh, fish, powershell
 ## For agents (MCP)
 
 ```bash
-claude mcp add ka -- ka mcp       # Claude Code; other clients: command "ka", args ["mcp"]
+ka setup              # registers the MCP server and skill with every coding agent found
+ka setup --dry-run    # shows what it would change; --agents claude,codex limits it
 ```
+
+Or by hand: `claude mcp add -s user ka -- ka mcp` (other clients: command `ka`, args `["mcp"]`).
+`ka skill` prints the guide agents follow.
 
 Start the agent inside a store, or in a code repo whose root has a `.ka.yml` pointer:
 

@@ -17,6 +17,7 @@ import (
 	"github.com/JumpKickOSS/ka/internal/engine"
 	"github.com/JumpKickOSS/ka/internal/mcpserver"
 	"github.com/JumpKickOSS/ka/internal/presence"
+	"github.com/JumpKickOSS/ka/internal/uisrc"
 )
 
 func cmdDaemon(ctx context.Context, x *IO, args []string) int {
@@ -113,6 +114,7 @@ func daemonRun(ctx context.Context, x *IO, args []string) int {
 	mcpSrv := mcpserver.New(svc, mcpserver.Options{Presence: pres})
 	srv := api.New(svc, api.Options{Token: api.NewToken(), Version: Version, Logger: log, Shutdown: cancel,
 		Events: hub, MCP: mcpSrv.HTTPHandler(), Presence: pres, Remote: remote, WebhookSecret: hookSecret})
+	serveCheckoutUI(ctx, srv, log)
 	go func() {
 		t := time.NewTicker(time.Minute)
 		defer t.Stop()
@@ -215,9 +217,14 @@ func daemonStop(ctx context.Context, x *IO, args []string) int {
 }
 
 func daemonOpenAPI(ctx context.Context, x *IO, args []string) int {
-	fl, _ := newFlags("daemon openapi", "", x)
+	fl, _ := newFlags("daemon openapi", "[--hash]", x)
+	hash := fl.Bool("hash", false, "print the API's hash instead (what a built UI's ka-ui.json must match)")
 	if _, err := parse(fl, args); err != nil {
 		return 2
+	}
+	if *hash {
+		fmt.Fprintln(x.Out, api.APIHash())
+		return 0
 	}
 	doc, err := json.MarshalIndent(api.New(nil, api.Options{Version: Version}).OpenAPI(), "", "  ")
 	if err != nil {
@@ -285,4 +292,34 @@ func cmdToken(ctx context.Context, x *IO, args []string) int {
 		return 2
 	}
 	return 0
+}
+
+// serveCheckoutUI serves a ka checkout's ui/ when one is set up and fits
+// this binary's API. If the checkout was deleted, the embedded UI serves
+// while ka clones this release's tag again.
+func serveCheckoutUI(ctx context.Context, srv *api.Server, log *slog.Logger) {
+	cfg, err := uisrc.Load()
+	if err != nil {
+		log.Warn("web UI: cannot read ui.json; serving the embedded UI", "err", err)
+		return
+	}
+	st := uisrc.Resolve(cfg)
+	if st.Dir != "" {
+		srv.SetUI(os.DirFS(st.Dir), st.Dir)
+		log.Info("web UI", "from", st.Dir)
+		return
+	}
+	log.Info("web UI", "from", "embedded", "because", st.Reason)
+	if !st.Missing {
+		return
+	}
+	go func() {
+		dir, err := uisrc.Reclone(ctx, cfg, Version)
+		if err != nil {
+			log.Warn("web UI: cannot clone ka again; keeping the embedded UI", "err", err)
+			return
+		}
+		srv.SetUI(os.DirFS(dir), dir)
+		log.Info("web UI", "from", dir, "cloned", true)
+	}()
 }

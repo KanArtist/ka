@@ -1,12 +1,12 @@
 # The KanArtist web UI
 
 Angular (zoneless, signals, standalone components). `ka daemon` serves the production build, which
-is embedded in the binary from `internal/api/ui/`, so the UI works offline.
+is built into `ui/` at the repository root and embedded in the binary, so the UI works offline.
 
 ```bash
 npm ci
 npm run gen:api   # regenerate src/app/api/schema.ts from the daemon's OpenAPI document (needs Go)
-npm run build     # build into ../internal/api/ui; commit the result
+npm run build     # build into ../ui; commit the result
 ```
 
 For development, run `ka daemon` and `npx ng build --watch --configuration development`, and

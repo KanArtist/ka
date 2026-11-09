@@ -7,7 +7,7 @@ Thanks for helping. KanArtist dogfoods itself: its own tickets live in a KanArti
 ```bash
 go test ./...                    # everything (the S5 multi-clone simulator takes ~30 s)
 go test -short -race ./...       # what CI runs on Linux, macOS and Windows
-cd web && npm ci && npm run gen:api && npm run build   # the web UI, embedded into internal/api/ui
+cd web && npm ci && npm run gen:api && npm run build   # the web UI, built into ui/ and embedded
 ```
 
 Requirements: Go 1.27+, git 2.40+, Node 26 for the UI. The built UI is committed so that

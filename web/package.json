@@ -7,7 +7,7 @@
     "build": "ng build && node scripts/postbuild.mjs",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
-    "gen:api": "cd .. && go run ./cmd/ka daemon openapi > web/openapi.json && cd web && npx -y openapi-typescript@7.13.0 openapi.json -o src/app/api/schema.ts"
+    "gen:api": "cd .. && go run ./cmd/ka daemon openapi > web/openapi.json && go run ./cmd/ka daemon openapi --hash > web/api-hash && cd web && npx -y openapi-typescript@7.13.0 openapi.json -o src/app/api/schema.ts"
   },
   "private": true,
   "packageManager": "npm@11.20.0",

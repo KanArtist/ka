@@ -3,22 +3,79 @@ package api
 import (
 	"bytes"
 	"crypto/rand"
-	"embed"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
 	"io/fs"
 	"net/http"
 	"path"
 	"regexp"
 	"strings"
+	"sync"
+
+	ka "github.com/JumpKickOSS/ka"
 )
 
-// The web UI (web/, built by `npm run build` into internal/api/ui) is
-// embedded so the daemon serves it offline from the binary (PRD §13.1).
-//
-//go:embed all:ui
-var uiFiles embed.FS
+// EmbeddedUI is the web UI built into the binary (ui/ at the repository
+// root), so the daemon serves it offline (PRD §13.1).
+var EmbeddedUI, _ = fs.Sub(ka.UI, "ui")
 
-var uiFS, _ = fs.Sub(uiFiles, "ui")
+// UIManifest is ui/ka-ui.json, written by the UI build.
+type UIManifest struct {
+	// API is the APIHash of the API the UI was generated against.
+	API string `json:"api"`
+}
+
+// APIHash identifies the REST API's shape: a hash of the OpenAPI document
+// without the version number, so a release that leaves the API alone keeps
+// it, and a UI built against it still fits.
+var APIHash = sync.OnceValue(func() string {
+	doc, _ := json.Marshal(New(nil, Options{Version: "-"}).OpenAPI())
+	sum := sha256.Sum256(doc)
+	return hex.EncodeToString(sum[:8])
+})
+
+// ReadUIManifest reads ka-ui.json from a built UI.
+func ReadUIManifest(fsys fs.FS) (UIManifest, error) {
+	var m UIManifest
+	b, err := fs.ReadFile(fsys, "ka-ui.json")
+	if err != nil {
+		return m, err
+	}
+	err = json.Unmarshal(b, &m)
+	return m, err
+}
+
+// uiSource is the UI the server serves and where it came from.
+type uiSource struct {
+	fsys   fs.FS
+	origin string
+}
+
+// SetUI serves the UI from fsys from now on (origin is for logs and
+// /api/v1/daemon). A nil fsys goes back to the embedded UI.
+func (s *Server) SetUI(fsys fs.FS, origin string) {
+	if fsys == nil {
+		fsys, origin = EmbeddedUI, "embedded"
+	}
+	s.ui.Store(&uiSource{fsys, origin})
+}
+
+func (s *Server) uiFS() fs.FS {
+	if u := s.ui.Load(); u != nil {
+		return u.fsys
+	}
+	return EmbeddedUI
+}
+
+// UIOrigin says where the served UI comes from: "embedded" or a directory.
+func (s *Server) UIOrigin() string {
+	if u := s.ui.Load(); u != nil {
+		return u.origin
+	}
+	return "embedded"
+}
 
 // nonceMarker is replaced in index.html by a per-response CSP nonce, which
 // Angular uses for the component styles it injects (ngCspNonce).
@@ -38,6 +95,7 @@ func (s *Server) serveUI(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, newProblem(codeForbidden, "", "method not allowed"))
 		return
 	}
+	uiFS := s.uiFS()
 	name := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")
 	if name != "" && name != "index.html" {
 		if data, err := fs.ReadFile(uiFS, name); err == nil {
