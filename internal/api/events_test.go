@@ -194,12 +194,16 @@ func TestEventsLatencyAndPayloads(t *testing.T) {
 		}
 	}
 	t.Logf("worst operation-to-event latency: %v", worst)
-	// The time includes the git commit. On Windows with the race detector
-	// (CI) a commit alone can take ~500 ms and a slow runner over a second,
-	// so allow more there; the 250 ms target holds everywhere else.
+	// The time includes the git commit. The race detector slows that down
+	// several times on shared CI runners (a commit alone can take ~500 ms on
+	// Windows, and macOS runners have reached 360 ms), so allow more there;
+	// the 250 ms target holds without it.
 	limit := 250 * time.Millisecond
-	if raceEnabled && runtime.GOOS == "windows" {
+	switch {
+	case raceEnabled && runtime.GOOS == "windows":
 		limit = 2 * time.Second
+	case raceEnabled:
+		limit = time.Second
 	}
 	if worst > limit {
 		t.Fatalf("an operation took %v to reach the SSE client (target %v)", worst, limit)
