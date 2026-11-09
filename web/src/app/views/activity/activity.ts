@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { Api, KaEvent } from '../../api/api';
+import { Actions } from '../../actions';
 import { Live } from '../../live';
 import { Actor, isAgent } from '../../ui/actor';
 import { Clock, ago, exact } from '../../ui/time';
@@ -22,6 +23,8 @@ interface Group {
   latest: string;
   items: Item[]; // oldest first
   day: string;
+  /** A collapsed bulk edit: the per-ticket groups it stands for, newest first. */
+  bulk?: Group[];
 }
 
 const KINDS: { id: Kind; label: string }[] = [
@@ -35,6 +38,9 @@ const KINDS: { id: Kind; label: string }[] = [
 
 /** Consecutive events by one actor on one ticket within this window form a group. */
 const GROUP_WINDOW_MS = 20 * 60 * 1000;
+
+/** This many consecutive tickets given the same change by one actor collapse to one entry. */
+const BULK_MIN = 3;
 
 /**
  * The watch view (PRD §13.2): what agents and people did, live, grouped by
@@ -108,14 +114,32 @@ export class Activity {
       groups.push(cur);
     }
     for (const g of groups) g.items = dropRedundant(g.items);
-    return groups;
+    return collapseBulk(groups);
   });
+
+  /** Bulk entries the reader has expanded, by key. */
+  protected readonly expanded = signal<ReadonlySet<string>>(new Set());
+
+  protected toggleBulk(g: Group): void {
+    this.expanded.update((s) => {
+      const n = new Set(s);
+      if (n.has(g.key)) n.delete(g.key);
+      else n.add(g.key);
+      return n;
+    });
+  }
+
+  /** A bulk entry's shared change, said of all its tickets ("moved them to done"). */
+  protected bulkLines(g: Group): Item[] {
+    return g.items.map((it) => ({ ...it, line: { ...it.line, verb: it.line.verb.replace(/\bit\b/, 'them') } }));
+  }
 
   protected readonly now = this.clock.now;
   protected readonly ago = ago;
   protected readonly exact = exact;
 
   constructor() {
+    inject(Actions).showsProject(() => this.project());
     void this.load();
   }
 
@@ -189,6 +213,56 @@ function dropRedundant(items: Item[]): Item[] {
       Math.abs(Date.parse(next.e.at) - Date.parse(it.e.at)) < 10_000
     );
   });
+}
+
+/**
+ * A run of BULK_MIN or more adjacent groups in which one actor made the same
+ * change to different tickets (a relabel, a bulk close) becomes one entry.
+ * The entry keeps the key of its oldest group, so a live event that extends
+ * the run grows the entry rather than adding a row.
+ */
+function collapseBulk(groups: Group[]): Group[] {
+  const out: Group[] = [];
+  let i = 0;
+  while (i < groups.length) {
+    const g = groups[i];
+    const sig = signature(g);
+    let j = i + 1;
+    while (
+      sig &&
+      j < groups.length &&
+      groups[j].actor === g.actor &&
+      groups[j].day === g.day &&
+      signature(groups[j]) === sig &&
+      Date.parse(groups[j - 1].items[0].e.at) - Date.parse(groups[j].latest) <= GROUP_WINDOW_MS
+    ) {
+      j++;
+    }
+    if (j - i >= BULK_MIN) {
+      const run = groups.slice(i, j);
+      const oldest = run[run.length - 1];
+      out.push({
+        key: 'bulk:' + oldest.key,
+        actor: g.actor,
+        store: g.store,
+        latest: g.latest,
+        day: g.day,
+        items: g.items, // the newest ticket's lines, so a live extension flashes
+        bulk: run,
+      });
+      i = j;
+    } else {
+      out.push(g);
+      i++;
+    }
+  }
+  return out;
+}
+
+/** What a group did, independent of which ticket: empty when it cannot be part of a bulk edit. */
+function signature(g: Group): string {
+  if (!g.ticket) return '';
+  return g.items.map((it) => `${it.e.type}|${it.line.verb}|${it.line.quote ?? ''}`).join('\n');
 }
 
 function fuzzyKey(e: KaEvent): string {

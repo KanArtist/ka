@@ -37,7 +37,17 @@
           <ka-actor [actor]="g.actor" [size]="20" />
         </div>
         <div class="body">
-          @if (g.ticket) {
+          @if (g.bulk) {
+            <button
+              type="button"
+              class="ticket bulk"
+              [attr.aria-expanded]="expanded().has(g.key)"
+              (click)="toggleBulk(g)"
+            >
+              <span class="chev" aria-hidden="true"></span>
+              <span class="title">{{ g.bulk.length }} tickets</span>
+            </button>
+          } @else if (g.ticket) {
             <a class="ticket" [routerLink]="[]" [queryParams]="{ peek: g.ticket }" queryParamsHandling="merge">
               <span class="dot" [attr.data-cat]="category(g) || null"></span>
               <span class="id">{{ g.ticket }}</span>
@@ -47,7 +57,7 @@
             <span class="ticket plain"><span class="id">{{ g.store }}</span></span>
           }
           <ul class="lines">
-            @for (it of g.items; track it.key) {
+            @for (it of g.bulk ? bulkLines(g) : g.items; track it.key) {
               <li class="line" [class.fresh]="it.fresh" [attr.data-tone]="it.line.tone || null">
                 <span class="verb">{{ it.line.verb }}</span>
                 @if (it.line.quote) {
@@ -56,6 +66,19 @@
               </li>
             }
           </ul>
+          @if (g.bulk && expanded().has(g.key)) {
+            <ul class="members">
+              @for (m of g.bulk; track m.key) {
+                <li>
+                  <a class="ticket" [routerLink]="[]" [queryParams]="{ peek: m.ticket }" queryParamsHandling="merge">
+                    <span class="dot" [attr.data-cat]="category(m) || null"></span>
+                    <span class="id">{{ m.ticket }}</span>
+                    <span class="title">{{ title(m) }}</span>
+                  </a>
+                </li>
+              }
+            </ul>
+          }
         </div>
         <time class="when" [attr.datetime]="g.latest" [title]="exact(g.latest)">{{ ago(g.latest, now()) }}</time>
       </li>

@@ -136,6 +136,48 @@ a.ticket:hover .title {
   text-decoration: underline;
   text-decoration-color: var(--faint);
   text-underline-offset: 3px;
+}button.ticket.bulk {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.bulk .chev {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-right: 1.5px solid var(--muted);
+  border-bottom: 1.5px solid var(--muted);
+  transform: rotate(-45deg);
+  transition: transform 120ms var(--ease);
+}
+.bulk[aria-expanded='true'] .chev {
+  transform: rotate(45deg);
+}
+button.ticket.bulk:hover .title {
+  text-decoration: underline;
+  text-decoration-color: var(--faint);
+  text-underline-offset: 3px;
+}
+.members {
+  list-style: none;
+  margin: 4px 0 2px;
+  padding: 0 0 0 10px;
+  border-left: 2px solid var(--line);
+}
+.members .ticket {
+  line-height: 20px;
+}
+.members .title {
+  font-weight: 400;
+  color: var(--text);
+}
+@media (prefers-reduced-motion: reduce) {
+  .bulk .chev {
+    transition: none;
+  }
 }
 .lines {
   list-style: none;
