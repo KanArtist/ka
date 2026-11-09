@@ -417,6 +417,14 @@ func (s *Store) integrateLocked(ctx context.Context, h hooks, remote, branch, mi
 		return res, nil
 	}
 	base, _ := s.git.Run(ctx, "merge-base", head, up)
+	if base == "" {
+		// No common commit: the remote is a different repository (renamed
+		// or moved, and its old URL now names something else). Replaying
+		// the store onto it would publish the store there, so stop.
+		u, _ := s.git.Run(ctx, "remote", "get-url", remote)
+		return nil, Errf(CodeGit, "check the store's remote: ka store set-url, or git remote set-url for an attached checkout",
+			"%s shares no history with store %s; it is not this store's repository", strings.TrimSpace(u)+" "+branch, s.Name)
+	}
 	switch base {
 	case upSHA: // we are ahead
 		return res, nil

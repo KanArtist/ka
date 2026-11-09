@@ -165,6 +165,11 @@ rebases:
 - An operation that can no longer be applied (other than the caller's own, which returns its
   error) is preserved as a `system` comment on its ticket, with the operation's JSON.
 
+If the clone and upstream share no commit at all, `ka` stops with `git_error` and touches
+nothing. That happens when the remote URL now names a different repository, for example after
+the store's repository was renamed and its old name reused; replaying would publish the store
+there. Fix the remote (`ka store set-url`, or `git remote set-url` in an attached checkout).
+
 The push is retried up to 8 times, with jittered exponential backoff. If every attempt fails, the
 commits stay local and the result says why.
 

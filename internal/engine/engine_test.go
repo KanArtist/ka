@@ -449,3 +449,34 @@ func TestActivityMapsGitAuthorsToActors(t *testing.T) {
 		t.Fatalf("hand-made commit actor: %+v", out.Events)
 	}
 }
+
+// A remote that now names a different repository (the store's repo was
+// renamed and the old name reused) must not receive the store: sync stops
+// before replaying anything.
+func TestSyncRefusesUnrelatedRemote(t *testing.T) {
+	e := newEnv(t, nil)
+	a, dir := e.clone()
+	must[*CreateOut](t)(a.Create(ctx, agent("a"), []CreateIn{{Title: "secret", Priority: "P1", Status: "ready"}}))
+
+	other := filepath.Join(e.root, "other.git")
+	run(t, e.root, "init", "-q", "--bare", "-b", "main", other)
+	seed := filepath.Join(e.root, "other-seed")
+	run(t, e.root, "init", "-q", "-b", "main", seed)
+	os.WriteFile(filepath.Join(seed, "README.md"), []byte("someone else's project\n"), 0o644)
+	run(t, seed, "add", "-A")
+	run(t, seed, "commit", "-q", "-m", "unrelated")
+	run(t, seed, "push", "-q", other, "main")
+	before := run(t, e.root, "--git-dir", other, "rev-parse", "main")
+
+	run(t, dir, "remote", "set-url", "origin", other)
+	_, err := a.WS.Stores[0].Sync(ctx, a.hooks(a.WS.Stores[0]))
+	if !IsCode(err, CodeGit) || !strings.Contains(err.Error(), "shares no history") {
+		t.Fatalf("sync onto an unrelated remote: %v", err)
+	}
+	if after := run(t, e.root, "--git-dir", other, "rev-parse", "main"); after != before {
+		t.Fatalf("the unrelated remote moved: %s -> %s", before, after)
+	}
+	if got := run(t, dir, "log", "-1", "--format=%s"); strings.Contains(got, "unrelated") {
+		t.Fatalf("local store was moved onto the unrelated history")
+	}
+}
