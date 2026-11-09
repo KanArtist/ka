@@ -23,7 +23,7 @@
 set -eu
 
 REPO=KanArtist/ka
-IDENTITY='^https://github\.com/(KanArtist|JumpKickOSS)/ka/\.github/workflows/release\.yml@refs/tags/v'
+IDENTITY='^https://github\.com/KanArtist/ka/\.github/workflows/release\.yml@refs/tags/v'
 ISSUER=https://token.actions.githubusercontent.com
 
 say() { printf '%s\n' "$*" >&2; }

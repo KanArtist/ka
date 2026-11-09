@@ -25,7 +25,7 @@ $ProgressPreference = 'SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
 $Repo = 'KanArtist/ka'
-$Identity = '^https://github\.com/(KanArtist|JumpKickOSS)/ka/\.github/workflows/release\.yml@refs/tags/v'
+$Identity = '^https://github\.com/KanArtist/ka/\.github/workflows/release\.yml@refs/tags/v'
 $Issuer = 'https://token.actions.githubusercontent.com'
 
 function Say([string]$msg) { [Console]::Error.WriteLine($msg) }
