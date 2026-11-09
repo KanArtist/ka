@@ -53,6 +53,8 @@
               "@fontsource-variable/instrument-sans/index.css",
               "@fontsource/ibm-plex-mono/400.css",
               "@fontsource/ibm-plex-mono/500.css",
+              "@fontsource/architects-daughter/400.css",
+              "@fontsource/jetbrains-mono/400.css",
               "src/styles.css"
             ],
             "outputPath": {

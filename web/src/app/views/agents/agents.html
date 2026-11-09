@@ -24,7 +24,7 @@
       @for (s of p.sessions; track s.id) {
         <div class="session">
           <span class="label">Session</span>
-          <span class="client">{{ s.client || s.transport }}</span>
+          <span class="client" [title]="s.client || s.transport">{{ (s.client || s.transport) | words }}</span>
           <span class="muted" [title]="exact(s.connected)">since {{ ago(s.connected, now()) }}</span>
           <span class="muted">{{ s.calls }} calls</span>
           @if (toolLine(s)) {
@@ -44,14 +44,14 @@
 
       @if (p.claims.length) {
         <ul class="claims">
-          @for (t of p.claims; track t.id) {
-            <li [class.stale]="t.claim?.stale">
+          @for (t of p.claims; track t.id; let odd = $odd) {
+            <li [class.stale]="t.claim?.stale" [class.stripe]="odd">
               <span class="dot" [attr.data-cat]="live.category(t)"></span>
               <a [routerLink]="[]" [queryParams]="{ peek: t.id }" queryParamsHandling="merge" class="ticket">
                 <span class="id">{{ t.id }}</span>
                 <span class="title">{{ t.title }}</span>
               </a>
-              <span class="status">{{ t.status }}</span>
+              <span class="status">{{ t.status | status }}</span>
               <span class="age" [title]="'Claimed ' + exact(t.claim?.at)">{{ ago(t.claim?.at, now()) }}</span>
               @if (t.claim?.stale) {
                 <span class="flag">stale</span>

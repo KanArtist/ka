@@ -2,6 +2,9 @@ import { ChangeDetectionStrategy, Component, ElementRef, computed, effect, injec
 import { Router } from '@angular/router';
 import { Actions } from '../actions';
 import { Live } from '../live';
+import { ActorPipe } from './actor';
+import { KeysPipe } from './keys';
+import { KindPipe, ResolutionPipe, StatusPipe } from './labels';
 
 const dialogStyles = `
   .scrim {
@@ -102,18 +105,19 @@ const dialogStyles = `
  */
 @Component({
   selector: 'ka-close-dialog',
+  imports: [KeysPipe, StatusPipe, ResolutionPipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (actions.closing(); as c) {
       <div class="scrim" (click)="cancel()">
         <form (click)="$event.stopPropagation()" (submit)="$event.preventDefault(); submit()" (keydown)="key($event)" role="dialog" aria-modal="true" aria-labelledby="close-title">
-          <h2 id="close-title"><span class="id">{{ c.id }}</span>Move to {{ c.status }}</h2>
+          <h2 id="close-title"><span class="id">{{ c.id }}</span>Move to {{ c.status | status }}</h2>
           <p class="muted subtitle">{{ c.title }}</p>
           <div>
             <label id="res-label">Resolution</label>
             <div class="chips" role="radiogroup" aria-labelledby="res-label">
               @for (r of c.resolutions; track r) {
-                <button type="button" class="chip" role="radio" [attr.aria-checked]="resolution() === r" [attr.aria-pressed]="resolution() === r" (click)="resolution.set(r)">{{ r }}</button>
+                <button type="button" class="chip" role="radio" [attr.aria-checked]="resolution() === r" [attr.aria-pressed]="resolution() === r" (click)="resolution.set(r)">{{ r | resolution }}</button>
               }
             </div>
           </div>
@@ -124,7 +128,7 @@ const dialogStyles = `
           <div class="actions">
             <span class="muted spacer">Saved as a resolution comment.</span>
             <button type="button" class="btn quiet" (click)="cancel()">Cancel</button>
-            <button type="submit" class="btn primary" [disabled]="!text().trim()">Close ticket <kbd>⌘↵</kbd></button>
+            <button type="submit" class="btn primary" [disabled]="!text().trim()">Close ticket <kbd>{{ 'Mod+Enter' | keys }}</kbd></button>
           </div>
         </form>
       </div>
@@ -175,6 +179,7 @@ export class CloseDialog {
 /** c: a new ticket from anywhere. It opens in the peek once created. */
 @Component({
   selector: 'ka-create-dialog',
+  imports: [KeysPipe, StatusPipe, ActorPipe, KindPipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (actions.creating()) {
@@ -196,23 +201,23 @@ export class CloseDialog {
               Status
               <select class="field" (change)="status.set($any($event.target).value)">
                 @for (s of info()?.statuses ?? []; track s.name) {
-                  <option [value]="s.name" [selected]="s.name === status()">{{ s.name }}</option>
+                  <option [value]="s.name" [selected]="s.name === status()">{{ s.name | status }}</option>
                 }
               </select>
             </label>
             <label>
               Kind
               <select class="field" (change)="kind.set($any($event.target).value)">
-                <option value="" [selected]="!kind()">none</option>
+                <option value="" [selected]="!kind()">None</option>
                 @for (k of info()?.kinds ?? []; track k) {
-                  <option [value]="k" [selected]="k === kind()">{{ k }}</option>
+                  <option [value]="k" [selected]="k === kind()">{{ k | kind }}</option>
                 }
               </select>
             </label>
             <label>
               Priority
               <select class="field" (change)="priority.set($any($event.target).value)">
-                <option value="" [selected]="!priority()">none</option>
+                <option value="" [selected]="!priority()">None</option>
                 @for (p of priorities(); track p) {
                   <option [value]="p" [selected]="p === priority()">{{ p }}</option>
                 }
@@ -223,9 +228,9 @@ export class CloseDialog {
             <p class="error-text flush">{{ error() }}</p>
           }
           <div class="actions">
-            <span class="muted spacer">Committed as {{ live.you() }}.</span>
+            <span class="muted spacer">Committed as <span [title]="live.you()">{{ live.you() | actor }}</span>.</span>
             <button type="button" class="btn quiet" (click)="cancel()">Cancel</button>
-            <button type="submit" class="btn primary" [disabled]="!titleText().trim() || busy()">Create <kbd>⌘↵</kbd></button>
+            <button type="submit" class="btn primary" [disabled]="!titleText().trim() || busy()">Create <kbd>{{ 'Mod+Enter' | keys }}</kbd></button>
           </div>
         </form>
       </div>

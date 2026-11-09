@@ -88,14 +88,14 @@ select {
 }
 .group {
   display: grid;
-  grid-template-columns: 136px 1fr auto;
+  grid-template-columns: 168px 1fr auto;
   gap: 4px 14px;
   padding: 7px 8px;
   border-radius: var(--r-md);
   border-left: 2px solid transparent;
 }
 .group:hover {
-  background: var(--surface);
+  background: var(--row-hover);
 }
 .group.agent {
   border-left-color: color-mix(in srgb, var(--ink-agent) 35%, transparent);
@@ -105,6 +105,7 @@ select {
 }
 .who {
   min-width: 0;
+  overflow: hidden;
   padding-top: 1px;
 }
 .body {
@@ -125,7 +126,8 @@ select {
   flex: none;
   background: var(--cat, var(--faint));
 }
-.ticket .title {
+.ticket .title,
+.ticket .count {
   color: var(--text-strong);
   font-weight: 500;
   overflow: hidden;
@@ -136,7 +138,8 @@ a.ticket:hover .title {
   text-decoration: underline;
   text-decoration-color: var(--faint);
   text-underline-offset: 3px;
-}button.ticket.bulk {
+}
+button.ticket.bulk {
   border: 0;
   background: none;
   padding: 0;
@@ -156,7 +159,7 @@ a.ticket:hover .title {
 .bulk[aria-expanded='true'] .chev {
   transform: rotate(45deg);
 }
-button.ticket.bulk:hover .title {
+button.ticket.bulk:hover .count {
   text-decoration: underline;
   text-decoration-color: var(--faint);
   text-underline-offset: 3px;
@@ -274,4 +277,8 @@ button.ticket.bulk:hover .title {
     grid-row: 1;
     grid-column: 2;
   }
+}
+
+.who ka-actor {
+  max-width: 100%;
 }

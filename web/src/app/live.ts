@@ -1,5 +1,6 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
-import { Api, BoardOut, InboxOut, KaEvent, SchemaOut, SearchOut, Session, StoreOut, Summary, WorkspaceOut } from './api/api';
+import { setActors } from './ui/actor';
+import { Api, ActorOut, BoardOut, InboxOut, KaEvent, SchemaOut, SearchOut, Session, StoreOut, Summary, WorkspaceOut } from './api/api';
 
 const EVENT_TYPES = [
   'ticket.created',
@@ -78,6 +79,7 @@ export class Live {
   }
 
   private async snapshot(): Promise<void> {
+    void this.refreshActors();
     const [ws, schema, stores, tickets, presence, inbox, boards] = await Promise.all([
       this.api.get<WorkspaceOut>('/workspace'),
       this.api.get<SchemaOut>('/schema'),
@@ -124,6 +126,15 @@ export class Live {
       this.boards.set((await this.api.get<{ boards: BoardOut[] }>('/boards')).body.boards ?? []);
     } catch {
       /* keep the old list */
+    }
+  }
+
+  /** The actor registries, for display names (best effort: handles show until it loads). */
+  private async refreshActors(): Promise<void> {
+    try {
+      setActors((await this.api.get<{ actors: ActorOut[] | null }>('/actors')).body.actors ?? []);
+    } catch {
+      /* keep the old names */
     }
   }
 

@@ -19,7 +19,7 @@
       </div>
 
       <button class="jump" type="button" (click)="palette.set(true)">
-        <span>Jump to…</span><kbd>⌘K</kbd>
+        <span>Jump to…</span><kbd>{{ 'Mod+K' | keys }}</kbd>
       </button>
 
       <a routerLink="/activity" routerLinkActive="on" class="nav">
@@ -68,7 +68,7 @@
 
       <div class="foot">
         @if (live.you()) {
-          <span class="me"><ka-avatar [actor]="live.you()" [size]="18" /> {{ live.you() }}</span>
+          <span class="me"><ka-avatar [actor]="live.you()" [size]="18" /> <span [title]="live.you()">{{ live.you() | actor }}</span></span>
         }
         <button type="button" class="theme" (click)="help.set(true)" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">?</button>
         <button type="button" class="theme" (click)="prefs.toggleTheme()" [attr.aria-label]="prefs.theme() === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'">

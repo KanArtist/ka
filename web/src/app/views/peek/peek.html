@@ -2,7 +2,7 @@
   <header class="top">
     <span class="id">{{ id() }}</span>
     @if (detail(); as d) {
-      <button #statusBtn type="button" class="status prop-btn" [attr.data-cat]="category()" [disabled]="!writable()" (click)="openMenu('status', statusBtn)" title="Change status (s)"><span class="dot" [attr.data-cat]="category()"></span>{{ d.status }}</button>
+      <button #statusBtn type="button" class="status prop-btn" [attr.data-cat]="category()" [disabled]="!writable()" (click)="openMenu('status', statusBtn)" title="Change status (s)"><span class="dot" [attr.data-cat]="category()"></span>{{ d.status | status }}</button>
       @if (d.blocked && d.status !== 'blocked') {
         <span class="flag blocked">blocked</span>
       }
@@ -67,7 +67,7 @@
               <span class="muted">Markdown. Saved only if nobody changed the ticket since you opened it.</span>
               <span class="spacer"></span>
               <button type="button" class="btn quiet" (click)="editingBody.set(false)">Cancel</button>
-              <button type="button" class="btn primary" (click)="saveBody()" [disabled]="saving() || bodyConflict()">Save <kbd>⌘↵</kbd></button>
+              <button type="button" class="btn primary" (click)="saveBody()" [disabled]="saving() || bodyConflict()">Save <kbd>{{ 'Mod+Enter' | keys }}</kbd></button>
             </div>
             @if (bodyConflict() === false && description() && bodyDraft() !== (d.body ?? '')) {
               <details class="theirs">
@@ -205,7 +205,7 @@
                   }
                 </div>
                 <span class="spacer"></span>
-                <button type="button" class="btn primary small" (click)="postComment()" [disabled]="!commentText().trim() || saving()">Comment <kbd>⌘↵</kbd></button>
+                <button type="button" class="btn primary small" (click)="postComment()" [disabled]="!commentText().trim() || saving()">Comment <kbd>{{ 'Mod+Enter' | keys }}</kbd></button>
               </div>
             </div>
           }
@@ -215,7 +215,7 @@
       <aside class="props" aria-label="Properties">
         <dl>
           <dt>Status</dt>
-          <dd><button type="button" class="prop-btn" [disabled]="!writable()" (click)="openMenu('status', $any($event.currentTarget))" title="s"><span class="dot" [attr.data-cat]="category()"></span>{{ d.status }}</button></dd>
+          <dd><button type="button" class="prop-btn" [disabled]="!writable()" (click)="openMenu('status', $any($event.currentTarget))" title="s"><span class="dot" [attr.data-cat]="category()"></span>{{ d.status | status }}</button></dd>
           <dt>Priority</dt>
           <dd>
             <button #priorityBtn type="button" class="prop-btn prio" [attr.data-p]="d.priority || null" [disabled]="!writable()" (click)="openMenu('priority', priorityBtn)" title="p">
@@ -224,7 +224,7 @@
           </dd>
           <dt>Kind</dt>
           <dd>
-            <button #kindBtn type="button" class="prop-btn" [class.muted]="!d.kind" [disabled]="!writable()" (click)="openMenu('kind', kindBtn)" title="k">{{ d.kind || 'None' }}</button>
+            <button #kindBtn type="button" class="prop-btn" [class.muted]="!d.kind" [disabled]="!writable()" (click)="openMenu('kind', kindBtn)" title="k">{{ d.kind ? (d.kind | kind) : 'None' }}</button>
           </dd>
           <dt>Claim</dt>
           <dd>
@@ -274,11 +274,11 @@
             </button>
           </dd>
           @for (f of fields(); track f[0]) {
-            <dt>{{ f[0] }}</dt>
+            <dt [title]="f[0]">{{ f[0] | field }}</dt>
             <dd>{{ f[1] }}</dd>
           }
           <dt>Project</dt>
-          <dd>{{ d.project }} <span class="muted">in {{ d.store }}</span></dd>
+          <dd><span [title]="d.project">{{ projectInfo()?.name || d.project }}</span> <span class="muted">in {{ d.store }}</span></dd>
           @if (d.created_by) {
             <dt>Created</dt>
             <dd><ka-actor [actor]="d.created_by" [size]="16" /> <span class="muted" [title]="exact(d.created)">{{ ago(d.created, now()) }}</span></dd>

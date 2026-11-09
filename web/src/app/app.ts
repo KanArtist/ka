@@ -4,7 +4,8 @@ import { Actions } from './actions';
 import { Api } from './api/api';
 import { Live } from './live';
 import { Prefs } from './prefs';
-import { Avatar } from './ui/actor';
+import { ActorPipe, Avatar } from './ui/actor';
+import { KeysPipe } from './ui/keys';
 import { CloseDialog, CreateDialog } from './ui/dialogs';
 import { Palette } from './ui/palette';
 import { Shortcuts } from './ui/shortcuts';
@@ -13,7 +14,7 @@ import { Peek } from './views/peek/peek';
 
 @Component({
   selector: 'app-root',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, Palette, Avatar, Peek, ToastStack, CloseDialog, CreateDialog, Shortcuts],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, Palette, Avatar, Peek, ToastStack, CloseDialog, CreateDialog, Shortcuts, KeysPipe, ActorPipe],
   templateUrl: './app.html',
   styleUrl: './app.css',
   changeDetection: ChangeDetectionStrategy.OnPush,

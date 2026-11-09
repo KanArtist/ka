@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, effect, inject, signal, u
 import { NavigationEnd, Router } from '@angular/router';
 import { Api } from '../../api/api';
 import { Live } from '../../live';
+import { ProjectPipe } from '../../ui/project';
 
 interface Entry {
   key: string;
@@ -28,6 +29,7 @@ interface Explain {
  */
 @Component({
   selector: 'ka-settings',
+  imports: [ProjectPipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <section class="settings">
@@ -42,7 +44,7 @@ interface Explain {
         }
       </header>
       <p class="muted lead">
-        The effective configuration of <strong>{{ project() }}</strong> and where each value comes from. To change it, edit and commit the file shown
+        The effective configuration of <strong [title]="project()">{{ project() | project }}</strong> and where each value comes from. To change it, edit and commit the file shown
         (<code>ka config explain --project {{ project() }}</code> prints the same).
       </p>
       @if (error()) {
@@ -62,8 +64,8 @@ interface Explain {
               <tr><th>Key</th><th>Value</th><th>Set by</th></tr>
             </thead>
             <tbody>
-              @for (e of g.entries; track e.key) {
-                <tr [class.deleted]="e.note === 'deleted'">
+              @for (e of g.entries; track e.key; let odd = $odd) {
+                <tr [class.deleted]="e.note === 'deleted'" [class.stripe]="odd">
                   <td class="k">{{ e.key }}</td>
                   <td class="v">{{ e.note === 'deleted' ? 'deleted' : e.value }}</td>
                   <td class="s">
@@ -164,6 +166,9 @@ interface Explain {
       font-weight: 600;
       padding: 4px 8px;
       border-bottom: 1px solid var(--line);
+    }
+    tbody tr:hover {
+      background: var(--row-hover);
     }
     td {
       padding: 5px 8px;

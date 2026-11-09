@@ -13,6 +13,12 @@
   --raised: #2c313b;
   --line: #363c47;
   --line-soft: #2a2f38;
+  /*
+   * Rows: three shades. Hover is the brightest; odd rows are 16% darker than
+   * hover (OKLab L 0.313 -> 0.263); even rows are the page background (0.235).
+   */
+  --row-hover: var(--raised);
+  --stripe: #20252e;
   --text: #d9dee7;
   --text-strong: #f1f4f8;
   --muted: #8a93a3;
@@ -43,6 +49,9 @@
   --raised: #eceef2;
   --line: #d8dce3;
   --line-soft: #e6e9ee;
+  /* Rows: hover is white; even rows are the page (L 0.973); odd rows the same step darker (0.945). */
+  --row-hover: #ffffff;
+  --stripe: #ecedef;
   --text: #2a303b;
   --text-strong: #12161d;
   --muted: #687284;
@@ -69,6 +78,10 @@
 :root {
   --font: 'Instrument Sans Variable', 'Instrument Sans', system-ui, sans-serif;
   --mono: 'IBM Plex Mono', ui-monospace, monospace;
+  /* What people wrote (titles, descriptions, comments, docs), apart from the UI around it. */
+  --content: 'Architects Daughter', var(--font);
+  /* Code. The Nerd Font is used when installed; JetBrains Mono ships with ka. */
+  --code: 'JetBrainsMono Nerd Font Mono', 'JetBrainsMono NFM', 'JetBrainsMono Nerd Font', 'JetBrains Mono', ui-monospace, monospace;
 
   /* A 1.2 scale from a 13px base: dense, like a tool you leave open. */
   --fs-xs: 11px;
@@ -233,7 +246,7 @@ kbd {
   padding-left: 1.4em;
 }
 .md code {
-  font-family: var(--mono);
+  font-family: var(--code);
   font-size: 0.9em;
   background: var(--raised);
   padding: 1px 4px;
@@ -351,4 +364,24 @@ select.field {
 }
 .error-text {
   color: var(--st-blocked);
+}
+
+/* Alternate rows in lists and tables, so one record reads apart from the next. */
+.stripe {
+  background: var(--stripe);
+}
+
+/* Content in its own hand; code in its own face. */
+.md,
+.title,
+.title-edit,
+.title-input,
+.quote,
+.ka-content {
+  font-family: var(--content);
+}
+.md pre,
+.md code,
+textarea.field.mono {
+  font-family: var(--code);
 }

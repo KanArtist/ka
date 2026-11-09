@@ -109,7 +109,11 @@ h1 {
   align-items: center;
   gap: 10px;
   min-height: 34px;
+  padding: 0 8px;
   border-bottom: 1px solid var(--line-soft);
+}
+.claims li:hover {
+  background: var(--row-hover);
 }
 .claims li:last-child {
   border-bottom: 0;

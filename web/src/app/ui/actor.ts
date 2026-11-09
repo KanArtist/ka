@@ -1,12 +1,63 @@
-import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Pipe, PipeTransform, computed, input, signal } from '@angular/core';
+import type { ActorOut } from '../api/api';
+import { humanize } from './labels';
 
 export function isAgent(actor: string | undefined | null): boolean {
   return !!actor && actor.startsWith('agent/');
 }
 
+/** Display names from the actor registries (.ka/actors.yml), by handle and alias. */
+const directory = signal<ReadonlyMap<string, string>>(new Map());
+
+export function setActors(actors: ActorOut[]): void {
+  const m = new Map<string, string>();
+  for (const a of actors) {
+    if (!a.name) continue;
+    m.set(a.handle, a.name);
+    for (const al of a.aliases ?? []) if (!m.has(al)) m.set(al, a.name);
+  }
+  directory.set(m);
+}
+
+/** Names for well-known agents that the registry doesn't name. */
+const KNOWN_AGENTS: Record<string, string> = {
+  claude: 'Claude',
+  'claude-code': 'Claude Code',
+  codex: 'Codex',
+  agy: 'Antigravity',
+  antigravity: 'Antigravity',
+  gemini: 'Gemini',
+  cursor: 'Cursor',
+  copilot: 'Copilot',
+  aider: 'Aider',
+  amp: 'Amp',
+  opencode: 'OpenCode',
+};
+
+/**
+ * The name people read for an actor: the registry's name: field, then a
+ * well-known agent's name, then the handle made readable (roles and agents)
+ * or the handle as is (people, whose handles are often their login). Show
+ * the handle itself in a tooltip.
+ */
 export function actorName(actor: string | undefined | null): string {
   if (!actor) return 'someone';
-  return isAgent(actor) ? actor.slice('agent/'.length) : actor;
+  const named = directory().get(actor);
+  if (named) return named;
+  if (actor.startsWith('role/')) return humanize(actor.slice('role/'.length));
+  if (isAgent(actor)) {
+    const slug = actor.slice('agent/'.length);
+    return KNOWN_AGENTS[slug.toLowerCase()] ?? humanize(slug);
+  }
+  return actor;
+}
+
+/** {{ handle | actor }}: the actor's display name. Impure: names arrive after the first render. */
+@Pipe({ name: 'actor', pure: false })
+export class ActorPipe implements PipeTransform {
+  transform(actor: string | undefined | null): string {
+    return actorName(actor);
+  }
 }
 
 /**
@@ -79,7 +130,8 @@ export class Avatar {
   readonly actor = input.required<string>();
   readonly size = input(20);
   protected readonly agent = computed(() => isAgent(this.actor()));
-  protected readonly initial = computed(() => actorName(this.actor()).charAt(0).toUpperCase());
+  protected readonly name = computed(() => actorName(this.actor()));
+  protected readonly initial = computed(() => this.name().charAt(0).toUpperCase());
 }
 
 /** An avatar plus the actor's name, in their ink. */
@@ -87,7 +139,7 @@ export class Avatar {
   selector: 'ka-actor',
   imports: [Avatar],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `<ka-avatar [actor]="actor()" [size]="size()" /><span class="name" [class.agent]="agent()">{{ name() }}</span>`,
+  template: `<ka-avatar [actor]="actor()" [size]="size()" /><span class="name" [class.agent]="agent()" [attr.title]="actor()">{{ name() }}</span>`,
   styles: `
     :host {
       display: inline-flex;

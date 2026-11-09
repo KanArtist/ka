@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, injec
 import { RouterLink } from '@angular/router';
 import { Api, InboxItem, StoreOut } from '../../api/api';
 import { Live } from '../../live';
+import { WordsPipe } from '../../ui/labels';
 import { Toasts } from '../../ui/toast';
 import { Clock, ago, exact } from '../../ui/time';
 
@@ -31,7 +32,7 @@ const STATE_TEXT: Record<string, string> = {
  */
 @Component({
   selector: 'ka-health',
-  imports: [RouterLink],
+  imports: [RouterLink, WordsPipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <section class="health">
@@ -61,7 +62,7 @@ const STATE_TEXT: Record<string, string> = {
               <dt>Ahead / behind</dt>
               <dd>{{ s.ahead }} / {{ s.behind }}{{ s.push_pending ? ' · push scheduled' : '' }}</dd>
               <dt>Push</dt>
-              <dd>{{ s.push_mode }}</dd>
+              <dd>{{ s.push_mode | words }}</dd>
               <dt>Fetches</dt>
               <dd>every {{ s.fetch_interval }}</dd>
               <dt>Last fetch</dt>
@@ -108,7 +109,7 @@ const STATE_TEXT: Record<string, string> = {
         @for (d of shownDiags(); track $index) {
           <li [attr.data-sev]="d.severity">
             <span class="sev">{{ d.severity }}</span>
-            <span class="code">{{ d.code }}</span>
+            <span class="code" [title]="d.code">{{ d.code | words }}</span>
             <span class="msg">{{ d.message }}</span>
             <span class="where mono">{{ d.path }}{{ d.line ? ':' + d.line : '' }}</span>
             @if (d.fix) {

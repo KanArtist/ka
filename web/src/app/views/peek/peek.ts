@@ -3,7 +3,9 @@ import { Router, RouterLink } from '@angular/router';
 import { Api, ApiError, CommentOut, Detail, KaEvent } from '../../api/api';
 import { Actions } from '../../actions';
 import { Live } from '../../live';
-import { Actor, isAgent } from '../../ui/actor';
+import { Actor, actorName, isAgent } from '../../ui/actor';
+import { KeysPipe } from '../../ui/keys';
+import { FieldPipe, KindPipe, StatusPipe, categoryLabel, fieldLabel, kindLabel, statusLabel } from '../../ui/labels';
 import { followInternalLink, renderMarkdown } from '../../ui/markdown';
 import { Menu, MenuOption } from '../../ui/menu';
 import { Clock, ago, exact } from '../../ui/time';
@@ -38,7 +40,7 @@ interface CommitView {
  */
 @Component({
   selector: 'ka-peek',
-  imports: [RouterLink, Actor, Menu],
+  imports: [RouterLink, Actor, Menu, KeysPipe, StatusPipe, KindPipe, FieldPipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './peek.html',
   styleUrl: './peek.css',
@@ -146,15 +148,15 @@ export class Peek {
     if (!m || !d) return [];
     switch (m.kind) {
       case 'status':
-        return (p?.statuses ?? []).map((s) => ({ value: s.name, label: s.name, cat: s.category, hint: s.category }));
+        return (p?.statuses ?? []).map((s) => ({ value: s.name, label: statusLabel(s.name), cat: s.category, hint: categoryLabel(s.category) }));
       case 'priority':
         return [...(sch?.priorities ?? ['P0', 'P1', 'P2', 'P3']).map((x) => ({ value: x, label: x, prio: x, hint: PRIO_HINT[x] })), { value: '', label: 'No priority' }];
       case 'kind':
-        return [...(p?.kinds ?? []).map((k) => ({ value: k, label: k })), { value: '', label: 'No kind' }];
+        return [...(p?.kinds ?? []).map((k) => ({ value: k, label: kindLabel(k) })), { value: '', label: 'No kind' }];
       case 'assignee': {
         const you = this.live.you();
         const people = [you, ...(sch?.humans ?? []).filter((h) => h !== you), ...(sch?.agents ?? []), ...(sch?.roles ?? [])].filter(Boolean);
-        return [{ value: '', label: 'Anyone' }, ...[...new Set(people)].map((a) => ({ value: a, label: a === you ? `${a} (you)` : a, actor: a.startsWith('role/') ? undefined : a }))];
+        return [{ value: '', label: 'Anyone' }, ...[...new Set(people)].map((a) => ({ value: a, label: actorName(a) + (a === you ? ' (you)' : ''), hint: a, actor: a.startsWith('role/') ? undefined : a }))];
       }
       case 'labels': {
         const used = new Set<string>(p?.labels ?? []);

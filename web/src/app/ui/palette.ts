@@ -4,6 +4,7 @@ import { Summary } from '../api/api';
 import { Actions } from '../actions';
 import { Live } from '../live';
 import { Prefs } from '../prefs';
+import { StatusPipe } from './labels';
 
 interface Item {
   key: string;
@@ -17,11 +18,12 @@ interface Item {
 const MAX_TICKETS = 40;
 
 /**
- * Ctrl/⌘-K. Type an ID (or its start) or words from a title to jump to a
+ * Ctrl-K (⌘K on a Mac). Type an ID (or its start) or words from a title to jump to a
  * ticket; commands switch views and themes. Enter runs, arrows move.
  */
 @Component({
   selector: 'ka-palette',
+  imports: [StatusPipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="scrim" (click)="close.emit()"></div>
@@ -54,8 +56,8 @@ const MAX_TICKETS = 40;
             @if (it.ticket; as t) {
               <span class="dot" [attr.data-cat]="live.category(t)"></span>
               <span class="id">{{ t.id }}</span>
-              <span class="label">{{ t.title }}</span>
-              <span class="hint">{{ t.status }}</span>
+              <span class="label ka-content">{{ t.title }}</span>
+              <span class="hint">{{ t.status | status }}</span>
             } @else {
               <span class="cmd">›</span>
               <span class="label">{{ it.label }}</span>

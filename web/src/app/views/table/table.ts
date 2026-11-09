@@ -5,6 +5,7 @@ import { Actions } from '../../actions';
 import { Live } from '../../live';
 import { Query, QueryBar } from '../../query';
 import { Avatar, actorName, isAgent } from '../../ui/actor';
+import { KindPipe, StatusPipe, categoryLabel, fieldLabel, kindLabel, statusLabel } from '../../ui/labels';
 import { Menu, MenuOption } from '../../ui/menu';
 import { Clock, ago, exact } from '../../ui/time';
 
@@ -55,7 +56,7 @@ const STORE_KEY = 'ka.table';
  */
 @Component({
   selector: 'ka-table',
-  imports: [Avatar, QueryBar, Menu],
+  imports: [Avatar, QueryBar, Menu, StatusPipe, KindPipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './table.html',
   styleUrl: './table.css',
@@ -89,7 +90,7 @@ export class Table {
   protected readonly allCols = computed<Col[]>(() => {
     const fields = new Map<string, string>();
     for (const p of this.live.schema()?.projects ?? []) for (const [k, d] of Object.entries(p.fields ?? {})) fields.set(k, (d as any)?.type ?? '');
-    return [...BASE_COLS, ...[...fields.keys()].sort().map((k) => ({ key: 'fields.' + k, label: k, width: '140px' }))];
+    return [...BASE_COLS, ...[...fields.keys()].sort().map((k) => ({ key: 'fields.' + k, label: fieldLabel(k), width: '140px' }))];
   });
   protected readonly cols = computed(() => {
     const all = new Map(this.allCols().map((c) => [c.key, c]));
@@ -188,6 +189,10 @@ export class Table {
       const p = this.live.tickets().get(k);
       return p ? `${k} ${p.title}` : k;
     }
+    if (g === 'status') return statusLabel(k);
+    if (g === 'kind') return kindLabel(k);
+    if (g === 'assignee') return actorName(k);
+    if (g === 'project') return this.live.schema()?.projects?.find((p) => p.key === k)?.name || k;
     return k;
   }
 
@@ -255,15 +260,15 @@ export class Table {
     const sch = this.live.schema();
     switch (m.kind) {
       case 'status':
-        return (p?.statuses ?? []).map((s) => ({ value: s.name, label: s.name, cat: s.category }));
+        return (p?.statuses ?? []).map((s) => ({ value: s.name, label: statusLabel(s.name), cat: s.category }));
       case 'priority':
         return [...(sch?.priorities ?? PRIORITY_ORDER).map((x) => ({ value: x, label: x, prio: x })), { value: '', label: 'No priority' }];
       case 'kind':
-        return [...(p?.kinds ?? []).map((k) => ({ value: k, label: k })), { value: '', label: 'No kind' }];
+        return [...(p?.kinds ?? []).map((k) => ({ value: k, label: kindLabel(k) })), { value: '', label: 'No kind' }];
       case 'assignee': {
         const you = this.live.you();
         const people = [you, ...(sch?.humans ?? []), ...(sch?.agents ?? []), ...(sch?.roles ?? [])].filter(Boolean);
-        return [{ value: '', label: 'Anyone' }, ...[...new Set(people)].map((a) => ({ value: a, label: a === you ? `${a} (you)` : a, actor: a.startsWith('role/') ? undefined : a }))];
+        return [{ value: '', label: 'Anyone' }, ...[...new Set(people)].map((a) => ({ value: a, label: actorName(a) + (a === you ? ' (you)' : ''), hint: a, actor: a.startsWith('role/') ? undefined : a }))];
       }
       case 'labels': {
         const used = new Set<string>(p?.labels ?? []);

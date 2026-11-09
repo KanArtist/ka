@@ -1,4 +1,6 @@
 import { KaEvent } from '../../api/api';
+import { actorName } from '../../ui/actor';
+import { fieldLabel, humanize, kindLabel, resolutionLabel, statusLabel } from '../../ui/labels';
 
 /** The filter group an event belongs to. */
 export type Kind = 'tickets' | 'comments' | 'claims' | 'questions' | 'sync' | 'sessions';
@@ -57,7 +59,7 @@ export function describe(e: KaEvent): Line {
       return { verb: 'created it' };
     case 'ticket.moved':
       return {
-        verb: d.from ? `moved it from ${d.from} to ${d.to}` : `moved it to ${d.to ?? d.ticket?.status}`,
+        verb: d.from ? `moved it from ${statusLabel(d.from)} to ${statusLabel(d.to)}` : `moved it to ${statusLabel(d.to ?? d.ticket?.status)}`,
         tone: d.category === 'completed' || d.to === 'done' ? 'done' : undefined,
       };
     case 'ticket.removed':
@@ -78,13 +80,27 @@ export function describe(e: KaEvent): Line {
     case 'store.changed':
       return { verb: `changed the configuration of ${e.store}` };
     case 'presence.changed':
-      if (d.state === 'connected') return { verb: `connected${d.session?.client ? ` from ${d.session.client}` : ''}` };
+      if (d.state === 'connected') return { verb: `connected${d.session?.client ? ` from ${humanize(d.session.client)}` : ''}` };
       return { verb: 'disconnected' };
     case 'commit':
       return { verb: e.text || 'committed' };
     default:
       return { verb: e.text || e.type };
   }
+}
+
+/** A field's name inside a sentence: "priority", "Legacy ID". */
+function fieldName(k: string): string {
+  return FIELD_NAMES[k] ?? fieldLabel(k);
+}
+
+/** A field's new value as people read it. */
+function valueText(k: string, v: unknown): string {
+  const s = String(v);
+  if (k === 'assignee' || k === 'owner') return actorName(s);
+  if (k === 'kind') return kindLabel(s);
+  if (k === 'status') return statusLabel(s);
+  return s;
 }
 
 function describeChanges(d: any): string {
@@ -100,19 +116,19 @@ function describeChanges(d: any): string {
     if (to && typeof to === 'object' && !Array.isArray(to)) {
       const add = (to.add ?? []).map((v: string) => '+' + v);
       const rm = (to.remove ?? []).map((v: string) => '−' + v);
-      parts.push(`${FIELD_NAMES[k] ?? k} ${[...add, ...rm].join(' ')}`);
+      parts.push(`${fieldName(k)} ${[...add, ...rm].join(' ')}`);
     } else if (Array.isArray(to) || Array.isArray(c?.from)) {
       const from = new Set<string>(c?.from ?? []);
       const now = new Set<string>(to ?? []);
       const add = [...now].filter((v) => !from.has(v)).map((v) => '+' + v);
       const rm = [...from].filter((v) => !now.has(v)).map((v) => '−' + v);
-      parts.push(`${FIELD_NAMES[k] ?? k} ${[...add, ...rm].join(' ')}`.trim());
+      parts.push(`${fieldName(k)} ${[...add, ...rm].join(' ')}`.trim());
     } else if (to === null || to === undefined || to === '') {
-      parts.push(`cleared ${FIELD_NAMES[k] ?? k.replace('fields.', '')}`);
+      parts.push(`cleared ${fieldName(k)}`);
     } else if (typeof to === 'object') {
-      parts.push(`changed ${k}`);
+      parts.push(`changed ${fieldName(k)}`);
     } else {
-      parts.push(`set ${FIELD_NAMES[k] ?? k.replace('fields.', '')} to ${to}`);
+      parts.push(`set ${fieldName(k)} to ${valueText(k, to)}`);
     }
   }
   if (d.body_changed) parts.push('edited the description');
@@ -127,9 +143,9 @@ function describeComment(c: any): Line {
     case 'decision':
       return { verb: 'recorded a decision', quote };
     case 'resolution':
-      return { verb: `closed it as ${c.resolution ?? 'done'}`, quote, tone: 'done' };
+      return { verb: `closed it as ${resolutionLabel(c.resolution ?? 'done').toLowerCase()}`, quote, tone: 'done' };
     case 'question':
-      return { verb: c.to ? `asked ${c.to}` : 'asked a question', quote, tone: 'question' };
+      return { verb: c.to ? `asked ${actorName(c.to)}` : 'asked a question', quote, tone: 'question' };
     case 'answer':
       return { verb: c.choice_text ? `answered “${c.choice_text}”` : 'answered', quote };
     case 'approval':

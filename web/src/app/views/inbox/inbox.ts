@@ -4,7 +4,7 @@ import { marked } from 'marked';
 import { Api, ApiError, InboxItem } from '../../api/api';
 import { Live } from '../../live';
 import { Prefs } from '../../prefs';
-import { Actor } from '../../ui/actor';
+import { ActorPipe, Actor } from '../../ui/actor';
 import { Clock, ago, exact } from '../../ui/time';
 
 type State = { busy?: boolean; error?: string; done?: string };
@@ -17,7 +17,7 @@ type State = { busy?: boolean; error?: string; done?: string };
  */
 @Component({
   selector: 'ka-inbox',
-  imports: [RouterLink, Actor],
+  imports: [RouterLink, Actor, ActorPipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './inbox.html',
   styleUrl: './inbox.css',

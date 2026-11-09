@@ -15,7 +15,7 @@
       <li class="q" [class.approval]="isApproval(q)" [class.answered]="state(q).done">
         <div class="meta">
           <ka-actor [actor]="q.comment.author" [size]="20" />
-          <span class="muted">{{ isApproval(q) ? 'asks for your approval' : q.comment.to && q.comment.to.startsWith('role/') ? 'asks ' + q.comment.to : 'asks you' }}</span>
+          <span class="muted">{{ isApproval(q) ? 'asks for your approval' : q.comment.to && q.comment.to.startsWith('role/') ? 'asks ' + (q.comment.to | actor) : 'asks you' }}</span>
           <time class="muted" [attr.datetime]="q.comment.created" [title]="exact(q.comment.created)">{{ ago(q.comment.created, now()) }}</time>
           <span class="spacer"></span>
           <a class="ticket" [routerLink]="[]" [queryParams]="{ peek: q.id }" queryParamsHandling="merge"><span class="id">{{ q.id }}</span> {{ q.title }}</a>

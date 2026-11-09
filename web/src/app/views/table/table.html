@@ -51,9 +51,10 @@
           </div>
         }
         @if (!isCollapsed(s)) {
-          @for (t of s.rows.slice(0, limit(s)); track t.id) {
+          @for (t of s.rows.slice(0, limit(s)); track t.id; let odd = $odd) {
             <div
               class="row trow"
+              [class.stripe]="odd"
               role="row"
               tabindex="0"
               [attr.data-row]="t.id"
@@ -76,13 +77,13 @@
                       </span>
                     }
                     @case ('status') {
-                      <button type="button" class="ebtn" (click)="editCell($event, t, c)"><span class="dot" [attr.data-cat]="cat(t)"></span>{{ t.status }}</button>
+                      <button type="button" class="ebtn" (click)="editCell($event, t, c)"><span class="dot" [attr.data-cat]="cat(t)"></span>{{ t.status | status }}</button>
                     }
                     @case ('priority') {
                       <button type="button" class="ebtn prio" [attr.data-p]="t.priority || null" (click)="editCell($event, t, c)">{{ t.priority || '—' }}</button>
                     }
                     @case ('kind') {
-                      <button type="button" class="ebtn" [class.faint]="!t.kind" (click)="editCell($event, t, c)">{{ t.kind || '—' }}</button>
+                      <button type="button" class="ebtn" [class.faint]="!t.kind" (click)="editCell($event, t, c)">{{ t.kind ? (t.kind | kind) : '—' }}</button>
                     }
                     @case ('assignee') {
                       <button type="button" class="ebtn" (click)="editCell($event, t, c)">

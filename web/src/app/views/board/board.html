@@ -4,7 +4,7 @@
     <h1>{{ board()?.title || 'Board' }}</h1>
     <div class="boards">
       <select [value]="boardId()" (change)="pickBoard($any($event.target).value)" aria-label="Saved board">
-        <option value="" [selected]="!boardId()">All statuses</option>
+        <option value="" [selected]="!boardId()">Default board</option>
         @for (g of boardsByStore(); track g[0]) {
           <optgroup [label]="g[0]">
             @for (b of g[1]; track b.id) {
@@ -52,7 +52,7 @@
       @for (c of rows()[0]?.columns ?? []; track c.status) {
         <div class="colhead" [attr.data-cat]="c.category">
           <span class="dot" [attr.data-cat]="c.category"></span>
-          <span class="name">{{ c.status }}</span>
+          <span class="name">{{ c.status | status }}</span>
           <span class="n">{{ columnTotals().get(c.status) ?? 0 }}</span>
         </div>
       }
@@ -73,7 +73,7 @@
           <ol
             class="col"
             [class.drop]="isDropTarget(r, c)"
-            [attr.aria-label]="c.status + (r.label ? ', ' + r.label : '')"
+            [attr.aria-label]="(c.status | status) + (r.label ? ', ' + r.label : '')"
             (dragover)="dragOver($event, r, c)"
             (dragleave)="dragLeave(r, c)"
             (drop)="drop($event, r, c)"
@@ -122,7 +122,7 @@
                       <span class="tag blocked">blocked</span>
                     }
                     @if (show('kind') && t.kind) {
-                      <span class="kind">{{ t.kind }}</span>
+                      <span class="kind">{{ t.kind | kind }}</span>
                     }
                     @if (show('labels')) {
                       @for (l of t.labels ?? []; track l) {

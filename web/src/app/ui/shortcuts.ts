@@ -1,10 +1,11 @@
 import { ChangeDetectionStrategy, Component, output } from '@angular/core';
+import { keys } from './keys';
 
 const GROUPS: { title: string; keys: [string, string][] }[] = [
   {
     title: 'Anywhere',
     keys: [
-      ['⌘K  /', 'Jump to a ticket or run a command'],
+      [keys('Mod+K') + '  /', 'Jump to a ticket or run a command'],
       ['c', 'Create a ticket'],
       ['f', 'Filter the board or table'],
       ['g a · g b · g t', 'Activity · Board · Table'],
@@ -24,7 +25,7 @@ const GROUPS: { title: string; keys: [string, string][] }[] = [
       ['k', 'Kind'],
       ['e', 'Edit the description'],
       ['m', 'Comment'],
-      ['⌘↵', 'Save or send'],
+      [keys('Mod+Enter'), 'Save or send'],
     ],
   },
   {

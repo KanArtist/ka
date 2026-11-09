@@ -16,6 +16,7 @@ import { Actions } from '../../actions';
 import { Live } from '../../live';
 import { Query, QueryBar } from '../../query';
 import { Avatar, actorName, isAgent } from '../../ui/actor';
+import { KindPipe, StatusPipe, statusLabel } from '../../ui/labels';
 import { Clock, ago, exact } from '../../ui/time';
 
 type Lane = 'none' | 'project' | 'assignee' | 'priority' | 'parent';
@@ -50,7 +51,7 @@ const PRIORITY_ORDER = ['P0', 'P1', 'P2', 'P3'];
  */
 @Component({
   selector: 'ka-board',
-  imports: [RouterLink, Avatar, QueryBar],
+  imports: [RouterLink, Avatar, QueryBar, StatusPipe, KindPipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './board.html',
   styleUrl: './board.css',
@@ -353,7 +354,7 @@ export class Board {
       this.announce.set(`${t.id} was not moved`);
       return;
     }
-    this.announce.set(`Moved ${t.id} to ${status}${laneChange ? `, ${this.laneLabel(lane!, l)}` : ''}`);
+    this.announce.set(`Moved ${t.id} to ${statusLabel(status)}${laneChange ? `, ${this.laneLabel(lane!, l)}` : ''}`);
   }
 
   /**
@@ -405,6 +406,7 @@ export class Board {
       return p ? `${key}  ${p.title}` : key;
     }
     if (lane === 'assignee') return actorName(key);
+    if (lane === 'project') return this.live.schema()?.projects?.find((p) => p.key === key)?.name || key;
     return key;
   }
 

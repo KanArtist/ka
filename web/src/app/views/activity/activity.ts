@@ -4,6 +4,7 @@ import { Api, KaEvent } from '../../api/api';
 import { Actions } from '../../actions';
 import { Live } from '../../live';
 import { Actor, isAgent } from '../../ui/actor';
+import { ProjectPipe } from '../../ui/project';
 import { Clock, ago, exact } from '../../ui/time';
 import { Kind, Line, describe, kindOf } from './describe';
 
@@ -49,7 +50,7 @@ const BULK_MIN = 3;
  */
 @Component({
   selector: 'ka-activity',
-  imports: [RouterLink, Actor],
+  imports: [RouterLink, Actor, ProjectPipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './activity.html',
   styleUrl: './activity.css',

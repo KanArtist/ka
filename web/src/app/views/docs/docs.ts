@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, effect, inject, signal, u
 import { NavigationEnd, Router, RouterLink } from '@angular/router';
 import { Api, ApiError } from '../../api/api';
 import { Live } from '../../live';
+import { ProjectPipe } from '../../ui/project';
 import { followInternalLink, renderMarkdown } from '../../ui/markdown';
 
 interface DocEntry {
@@ -26,14 +27,14 @@ interface DocOut extends DocEntry {
  */
 @Component({
   selector: 'ka-docs',
-  imports: [RouterLink],
+  imports: [RouterLink, ProjectPipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="docs">
       <nav class="list" aria-label="Documents">
         <input class="field filter" type="search" placeholder="Filter documents" [value]="filter()" (input)="filter.set($any($event.target).value)" aria-label="Filter documents" />
         @for (g of groups(); track g.project) {
-          <h2>{{ g.project }} <span class="n">{{ g.docs.length }}</span></h2>
+          <h2 [title]="g.project">{{ g.project | project }} <span class="n">{{ g.docs.length }}</span></h2>
           <ul>
             @for (d of g.docs; track d.path) {
               <li>

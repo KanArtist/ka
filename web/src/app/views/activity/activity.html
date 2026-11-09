@@ -6,7 +6,7 @@
         <select [value]="project()" (change)="project.set($any($event.target).value)" aria-label="Project">
           <option value="">All projects</option>
           @for (p of projects(); track p) {
-            <option [value]="p">{{ p }}</option>
+            <option [value]="p">{{ p | project }}</option>
           }
         </select>
       }
@@ -32,7 +32,7 @@
       @if (newDay(i, groups())) {
         <li class="day" aria-hidden="false"><h2>{{ g.day }}</h2></li>
       }
-      <li class="group" [class.agent]="isAgent(g.actor)">
+      <li class="group" [class.agent]="isAgent(g.actor)" [class.stripe]="i % 2 === 1">
         <div class="who">
           <ka-actor [actor]="g.actor" [size]="20" />
         </div>
@@ -45,7 +45,7 @@
               (click)="toggleBulk(g)"
             >
               <span class="chev" aria-hidden="true"></span>
-              <span class="title">{{ g.bulk.length }} tickets</span>
+              <span class="count">{{ g.bulk.length }} tickets</span>
             </button>
           } @else if (g.ticket) {
             <a class="ticket" [routerLink]="[]" [queryParams]="{ peek: g.ticket }" queryParamsHandling="merge">

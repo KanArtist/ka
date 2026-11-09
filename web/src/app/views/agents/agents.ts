@@ -3,6 +3,7 @@ import { RouterLink } from '@angular/router';
 import { Api, ApiError, KaEvent, Session, Summary } from '../../api/api';
 import { Live } from '../../live';
 import { Actor, isAgent } from '../../ui/actor';
+import { StatusPipe, WordsPipe } from '../../ui/labels';
 import { Clock, ago, exact } from '../../ui/time';
 
 interface Person {
@@ -22,7 +23,7 @@ interface Person {
  */
 @Component({
   selector: 'ka-agents',
-  imports: [RouterLink, Actor],
+  imports: [RouterLink, Actor, StatusPipe, WordsPipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './agents.html',
   styleUrl: './agents.css',

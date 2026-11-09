@@ -112,7 +112,7 @@ select {
   cursor: pointer;
 }
 .trow:hover {
-  background: color-mix(in srgb, var(--raised) 55%, transparent);
+  background: var(--row-hover);
 }
 .trow:focus-visible {
   outline: 2px solid var(--focus);

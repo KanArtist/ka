@@ -15,6 +15,7 @@ export type SchemaOut = S['SchemaOut'];
 export type WriteOut = S['WriteOut'];
 export type Problem = S['Problem'];
 export type BoardOut = S['BoardOut'];
+export type ActorOut = S['ActorOut'];
 
 /** A live presence session (GET /presence, presence.changed). */
 export interface Session {
