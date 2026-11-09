@@ -24,14 +24,14 @@
   padding: 0 8px;
   margin-bottom: 8px;
 }
+/* The KanArtist mark (public/ka-mark.svg) as a mask, so it takes the theme's text colour. */
 .mark {
-  width: 18px;
-  height: 18px;
-  fill: var(--muted);
+  width: 31px;
+  height: 25px;
   flex: none;
-}
-.mark .ink {
-  fill: var(--ink-agent);
+  background: var(--text-strong);
+  -webkit-mask: url('/ka-mark.svg') center / contain no-repeat;
+  mask: url('/ka-mark.svg') center / contain no-repeat;
 }
 .ws {
   font-weight: 650;
