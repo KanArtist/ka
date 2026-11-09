@@ -63,3 +63,21 @@ jobs:
         with:
           path: spec/v1/conformance/valid/minimal/store
           skip-install: "true"
+
+  # install.sh against the published latest release, with dash (Debian's sh)
+  # on Linux and the system sh on macOS.
+  install-script:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: shellcheck
+        if: runner.os == 'Linux'
+        run: shellcheck install.sh
+      - name: Install with the script
+        run: |
+          KA_INSTALL_DIR="$RUNNER_TEMP/bin" sh install.sh
+          "$RUNNER_TEMP/bin/ka" version

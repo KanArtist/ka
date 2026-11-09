@@ -49,7 +49,9 @@ signs:
 nfpms:
   - id: packages
     package_name: ka
-    file_name_template: "ka_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    # No version in the name, so releases/latest/download/ka_linux_amd64.deb
+    # (and .rpm) always works, like the archives.
+    file_name_template: "ka_{{ .Os }}_{{ .Arch }}"
     vendor: JumpKick
     homepage: https://github.com/JumpKickOSS/ka
     maintainer: Bryan Sant <BryanSant@users.noreply.github.com>

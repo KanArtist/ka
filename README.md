@@ -32,6 +32,7 @@ Agents are the primary users; humans get a live window into what they are doing.
 Requires git 2.40+ at run time.
 
 ```bash
+curl -fsSL https://raw.githubusercontent.com/JumpKickOSS/ka/main/install.sh | sh   # Linux, macOS
 brew install jumpkickoss/tap/ka                  # macOS, Linux
 scoop bucket add jumpkick https://github.com/JumpKickOSS/scoop-bucket
 scoop install jumpkick/ka                        # Windows
@@ -39,8 +40,19 @@ go install github.com/JumpKickOSS/ka/cmd/ka@latest   # anywhere, with Go 1.27+
 docker run --rm ghcr.io/jumpkickoss/ka version   # the container image (a team daemon)
 ```
 
-Or download an archive, `.deb` or `.rpm` from
-[the releases](https://github.com/JumpKickOSS/ka/releases/latest).
+The script checks the download against the release's signed checksums (and the signature
+itself when `cosign` is installed), installs to `~/.local/bin` (`/usr/local/bin` as root) and
+upgrades when run again; `KA_VERSION` pins a release and `KA_INSTALL_DIR` picks the directory.
+Read it first if you prefer: [install.sh](install.sh).
+
+Debian, Ubuntu, Fedora and RHEL can install the package (`amd64` or `arm64`):
+
+```bash
+curl -fsSLO https://github.com/JumpKickOSS/ka/releases/latest/download/ka_linux_amd64.deb && sudo apt install ./ka_linux_amd64.deb
+sudo dnf install https://github.com/JumpKickOSS/ka/releases/latest/download/ka_linux_amd64.rpm
+```
+
+Or download an archive from [the releases](https://github.com/JumpKickOSS/ka/releases/latest).
 
 ```bash
 source <(ka completion bash)          # optional; also zsh, fish, powershell
