@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -96,7 +97,8 @@ func TestMergeKeepsOtherServersAndIsIdempotent(t *testing.T) {
 	if m["theme"] != "dark" || srv["other"] == nil || srv["ka"] == nil || len(srv) != 2 {
 		t.Fatalf("merged: %v", m)
 	}
-	if fi, _ := os.Stat(p); fi.Mode().Perm() != 0o600 {
+	// Windows has no Unix permission bits to keep.
+	if fi, _ := os.Stat(p); runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
 		t.Fatalf("mode changed to %v", fi.Mode().Perm())
 	}
 }
