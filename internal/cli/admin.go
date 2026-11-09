@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -404,7 +405,7 @@ func isBareRepo(dir string) bool {
 }
 
 func cmdStore(ctx context.Context, x *IO, args []string) int {
-	fl, c := newFlags("store", "ls | add URL|PATH [--name N] [--branch B] | rm NAME", x)
+	fl, c := newFlags("store", "ls | add URL|PATH [--name N] [--branch B] | set-url NAME URL [--name NEW] | rm NAME", x)
 	name := fl.String("name", "", "store name")
 	branch := fl.String("branch", "", "branch (for orphan-branch stores)")
 	pos, err := parse(fl, args)
@@ -456,6 +457,42 @@ func cmdStore(ctx context.Context, x *IO, args []string) int {
 			}
 		}
 		wf.Stores = append(wf.Stores, sp)
+	case "set-url":
+		// A store's repository moved (renamed or transferred): point the
+		// workspace at the new URL and keep the local clone, with any
+		// unpushed commits, by moving it and updating its remote.
+		if len(pos) != 3 {
+			return usageErr(x, fl, "store set-url needs a store name and the new URL")
+		}
+		i := slices.IndexFunc(wf.Stores, func(s engine.StoreSpec) bool { return s.Name == pos[1] })
+		if i < 0 {
+			return fail(x, c, engine.Errf(engine.CodeNotFound, "ka store ls lists them", "no store named %s", pos[1]))
+		}
+		old := wf.Stores[i]
+		if old.URL == "" {
+			return fail(x, c, engine.Errf(engine.CodeInvalid, "it is a local checkout: change its remote with git remote set-url", "store %s has a path, not a URL", old.Name))
+		}
+		nsp := old
+		nsp.URL = pos[2]
+		if *name != "" {
+			nsp.Name = *name
+		}
+		from, to := engine.ClonePath(old), engine.ClonePath(nsp)
+		if _, err := os.Stat(filepath.Join(from, ".git")); err == nil && from != to {
+			if _, err := os.Stat(to); err == nil {
+				return fail(x, c, engine.Errf(engine.CodeConflict, "remove it, then run this again", "%s already exists", to))
+			}
+			if err := os.Rename(from, to); err != nil {
+				return fail(x, c, err)
+			}
+		}
+		if _, err := os.Stat(filepath.Join(to, ".git")); err == nil {
+			g := &gitx.Repo{Dir: to}
+			if _, err := g.Run(ctx, "remote", "set-url", "origin", nsp.URL); err != nil {
+				return fail(x, c, err)
+			}
+		}
+		wf.Stores[i] = nsp
 	case "rm":
 		if len(pos) != 2 {
 			return usageErr(x, fl, "store rm needs a name")

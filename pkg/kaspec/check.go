@@ -141,6 +141,22 @@ func (c *checker) index() {
 			c.byPrefix[pfx] = projRef{s, pr}
 		}
 	}
+	// Former prefixes resolve too, unless an active prefix took them over.
+	for _, s := range c.w.Stores {
+		for _, k := range s.Keys {
+			pr := s.Projects[k]
+			for _, fp := range pr.File.FormerPrefixes {
+				if prev, ok := c.byPrefix[fp]; ok {
+					if prev.proj != pr {
+						c.diags = append(c.diags, diag("duplicate_prefix", s.p(pr.Dir+"/project.yml"), 1,
+							"drop it from former_prefixes", "former prefix %q is in use by project %q", fp, prev.proj.Key))
+					}
+					continue
+				}
+				c.byPrefix[fp] = projRef{s, pr}
+			}
+		}
+	}
 }
 
 func labelOr(s *Store) string {
@@ -318,6 +334,9 @@ func (c *checker) checkTicket(s *Store, pr *Project, cfg *Config, te *TicketEntr
 			if !ok {
 				add(diag("external_ref", tp, ln(r.key), "", "%s %s is in a project outside this workspace", r.key, id))
 				continue
+			}
+			if pfx != target.proj.File.Prefix {
+				id = target.proj.File.Prefix + id[len(pfx):] // a former prefix
 			}
 			if _, ok := target.proj.Tickets[id]; !ok {
 				add(diag("dangling_ref", tp, ln(r.key), "", "%s %s does not exist in project %s", r.key, id, target.proj.Key))

@@ -144,6 +144,7 @@ peer, principal, actor), and `--log-format json` writes JSON lines for a log pip
 | `GET /schema`, `GET /projects`, `GET /projects/{key}` | Schema | `ka_schema` |
 | `GET /projects/{key}/config?key=` | ConfigExplain | `ka config explain`, `ka_schema {explain}` |
 | `POST /projects/{key}/move` | MoveProject | `ka project move` |
+| `POST /projects/{key}/rename` | RenameProject | `ka project rename` |
 | `GET /boards`, `GET /boards/{name}` | Boards, BoardFilter + Search | `ka://board/{name}` |
 | `GET /actors` | Actors | |
 | `GET /tickets?q=…`, `GET /search?q=…` | Search (`include=fields` adds owner, created and custom fields, for the table view) | `ka_search`, `ka ls` |

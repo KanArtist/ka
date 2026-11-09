@@ -1799,6 +1799,107 @@
         },
         "type": "object"
       },
+      "RenameProjectOut": {
+        "additionalProperties": false,
+        "properties": {
+          "commits": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "dry_run": {
+            "type": "boolean"
+          },
+          "files": {
+            "additionalProperties": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "description": "Per store, the files rewritten (references and keys).",
+            "type": "object"
+          },
+          "from": {
+            "description": "The old project key.",
+            "type": "string"
+          },
+          "ids": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Old ID to new ID.",
+            "type": "object"
+          },
+          "kept_former_prefix": {
+            "type": "boolean"
+          },
+          "new_prefix": {
+            "type": "string"
+          },
+          "old_prefix": {
+            "type": "string"
+          },
+          "push_error": {
+            "type": "string"
+          },
+          "pushed": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "skipped": {
+            "description": "Read-only stores whose references were left as they are.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "tickets": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "to": {
+            "description": "The new project key.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "old_prefix",
+          "new_prefix",
+          "tickets"
+        ],
+        "type": "object"
+      },
+      "RenameProjectRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "dry_run": {
+            "type": "boolean"
+          },
+          "keep_former_prefix": {
+            "description": "Record the old prefix in former_prefixes, so old IDs keep resolving.",
+            "type": "boolean"
+          },
+          "key": {
+            "description": "The new project key.",
+            "type": "string"
+          },
+          "prefix": {
+            "description": "The new ID prefix (default: the new key upper-cased, when the key changes).",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "RestorePreservedRequest": {
         "additionalProperties": false,
         "properties": {
@@ -3806,6 +3907,75 @@
           }
         },
         "summary": "Move a project to another store (ka project move)",
+        "tags": [
+          "workspace"
+        ]
+      }
+    },
+    "/api/v1/projects/{key}/rename": {
+      "post": {
+        "operationId": "renameProject",
+        "parameters": [
+          {
+            "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
+            "in": "header",
+            "name": "X-Ka-Actor",
+            "schema": {
+              "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A session ID, recorded in the Ka-Session trailer.",
+            "in": "header",
+            "name": "X-Ka-Session",
+            "schema": {
+              "description": "A session ID, recorded in the Ka-Session trailer.",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenameProjectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenameProjectOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Rename a project's key and/or ID prefix, rewriting every reference",
         "tags": [
           "workspace"
         ]

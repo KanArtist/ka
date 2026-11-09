@@ -119,6 +119,8 @@ ka open [ID]                         # the web UI (starts the daemon if needed)
 ka watch [QUERY]                     # the live activity stream in the terminal
 ka config explain [KEY]              # effective config and the file that set each value
 ka project move KEY --to STORE       # re-home a project; IDs stay the same
+ka project rename KEY --key NEW --prefix P   # new key and ID prefix; references follow
+ka store set-url NAME URL            # a store's repository moved; keeps the clone
 ka hooks install                     # pre-commit: ka fmt --staged && ka check --staged
 ka daemon / ka daemon status / ka daemon stop   # REST API on 127.0.0.1:7711
 ka token create --actor NAME         # API tokens for a remote daemon (docs/operations.md)

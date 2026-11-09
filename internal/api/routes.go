@@ -164,6 +164,23 @@ func (s *Server) workspaceRoutes() {
 			}
 			return &body[engine.MoveProjectOut]{*out}, nil
 		})
+	reg(s, post("renameProject", "/projects/{key}/rename", "Rename a project's key and/or ID prefix, rewriting every reference", "workspace"),
+		func(ctx context.Context, in *struct {
+			CallerHeaders
+			Key  string `path:"key"`
+			Body struct {
+				Key              string `json:"key,omitempty" doc:"The new project key."`
+				Prefix           string `json:"prefix,omitempty" doc:"The new ID prefix (default: the new key upper-cased, when the key changes)."`
+				KeepFormerPrefix bool   `json:"keep_former_prefix,omitempty" doc:"Record the old prefix in former_prefixes, so old IDs keep resolving."`
+				DryRun           bool   `json:"dry_run,omitempty"`
+			}
+		}) (*body[engine.RenameProjectOut], error) {
+			out, err := s.svc.RenameProject(ctx, s.caller(in.CallerHeaders), in.Key, in.Body.Key, strings.ToUpper(in.Body.Prefix), in.Body.KeepFormerPrefix, in.Body.DryRun)
+			if err != nil {
+				return nil, err
+			}
+			return &body[engine.RenameProjectOut]{*out}, nil
+		})
 	reg(s, get("listDocs", "/docs", "Files under projects/<key>/docs/", "workspace"),
 		func(ctx context.Context, in *struct {
 			Project string `query:"project" doc:"Only this project's docs."`

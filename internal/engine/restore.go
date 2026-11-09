@@ -46,7 +46,7 @@ func (s *Service) RestorePreserved(ctx context.Context, c Caller, id, comment st
 	}
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
-	st, _, err := s.storeOf(id)
+	st, _, err := s.storeOf(&id)
 	if err != nil {
 		return nil, err
 	}

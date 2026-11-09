@@ -181,7 +181,7 @@ func (s *Service) ActorFor(nameOrEmail string) string {
 func (s *Service) view() view { return view{ix: s.ix, now: s.Now()} }
 
 func (s *Service) rec(id string) (*Rec, error) {
-	r, ok := s.ix.tickets[strings.ToUpper(strings.TrimSpace(id))]
+	r, ok := s.ix.tickets[s.ix.canon(id)]
 	if !ok {
 		e := Errf(CodeNotFound, "check the ID with ka_search", "ticket %s does not exist", id)
 		if _, known := s.ix.projectFor(strings.ToUpper(id)); !known {
@@ -531,12 +531,15 @@ func (s *Service) push(ctx context.Context, st *Store) (*Result, error) {
 	return res, err
 }
 
-func (s *Service) storeOf(id string) (*Store, *ProjectInfo, error) {
+// storeOf finds the store and project of a ticket ID, and normalizes the
+// ID in place (upper case, current prefix).
+func (s *Service) storeOf(id *string) (*Store, *ProjectInfo, error) {
 	s.ix.mu.RLock()
 	defer s.ix.mu.RUnlock()
-	pi, ok := s.ix.projectFor(strings.ToUpper(id))
+	*id = s.ix.canon(*id)
+	pi, ok := s.ix.projectFor(*id)
 	if !ok {
-		return nil, nil, Errf(CodeUnknownProject, "check the ID prefix; ka_schema lists projects", "no project has the prefix of %s", id)
+		return nil, nil, Errf(CodeUnknownProject, "check the ID prefix; ka_schema lists projects", "no project has the prefix of %s", *id)
 	}
 	return pi.Store, pi, nil
 }
@@ -886,7 +889,7 @@ func (s *Service) Update(ctx context.Context, c Caller, ins []UpdateIn) ([]*Writ
 	touched := map[*Store]bool{}
 	var firstErr error
 	for i, in := range ins {
-		st, pi, err := s.storeOf(in.ID)
+		st, pi, err := s.storeOf(&in.ID)
 		var o *Op
 		if err == nil {
 			o, err = s.updateOp(c, pi, in)
@@ -1017,7 +1020,7 @@ func (s *Service) Claim(ctx context.Context, c Caller, id string, steal bool) (*
 }
 
 func (s *Service) claimLocked(ctx context.Context, c Caller, id string, steal bool) (*ClaimOut, error) {
-	st, pi, err := s.storeOf(id)
+	st, pi, err := s.storeOf(&id)
 	if err != nil {
 		return nil, err
 	}
@@ -1049,7 +1052,7 @@ func (s *Service) Release(ctx context.Context, c Caller, id, status string, forc
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 	s.ix.catchUp()
-	st, pi, err := s.storeOf(id)
+	st, pi, err := s.storeOf(&id)
 	if err != nil {
 		return nil, err
 	}
@@ -1086,7 +1089,7 @@ func (s *Service) Transition(ctx context.Context, c Caller, in TransitionIn) (*W
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 	s.ix.catchUp()
-	st, pi, err := s.storeOf(in.ID)
+	st, pi, err := s.storeOf(&in.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -1164,7 +1167,7 @@ func (s *Service) Comment(ctx context.Context, c Caller, in CommentIn) (*WriteOu
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 	s.ix.catchUp()
-	st, pi, err := s.storeOf(in.ID)
+	st, pi, err := s.storeOf(&in.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -1214,7 +1217,7 @@ func (s *Service) CheckItems(ctx context.Context, c Caller, in CheckIn) (*WriteO
 	}
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
-	st, _, err := s.storeOf(in.ID)
+	st, _, err := s.storeOf(&in.ID)
 	if err != nil {
 		return nil, "", err
 	}
@@ -1265,7 +1268,7 @@ func (s *Service) Ask(ctx context.Context, c Caller, in AskIn) (*AskOut, error) 
 	}
 	s.writeMu.Lock()
 	s.ix.catchUp()
-	st, _, err := s.storeOf(in.ID)
+	st, _, err := s.storeOf(&in.ID)
 	if err != nil {
 		s.writeMu.Unlock()
 		return nil, err
@@ -1355,7 +1358,7 @@ func (s *Service) Answer(ctx context.Context, c Caller, in AnswerIn) (*WriteOut,
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 	s.ix.catchUp()
-	st, _, err := s.storeOf(in.ID)
+	st, _, err := s.storeOf(&in.ID)
 	if err != nil {
 		return nil, err
 	}

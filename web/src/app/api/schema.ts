@@ -369,6 +369,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{key}/rename": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rename a project's key and/or ID prefix, rewriting every reference */
+        post: operations["renameProject"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/schema": {
         parameters: {
             query?: never;
@@ -1150,6 +1167,42 @@ export interface components {
             force?: boolean;
             /** @description Move to this status as well. */
             status?: string;
+        };
+        RenameProjectOut: {
+            commits?: {
+                [key: string]: string;
+            };
+            dry_run?: boolean;
+            /** @description Per store, the files rewritten (references and keys). */
+            files?: {
+                [key: string]: number;
+            };
+            /** @description The old project key. */
+            from: string;
+            /** @description Old ID to new ID. */
+            ids?: {
+                [key: string]: string;
+            };
+            kept_former_prefix?: boolean;
+            new_prefix: string;
+            old_prefix: string;
+            push_error?: string;
+            pushed?: string[] | null;
+            /** @description Read-only stores whose references were left as they are. */
+            skipped?: string[] | null;
+            /** Format: int64 */
+            tickets: number;
+            /** @description The new project key. */
+            to: string;
+        };
+        RenameProjectRequest: {
+            dry_run?: boolean;
+            /** @description Record the old prefix in former_prefixes, so old IDs keep resolving. */
+            keep_former_prefix?: boolean;
+            /** @description The new project key. */
+            key?: string;
+            /** @description The new ID prefix (default: the new key upper-cased, when the key changes). */
+            prefix?: string;
         };
         RestorePreservedRequest: {
             /** @description The system comment's filename that preserved the operation. */
@@ -2164,6 +2217,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MoveProjectOut"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    renameProject: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/<name> and are recorded as acting on behalf of that person. */
+                "X-Ka-Actor"?: string;
+                /** @description A session ID, recorded in the Ka-Session trailer. */
+                "X-Ka-Session"?: string;
+            };
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenameProjectRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RenameProjectOut"];
                 };
             };
             /** @description Error */

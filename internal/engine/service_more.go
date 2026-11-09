@@ -337,7 +337,7 @@ func (s *Service) TicketPath(id string) (string, *Store, error) {
 func (s *Service) ReplaceTicket(ctx context.Context, c Caller, id string, data []byte, ifMatch string) (*WriteOut, error) {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
-	st, pi, err := s.storeOf(id)
+	st, pi, err := s.storeOf(&id)
 	if err != nil {
 		return nil, err
 	}

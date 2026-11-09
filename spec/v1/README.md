@@ -259,6 +259,7 @@ config:
 | `prefix` | string | `^[A-Z][A-Z0-9]{0,9}$`; default: the key upper-cased without `-`. Unique in the workspace. |
 | `name`, `description` | string | |
 | `archived` | boolean | An archived project is read-only for writers. |
+| `former_prefixes` | list of strings | Prefixes the project used before a rename (`ka project rename --keep-former-prefix`). A reference or lookup with a former prefix resolves to the ticket with the same suffix, so old IDs in commits and notes keep working during a transition. Each must be unused as an active prefix in the workspace. Ticket IDs and directories always use `prefix`. |
 | `repos` | mapping | Code repositories for links: name → `{forge (http(s) URL), default_branch}`. |
 | `config` | mapping | Project-level data config, the last layer of the chain (§6). |
 | `moved_to_store` | string | Tombstone: the project now lives in another store (its name or URL). A tombstoned project holds only `project.yml`; readers skip it, so it never counts as a second home. Written by `ka project move`. |

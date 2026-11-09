@@ -102,6 +102,21 @@ store is missing from your workspace says where it went. A clone that wrote to t
 before seeing the move has those operations rejected on replay and preserved as conflicts.
 Also `POST /api/v1/projects/{key}/move`.
 
+## Renaming a project
+
+`ka project rename KEY [--key NEW] [--prefix P] [--keep-former-prefix] [--dry-run]` gives a
+project a new key, a new ID prefix, or both. Every ticket keeps its suffix (`KA-7QK3M` becomes
+`KAN-7QK3M`); its directory and `id` change, and every reference in every writable store follows:
+`parent`, `blocked_by`, `related` and the rest, mentions in descriptions, comments and docs, and
+`project:<key>` in saved boards and `default_project`. Each store gets one commit; the home store
+is pushed first. With `--keep-former-prefix` the old prefix is kept in `former_prefixes`, so old IDs
+in commit messages and notes keep resolving (reads and writes) during a transition; drop it from
+`project.yml` when no one needs it. Code repos' `.ka.yml` files that name the old key are not
+rewritten; the command reminds you. Also `POST /api/v1/projects/{key}/rename`.
+
+`ka store set-url NAME URL [--name NEW]` follows a store's repository to a new URL (a rename or a
+transfer): it moves the managed clone, unpushed commits and all, and updates its remote.
+
 ## The index
 
 All tickets, comments, projects, configs and actors are loaded into memory, in parallel. The

@@ -475,8 +475,8 @@ func shortHash(s string) string {
 	return hex.EncodeToString(h[:])[:8]
 }
 
-// ensureClone returns the managed clone for a store URL, cloning it on first use.
-func ensureClone(ctx context.Context, sp StoreSpec, offline bool) (string, error) {
+// ClonePath is where ka keeps the managed clone of a store URL.
+func ClonePath(sp StoreSpec) string {
 	name := sp.Name
 	if name == "" {
 		base := strings.TrimSuffix(filepath.Base(strings.TrimSuffix(sp.URL, "/")), ".git")
@@ -485,7 +485,12 @@ func ensureClone(ctx context.Context, sp StoreSpec, offline bool) (string, error
 		}
 		name = strings.Trim(nonName.ReplaceAllString(strings.ToLower(base), "-"), "-")
 	}
-	dir := filepath.Join(DataDir(), "stores", name+"-"+shortHash(sp.URL+"#"+sp.Branch))
+	return filepath.Join(DataDir(), "stores", name+"-"+shortHash(sp.URL+"#"+sp.Branch))
+}
+
+// ensureClone returns the managed clone for a store URL, cloning it on first use.
+func ensureClone(ctx context.Context, sp StoreSpec, offline bool) (string, error) {
+	dir := ClonePath(sp)
 	if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
 		return dir, nil
 	}

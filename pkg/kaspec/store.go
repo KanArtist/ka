@@ -33,14 +33,17 @@ type Repo struct {
 
 // ProjectFile is projects/<key>/project.yml.
 type ProjectFile struct {
-	Key          string
-	Prefix       string
-	Name         string
-	Description  string
-	Archived     bool
-	Repos        map[string]Repo
-	Config       *Node
-	MovedToStore string
+	Key    string
+	Prefix string
+	// FormerPrefixes are prefixes the project used before a rename; IDs
+	// with them still resolve to the ticket with the same suffix.
+	FormerPrefixes []string
+	Name           string
+	Description    string
+	Archived       bool
+	Repos          map[string]Repo
+	Config         *Node
+	MovedToStore   string
 }
 
 // Human is a human actor.
@@ -147,6 +150,7 @@ func ParseProjectFile(p string, data []byte) (*ProjectFile, []Diagnostic) {
 	pf.Description = r.str("description")
 	pf.Archived, _ = r.boolean("archived")
 	pf.MovedToStore = r.str("moved_to_store")
+	pf.FormerPrefixes = r.strList("former_prefixes", PrefixRe, "prefixes are upper-case letters and digits, starting with a letter, at most 10")
 	if rp := r.get("repos"); rp != nil {
 		if rp.Kind != MapNode {
 			r.bad("repos", "", "must be a mapping of repo names to {forge, default_branch}")
@@ -176,7 +180,7 @@ func ParseProjectFile(p string, data []byte) (*ProjectFile, []Diagnostic) {
 			pf.Config = c
 		}
 	}
-	r.unknown([]string{"key", "prefix", "name", "description", "archived", "repos", "config", "moved_to_store"})
+	r.unknown([]string{"key", "prefix", "former_prefixes", "name", "description", "archived", "repos", "config", "moved_to_store"})
 	if pf.Key == "" && n.Map["key"] == nil {
 		r.diags = append(r.diags, diag("missing_field", p, 1, "", "required field \"key\" is missing"))
 	}

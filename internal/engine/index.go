@@ -290,7 +290,33 @@ func (ix *Index) rebuild() {
 			}
 		}
 	}
+	// Former prefixes (after a rename) find the project too, unless an
+	// active prefix took them over.
+	for _, pi := range ix.projects {
+		for _, fp := range pi.File.FormerPrefixes {
+			if _, taken := ix.prefixes[fp]; !taken {
+				ix.prefixes[fp] = pi
+			}
+		}
+	}
 	ix.derive()
+}
+
+// canon normalizes a ticket ID: upper case, and a former project prefix
+// replaced by the current one (KA-7QK3M is KAN-7QK3M after a rename).
+func (ix *Index) canon(id string) string {
+	id = strings.ToUpper(strings.TrimSpace(id))
+	if _, ok := ix.tickets[id]; ok {
+		return id
+	}
+	pfx, sfx, ok := kaspec.ParseID(id)
+	if !ok {
+		return id
+	}
+	if pi, ok := ix.prefixes[pfx]; ok && pi.Prefix != pfx {
+		return pi.Prefix + "-" + sfx
+	}
+	return id
 }
 
 func (ix *Index) put(pi *ProjectInfo, te *kaspec.TicketEntry) {
