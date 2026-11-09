@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.svg">
+    <img src="docs/assets/logo-light.svg" alt="KanArtist logo: a figure in a fedora pinning cards to a board" width="160">
+  </picture>
+</p>
+
 # KanArtist (`ka`)
 
 A work tracker for teams whose work is mostly done by AI agents, with git as the database.
