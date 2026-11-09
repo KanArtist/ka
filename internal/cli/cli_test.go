@@ -397,3 +397,23 @@ func TestStoreAddBareRepo(t *testing.T) {
 		t.Fatalf("new via managed clone: %+v", res)
 	}
 }
+
+// On a fresh machine, store add records the store without cloning it; doctor
+// reports the missing clone and doctor --fix clones it.
+func TestDoctorFixClonesNewStores(t *testing.T) {
+	testkit.GitEnv(t)
+	r := testkit.NewRemote(t, nil)
+	home := t.TempDir()
+	if res := ka(t, home, "store", "add", r.Path, "--name", "team"); res.code != 0 {
+		t.Fatalf("store add: %+v", res)
+	}
+	if res := ka(t, home, "doctor"); res.code == 0 || !strings.Contains(res.out+res.err, "no local clone") {
+		t.Fatalf("doctor before cloning: %+v", res)
+	}
+	if res := ka(t, home, "doctor", "--fix"); res.code != 0 || strings.Contains(res.out, "fail") {
+		t.Fatalf("doctor --fix: %+v", res)
+	}
+	if res := ka(t, home, "doctor"); res.code != 0 || strings.Contains(res.out, "fail") {
+		t.Fatalf("doctor after --fix: %+v", res)
+	}
+}

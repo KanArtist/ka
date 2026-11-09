@@ -302,7 +302,9 @@ func cmdDoctor(ctx context.Context, x *IO, args []string) int {
 	default:
 		add("", "ok", "git", raw)
 	}
-	ws, err := engine.Open(ctx, engine.OpenOptions{Dir: x.Dir, Workspace: c.workspace, Map: c.maps, Offline: true})
+	// Checking never touches the network; --fix also clones stores that have
+	// no local clone yet (as on a machine where they were just added).
+	ws, err := engine.Open(ctx, engine.OpenOptions{Dir: x.Dir, Workspace: c.workspace, Map: c.maps, Offline: !*fix || c.offline})
 	if err != nil {
 		add("", "fail", "workspace", engine.AsError(err).Error())
 	} else {
