@@ -39,8 +39,8 @@ don't work around it. Every step is safe to repeat.
 
 3. **Register ka with the coding agents** on this machine: `ka setup`
    (run it in this checkout). It adds the `ka` MCP server and the ka skill
-   to every agent it finds (Claude Code, Codex, Cursor, Gemini CLI,
-   Antigravity, Copilot, Grok, Muse, Amp, Devin, Junie), each with its own
+   to every agent it finds (Claude Code, Codex, Cursor, Antigravity,
+   Copilot, Grok, Muse, Amp, Devin, Junie), each with its own
    actor name such as `agent/claude`, and serves the web UI from this
    checkout's `ui/`. `ka setup --dry-run` shows what it would change.
 

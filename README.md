@@ -40,7 +40,7 @@ The easy way: clone this repository and ask your coding agent to set KanArtist u
 
 ```bash
 git clone https://github.com/JumpKickOSS/ka && cd ka
-claude "set up KanArtist"         # or codex, cursor-agent, gemini, agy, copilot, grok, muse…
+claude "set up KanArtist"         # or codex, cursor-agent, agy, copilot, grok, muse…
 ```
 
 [AGENTS.md](AGENTS.md) tells the agent what to do: pin the checkout to the latest release, run

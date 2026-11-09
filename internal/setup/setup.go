@@ -121,11 +121,6 @@ func agents() []agent {
 				p := filepath.Join(o.home(), ".cursor", "mcp.json")
 				return p, mergeJSON(p, o.DryRun, []string{"mcpServers", "ka"}, map[string]any{"type": "stdio", "command": o.Ka, "args": []string{"mcp"}, "env": map[string]string{"KA_ACTOR": actor}})
 			}},
-		{id: "gemini", name: "Gemini CLI", bins: []string{"gemini"}, dirs: []string{".gemini/settings.json"},
-			mcp: func(ctx context.Context, o *Options, actor string) (string, error) {
-				p := filepath.Join(o.home(), ".gemini", "settings.json")
-				return p, mergeJSON(p, o.DryRun, []string{"mcpServers", "ka"}, map[string]any{"command": o.Ka, "args": []string{"mcp"}, "env": map[string]string{"KA_ACTOR": actor}})
-			}},
 		{id: "agy", name: "Antigravity", bins: []string{"agy"}, dirs: []string{".gemini/config"}, skills: []string{".gemini/config/skills"},
 			mcp: func(ctx context.Context, o *Options, actor string) (string, error) {
 				p := filepath.Join(o.home(), ".gemini", "config", "mcp_config.json")
