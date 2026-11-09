@@ -11,7 +11,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/JumpKickOSS/ka/pkg/kaspec"
+	"github.com/KanArtist/ka/pkg/kaspec"
 )
 
 // Op is one replayable operation (PRD §7.9, §10.2). Everything needed to

@@ -16,8 +16,8 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
-	"github.com/JumpKickOSS/ka/internal/engine"
-	"github.com/JumpKickOSS/ka/internal/testkit"
+	"github.com/KanArtist/ka/internal/engine"
+	"github.com/KanArtist/ka/internal/testkit"
 )
 
 const testToken = "test-token"

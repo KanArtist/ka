@@ -10,8 +10,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/JumpKickOSS/ka/internal/engine"
-	"github.com/JumpKickOSS/ka/internal/presence"
+	"github.com/KanArtist/ka/internal/engine"
+	"github.com/KanArtist/ka/internal/presence"
 )
 
 // SeqHeader carries the hub's last event ID on every API response, so a

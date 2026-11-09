@@ -14,8 +14,8 @@ import (
 
 	"github.com/gofrs/flock"
 
-	"github.com/JumpKickOSS/ka/internal/gitx"
-	"github.com/JumpKickOSS/ka/pkg/kaspec"
+	"github.com/KanArtist/ka/internal/gitx"
+	"github.com/KanArtist/ka/pkg/kaspec"
 )
 
 // Store is one store in the workspace: a directory inside a git working tree.

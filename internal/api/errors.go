@@ -6,7 +6,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/JumpKickOSS/ka/internal/engine"
+	"github.com/KanArtist/ka/internal/engine"
 )
 
 // Problem is an RFC 9457 problem document carrying the engine's error code

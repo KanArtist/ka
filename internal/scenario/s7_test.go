@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/JumpKickOSS/ka/internal/engine"
-	"github.com/JumpKickOSS/ka/internal/testkit"
-	"github.com/JumpKickOSS/ka/pkg/kaspec"
+	"github.com/KanArtist/ka/internal/engine"
+	"github.com/KanArtist/ka/internal/testkit"
+	"github.com/KanArtist/ka/pkg/kaspec"
 )
 
 // layered builds the S7 workspace: an org store (shared config, actors,

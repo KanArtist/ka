@@ -5,7 +5,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/JumpKickOSS/ka/internal/engine"
+	"github.com/KanArtist/ka/internal/engine"
 )
 
 // ConfigExplain renders `ka config explain`.

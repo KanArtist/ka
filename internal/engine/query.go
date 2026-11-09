@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/JumpKickOSS/ka/pkg/kaspec"
+	"github.com/KanArtist/ka/pkg/kaspec"
 )
 
 // Query is a parsed filter in the shared query language (PRD §7.7):

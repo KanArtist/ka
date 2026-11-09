@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/JumpKickOSS/ka/internal/engine"
+	"github.com/KanArtist/ka/internal/engine"
 )
 
 // GitHubHookPath receives GitHub push webhooks (PRD §10.1: webhooks are

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JumpKickOSS/ka/pkg/kaspec"
+	"github.com/KanArtist/ka/pkg/kaspec"
 )
 
 func write(t *testing.T, path, content string) {

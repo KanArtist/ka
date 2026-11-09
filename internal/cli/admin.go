@@ -12,10 +12,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/JumpKickOSS/ka/internal/engine"
-	"github.com/JumpKickOSS/ka/internal/gitx"
-	"github.com/JumpKickOSS/ka/internal/mcpserver"
-	"github.com/JumpKickOSS/ka/pkg/kaspec"
+	"github.com/KanArtist/ka/internal/engine"
+	"github.com/KanArtist/ka/internal/gitx"
+	"github.com/KanArtist/ka/internal/mcpserver"
+	"github.com/KanArtist/ka/pkg/kaspec"
 )
 
 // findStore walks up from dir to the nearest directory containing .ka/store.yml.

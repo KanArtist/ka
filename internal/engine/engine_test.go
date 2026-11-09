@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JumpKickOSS/ka/pkg/kaspec"
+	"github.com/KanArtist/ka/pkg/kaspec"
 )
 
 var ctx = context.Background()

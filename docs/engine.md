@@ -34,7 +34,7 @@ This is how milestone M1 implements PRD §8–§11 and §14. The on-disk format 
 name: bryan
 stores:
   - name: org
-    url: git@github.com:JumpKickOSS/ka-org.git   # managed clone
+    url: git@github.com:KanArtist/ka-org.git   # managed clone
   - name: jk
     path: ~/src/ka/repos/jk                      # attached checkout
     push: manual                                 # optional: immediate | manual | debounce:2s

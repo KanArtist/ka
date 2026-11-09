@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/JumpKickOSS/ka/pkg/kaspec"
+	"github.com/KanArtist/ka/pkg/kaspec"
 )
 
 // Caller identifies who is acting (PRD §7.6, §11.1).

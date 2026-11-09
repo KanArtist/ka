@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JumpKickOSS/ka/internal/engine"
-	"github.com/JumpKickOSS/ka/internal/testkit"
+	"github.com/KanArtist/ka/internal/engine"
+	"github.com/KanArtist/ka/internal/testkit"
 )
 
 // The M2 exit scenarios, end to end through a daemon: an agent on the ka mcp

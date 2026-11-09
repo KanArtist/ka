@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/JumpKickOSS/ka/internal/gitx"
-	"github.com/JumpKickOSS/ka/pkg/kaspec"
+	"github.com/KanArtist/ka/internal/gitx"
+	"github.com/KanArtist/ka/pkg/kaspec"
 )
 
 // EvCommit is a history entry for a commit made outside ka.

@@ -17,13 +17,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/JumpKickOSS/ka/internal/api"
-	"github.com/JumpKickOSS/ka/internal/engine"
-	"github.com/JumpKickOSS/ka/internal/gitx"
+	"github.com/KanArtist/ka/internal/api"
+	"github.com/KanArtist/ka/internal/engine"
+	"github.com/KanArtist/ka/internal/gitx"
 )
 
 // DefaultURL is where ka's repository lives.
-const DefaultURL = "https://github.com/JumpKickOSS/ka.git"
+const DefaultURL = "https://github.com/KanArtist/ka.git"
 
 // Config is ui.json.
 type Config struct {
@@ -121,7 +121,7 @@ func FindCheckout(dir string) (string, bool) {
 	}
 	for d := dir; ; {
 		if fileExists(filepath.Join(d, "embed.go")) && fileExists(filepath.Join(d, "ui", "ka-ui.json")) && fileExists(filepath.Join(d, "go.mod")) {
-			if b, err := os.ReadFile(filepath.Join(d, "go.mod")); err == nil && strings.Contains(string(b), "module github.com/JumpKickOSS/ka\n") {
+			if b, err := os.ReadFile(filepath.Join(d, "go.mod")); err == nil && strings.Contains(string(b), "module github.com/KanArtist/ka\n") {
 				return d, true
 			}
 		}

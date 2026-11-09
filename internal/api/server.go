@@ -24,8 +24,8 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
-	"github.com/JumpKickOSS/ka/internal/engine"
-	"github.com/JumpKickOSS/ka/internal/presence"
+	"github.com/KanArtist/ka/internal/engine"
+	"github.com/KanArtist/ka/internal/presence"
 )
 
 // DefaultAddr is where the daemon listens unless told otherwise.

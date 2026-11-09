@@ -13,11 +13,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/JumpKickOSS/ka/internal/api"
-	"github.com/JumpKickOSS/ka/internal/engine"
-	"github.com/JumpKickOSS/ka/internal/mcpserver"
-	"github.com/JumpKickOSS/ka/internal/presence"
-	"github.com/JumpKickOSS/ka/internal/uisrc"
+	"github.com/KanArtist/ka/internal/api"
+	"github.com/KanArtist/ka/internal/engine"
+	"github.com/KanArtist/ka/internal/mcpserver"
+	"github.com/KanArtist/ka/internal/presence"
+	"github.com/KanArtist/ka/internal/uisrc"
 )
 
 func cmdDaemon(ctx context.Context, x *IO, args []string) int {

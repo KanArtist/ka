@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JumpKickOSS/ka/internal/engine"
-	"github.com/JumpKickOSS/ka/internal/testkit"
-	"github.com/JumpKickOSS/ka/pkg/kaspec"
+	"github.com/KanArtist/ka/internal/engine"
+	"github.com/KanArtist/ka/internal/testkit"
+	"github.com/KanArtist/ka/pkg/kaspec"
 )
 
 // ledger records every operation the simulator saw succeed, so the final

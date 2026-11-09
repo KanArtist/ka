@@ -174,9 +174,9 @@ func waitFor(t *testing.T, ok func() bool) {
 }
 
 func TestRepoKey(t *testing.T) {
-	want := "github.com/jumpkickoss/ka-org"
-	for _, u := range []string{"git@github.com:JumpKickOSS/ka-org.git", "https://github.com/JumpKickOSS/ka-org", "https://github.com/JumpKickOSS/ka-org.git/",
-		"ssh://git@github.com:22/JumpKickOSS/ka-org.git", "https://token@github.com/JumpKickOSS/ka-org.git"} {
+	want := "github.com/kanartist/ka-org"
+	for _, u := range []string{"git@github.com:KanArtist/ka-org.git", "https://github.com/KanArtist/ka-org", "https://github.com/KanArtist/ka-org.git/",
+		"ssh://git@github.com:22/KanArtist/ka-org.git", "https://token@github.com/KanArtist/ka-org.git"} {
 		if got := repoKey(u); got != want {
 			t.Errorf("repoKey(%q) = %q", u, got)
 		}

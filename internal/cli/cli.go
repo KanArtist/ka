@@ -15,9 +15,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/JumpKickOSS/ka/internal/engine"
-	"github.com/JumpKickOSS/ka/internal/render"
-	"github.com/JumpKickOSS/ka/pkg/kaspec"
+	"github.com/KanArtist/ka/internal/engine"
+	"github.com/KanArtist/ka/internal/render"
+	"github.com/KanArtist/ka/pkg/kaspec"
 )
 
 // Version is set by the main package.

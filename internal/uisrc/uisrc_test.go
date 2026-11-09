@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/JumpKickOSS/ka/internal/api"
+	"github.com/KanArtist/ka/internal/api"
 )
 
 func fakeCheckout(t *testing.T, apiHash string) string {

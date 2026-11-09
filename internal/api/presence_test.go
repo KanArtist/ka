@@ -8,10 +8,10 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/JumpKickOSS/ka/internal/engine"
-	"github.com/JumpKickOSS/ka/internal/mcpserver"
-	"github.com/JumpKickOSS/ka/internal/presence"
-	"github.com/JumpKickOSS/ka/internal/testkit"
+	"github.com/KanArtist/ka/internal/engine"
+	"github.com/KanArtist/ka/internal/mcpserver"
+	"github.com/KanArtist/ka/internal/presence"
+	"github.com/KanArtist/ka/internal/testkit"
 )
 
 type bearer struct{ tok string }

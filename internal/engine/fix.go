@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/JumpKickOSS/ka/pkg/kaspec"
+	"github.com/KanArtist/ka/pkg/kaspec"
 )
 
 // FixOut reports what ka fix changed, per category.

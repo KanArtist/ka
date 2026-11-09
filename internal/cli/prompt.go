@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/JumpKickOSS/ka/internal/engine"
+	"github.com/KanArtist/ka/internal/engine"
 )
 
 // Interactive prompts for missing arguments (PRD §14: when arguments are

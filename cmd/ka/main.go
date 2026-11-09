@@ -11,8 +11,8 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/JumpKickOSS/ka/internal/cli"
-	"github.com/JumpKickOSS/ka/internal/engine"
+	"github.com/KanArtist/ka/internal/cli"
+	"github.com/KanArtist/ka/internal/engine"
 )
 
 // version is set by release builds (-ldflags "-X main.version=1.2.3").
@@ -20,7 +20,7 @@ var version = "0.1.0-dev"
 
 func main() {
 	cli.Version = version
-	// go install github.com/JumpKickOSS/ka/cmd/ka@v1.2.3 records the module version.
+	// go install github.com/KanArtist/ka/cmd/ka@v1.2.3 records the module version.
 	if bi, ok := debug.ReadBuildInfo(); ok && strings.HasSuffix(version, "-dev") && strings.HasPrefix(bi.Main.Version, "v") && !strings.HasPrefix(bi.Main.Version, "v0.0.0-") {
 		cli.Version = strings.TrimPrefix(bi.Main.Version, "v")
 	}

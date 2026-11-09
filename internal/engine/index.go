@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/JumpKickOSS/ka/pkg/kaspec"
+	"github.com/KanArtist/ka/pkg/kaspec"
 )
 
 // Rec is one indexed ticket.

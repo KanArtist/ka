@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/JumpKickOSS/ka/internal/engine"
+	"github.com/KanArtist/ka/internal/engine"
 )
 
 // ka project rename: a new key and prefix for every ticket, with references

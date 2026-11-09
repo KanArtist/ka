@@ -31,7 +31,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/JumpKickOSS/ka/pkg/kaspec"
+	"github.com/KanArtist/ka/pkg/kaspec"
 )
 
 type options struct {
@@ -322,7 +322,7 @@ func writeStoreFiles(p plan, o options, store string, projects []string, c *v0Co
 	}
 	p.put(store, ".ka/store.yml", []byte(kaspec.EmitYAML(sf)))
 	p.put(store, ".gitattributes", []byte(gitattributes))
-	readme := "# " + store + "\n\nA [KanArtist](https://github.com/JumpKickOSS/ka) store (Store Spec v1).\n"
+	readme := "# " + store + "\n\nA [KanArtist](https://github.com/KanArtist/ka) store (Store Spec v1).\n"
 	if len(projects) > 0 {
 		readme += "\nProjects: " + strings.Join(projects, ", ") + ".\n"
 	}

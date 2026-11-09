@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/JumpKickOSS/ka/internal/api"
-	"github.com/JumpKickOSS/ka/internal/uisrc"
+	"github.com/KanArtist/ka/internal/api"
+	"github.com/KanArtist/ka/internal/uisrc"
 )
 
 // cmdUI chooses where the daemon's web UI comes from.
@@ -43,7 +43,7 @@ func cmdUI(ctx context.Context, x *IO, args []string) int {
 		}
 		root, ok := uisrc.FindCheckout(filepath.Clean(dir))
 		if !ok {
-			fmt.Fprintf(x.Err, "ka: %s is not inside a checkout of github.com/JumpKickOSS/ka\n", dir)
+			fmt.Fprintf(x.Err, "ka: %s is not inside a checkout of github.com/KanArtist/ka\n", dir)
 			return 1
 		}
 		cfg, _ := uisrc.Load()

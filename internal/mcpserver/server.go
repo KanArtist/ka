@@ -17,10 +17,10 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/JumpKickOSS/ka/internal/engine"
-	"github.com/JumpKickOSS/ka/internal/presence"
-	"github.com/JumpKickOSS/ka/internal/render"
-	"github.com/JumpKickOSS/ka/pkg/kaspec"
+	"github.com/KanArtist/ka/internal/engine"
+	"github.com/KanArtist/ka/internal/presence"
+	"github.com/KanArtist/ka/internal/render"
+	"github.com/KanArtist/ka/pkg/kaspec"
 )
 
 // Version is reported to clients.

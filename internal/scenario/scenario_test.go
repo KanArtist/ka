@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JumpKickOSS/ka/internal/cli"
-	"github.com/JumpKickOSS/ka/internal/engine"
-	"github.com/JumpKickOSS/ka/internal/testkit"
-	"github.com/JumpKickOSS/ka/pkg/kaspec"
+	"github.com/KanArtist/ka/internal/cli"
+	"github.com/KanArtist/ka/internal/engine"
+	"github.com/KanArtist/ka/internal/testkit"
+	"github.com/KanArtist/ka/pkg/kaspec"
 )
 
 func seedTickets(t *testing.T, svc *engine.Service, ins ...engine.CreateIn) []string {

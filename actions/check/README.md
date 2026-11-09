@@ -12,13 +12,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: JumpKickOSS/ka/actions/check@main
+      - uses: KanArtist/ka/actions/check@main
 ```
 
 For code scanning instead of annotations:
 
 ```yaml
-      - uses: JumpKickOSS/ka/actions/check@main
+      - uses: KanArtist/ka/actions/check@main
         id: ka
         with:
           format: sarif

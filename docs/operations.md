@@ -9,7 +9,7 @@ one daemon for a team on a server. Details of authentication are in [api.md](api
 docker volume create ka-data
 
 # 1. A workspace file listing the stores (managed clones go in /data/stores).
-docker run --rm -i -v ka-data:/data --entrypoint sh ghcr.io/jumpkickoss/ka -c 'cat > /data/workspace.yml' <<'YAML'
+docker run --rm -i -v ka-data:/data --entrypoint sh ghcr.io/kanartist/ka -c 'cat > /data/workspace.yml' <<'YAML'
 name: team
 stores:
   - name: org
@@ -19,14 +19,14 @@ stores:
 YAML
 
 # 2. One API token per person (printed once; only the hash is kept in /data/config).
-docker run --rm -v ka-data:/data ghcr.io/jumpkickoss/ka token create --actor alice
+docker run --rm -v ka-data:/data ghcr.io/kanartist/ka token create --actor alice
 
 # 3. The daemon. It pushes with the deploy key mounted at ~/.ssh.
 docker run -d --name ka -p 7711:7711 -v ka-data:/data \
   -v /srv/ka/ssh:/home/ka/.ssh:ro \
   -e GIT_AUTHOR_NAME="ka daemon" -e GIT_AUTHOR_EMAIL=ka@example.com \
   -e GIT_COMMITTER_NAME="ka daemon" -e GIT_COMMITTER_EMAIL=ka@example.com \
-  ghcr.io/jumpkickoss/ka daemon --listen 0.0.0.0:7711 \
+  ghcr.io/kanartist/ka daemon --listen 0.0.0.0:7711 \
     --workspace /data/workspace.yml --public-url https://ka.example.com \
     --webhook-secret-file /data/config/webhook-secret
 ```

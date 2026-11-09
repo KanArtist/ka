@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/JumpKickOSS/ka/internal/engine"
+	"github.com/KanArtist/ka/internal/engine"
 )
 
 // GitEnv isolates git and ka from the developer's configuration.

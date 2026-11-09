@@ -10,19 +10,19 @@ share the store with a teammate.
 ## 1. Install
 
 You need git 2.40 or later. The quickest route is to let a coding agent do it: clone
-`https://github.com/JumpKickOSS/ka`, start your agent in the clone and ask it to set KanArtist up
+`https://github.com/KanArtist/ka`, start your agent in the clone and ask it to set KanArtist up
 ([AGENTS.md](../AGENTS.md) has the steps). By hand:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/JumpKickOSS/ka/main/install.sh | sh   # Linux, macOS
-irm https://raw.githubusercontent.com/JumpKickOSS/ka/main/install.ps1 | iex         # Windows
-brew install jumpkickoss/tap/ka                  # macOS, Linux
-scoop bucket add jumpkick https://github.com/JumpKickOSS/scoop-bucket
-scoop install jumpkick/ka                        # Windows
-go install github.com/JumpKickOSS/ka/cmd/ka@latest   # anywhere, with Go 1.27+
-docker run --rm ghcr.io/jumpkickoss/ka version   # the container image (a team daemon)
+curl -fsSL https://raw.githubusercontent.com/KanArtist/ka/main/install.sh | sh   # Linux, macOS
+irm https://raw.githubusercontent.com/KanArtist/ka/main/install.ps1 | iex         # Windows
+brew install kanartist/tap/ka                    # macOS, Linux
+scoop bucket add kanartist https://github.com/KanArtist/scoop-bucket
+scoop install kanartist/ka                       # Windows
+go install github.com/KanArtist/ka/cmd/ka@latest   # anywhere, with Go 1.27+
+docker run --rm ghcr.io/kanartist/ka version     # the container image (a team daemon)
 sudo apt install ./ka_linux_amd64.deb            # after downloading releases/latest/download/ka_linux_amd64.deb
-sudo dnf install https://github.com/JumpKickOSS/ka/releases/latest/download/ka_linux_amd64.rpm
+sudo dnf install https://github.com/KanArtist/ka/releases/latest/download/ka_linux_amd64.rpm
 
 ka version
 ```
@@ -159,7 +159,7 @@ In CI, add the check action to the store repository:
 
 ```yaml
 - uses: actions/checkout@v7
-- uses: JumpKickOSS/ka/actions/check@main
+- uses: KanArtist/ka/actions/check@main
 ```
 
 ## Next

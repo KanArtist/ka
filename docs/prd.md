@@ -639,7 +639,7 @@ ka/
 name: bryan
 stores:
   - name: org
-    url: git@github.com:JumpKickOSS/ka-org.git          # config, actors, cross-team boards
+    url: git@github.com:KanArtist/ka-org.git          # config, actors, cross-team boards
   - name: jk
     url: git@github.com:jkbuild/jk-tickets.git
   - name: gyggly
@@ -698,7 +698,7 @@ ticket.
 spec: 1
 name: jk-tickets
 extends:
-  - url: git@github.com:JumpKickOSS/ka-org.git     # parent store (any number; order matters)
+  - url: git@github.com:KanArtist/ka-org.git     # parent store (any number; order matters)
     ref: main                                    # branch, tag, or SHA (pin a SHA for full reproducibility)
 ```
 

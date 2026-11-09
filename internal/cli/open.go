@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/JumpKickOSS/ka/internal/api"
-	"github.com/JumpKickOSS/ka/internal/engine"
+	"github.com/KanArtist/ka/internal/api"
+	"github.com/KanArtist/ka/internal/engine"
 )
 
 // cmdOpen opens the web UI (PRD §13.3): it starts the workspace's daemon if

@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/JumpKickOSS/ka/internal/gitx"
-	"github.com/JumpKickOSS/ka/pkg/kaspec"
+	"github.com/KanArtist/ka/internal/gitx"
+	"github.com/KanArtist/ka/pkg/kaspec"
 )
 
 // WorkspaceFile is a workspace definition (PRD §9.1), read from

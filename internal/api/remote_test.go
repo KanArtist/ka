@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/JumpKickOSS/ka/internal/engine"
-	"github.com/JumpKickOSS/ka/internal/testkit"
+	"github.com/KanArtist/ka/internal/engine"
+	"github.com/KanArtist/ka/internal/testkit"
 )
 
 // Remote mode (PRD §15): API tokens, trusted proxy headers, the Host and

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/JumpKickOSS/ka/internal/engine"
+	"github.com/KanArtist/ka/internal/engine"
 )
 
 // SummaryLine renders one ticket in a list:

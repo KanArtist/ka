@@ -11,9 +11,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/JumpKickOSS/ka/internal/engine"
-	"github.com/JumpKickOSS/ka/internal/render"
-	"github.com/JumpKickOSS/ka/pkg/kaspec"
+	"github.com/KanArtist/ka/internal/engine"
+	"github.com/KanArtist/ka/internal/render"
+	"github.com/KanArtist/ka/pkg/kaspec"
 )
 
 func cmdNew(ctx context.Context, x *IO, args []string) int {

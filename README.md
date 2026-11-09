@@ -39,7 +39,7 @@ Agents are the primary users; humans get a live window into what they are doing.
 The easy way: clone this repository and ask your coding agent to set KanArtist up.
 
 ```bash
-git clone https://github.com/JumpKickOSS/ka && cd ka
+git clone https://github.com/KanArtist/ka && cd ka
 claude "set up KanArtist"         # or codex, cursor-agent, agy, copilot, grok, muse…
 ```
 
@@ -51,13 +51,13 @@ stores. To update, check out a newer tag and ask again.
 By hand (requires git 2.40+ at run time):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/JumpKickOSS/ka/main/install.sh | sh   # Linux, macOS
-irm https://raw.githubusercontent.com/JumpKickOSS/ka/main/install.ps1 | iex         # Windows (PowerShell)
-brew install jumpkickoss/tap/ka                  # macOS, Linux
-scoop bucket add jumpkick https://github.com/JumpKickOSS/scoop-bucket
-scoop install jumpkick/ka                        # Windows
-go install github.com/JumpKickOSS/ka/cmd/ka@latest   # anywhere, with Go 1.27+
-docker run --rm ghcr.io/jumpkickoss/ka version   # the container image (a team daemon)
+curl -fsSL https://raw.githubusercontent.com/KanArtist/ka/main/install.sh | sh   # Linux, macOS
+irm https://raw.githubusercontent.com/KanArtist/ka/main/install.ps1 | iex         # Windows (PowerShell)
+brew install kanartist/tap/ka                    # macOS, Linux
+scoop bucket add kanartist https://github.com/KanArtist/scoop-bucket
+scoop install kanartist/ka                       # Windows
+go install github.com/KanArtist/ka/cmd/ka@latest   # anywhere, with Go 1.27+
+docker run --rm ghcr.io/kanartist/ka version     # the container image (a team daemon)
 ```
 
 The script checks the download against the release's signed checksums (and the signature
@@ -72,11 +72,11 @@ checkout when it isn't on a tag. Then run `ka setup`. Read them first if you pre
 Debian, Ubuntu, Fedora and RHEL can install the package (`amd64` or `arm64`):
 
 ```bash
-curl -fsSLO https://github.com/JumpKickOSS/ka/releases/latest/download/ka_linux_amd64.deb && sudo apt install ./ka_linux_amd64.deb
-sudo dnf install https://github.com/JumpKickOSS/ka/releases/latest/download/ka_linux_amd64.rpm
+curl -fsSLO https://github.com/KanArtist/ka/releases/latest/download/ka_linux_amd64.deb && sudo apt install ./ka_linux_amd64.deb
+sudo dnf install https://github.com/KanArtist/ka/releases/latest/download/ka_linux_amd64.rpm
 ```
 
-Or download an archive from [the releases](https://github.com/JumpKickOSS/ka/releases/latest).
+Or download an archive from [the releases](https://github.com/KanArtist/ka/releases/latest).
 
 ```bash
 source <(ka completion bash)          # optional; also zsh, fish, powershell

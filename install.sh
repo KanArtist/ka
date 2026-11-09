@@ -1,7 +1,7 @@
 #!/bin/sh
 # Install ka from a GitHub release on Linux or macOS.
 #
-#   curl -fsSL https://raw.githubusercontent.com/JumpKickOSS/ka/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/KanArtist/ka/main/install.sh | sh
 #
 # Environment:
 #   KA_VERSION      a release to install, e.g. 1.0.3 (default: the latest), or
@@ -22,8 +22,8 @@
 # Running the script again upgrades ka in place.
 set -eu
 
-REPO=JumpKickOSS/ka
-IDENTITY='^https://github\.com/JumpKickOSS/ka/\.github/workflows/release\.yml@refs/tags/v'
+REPO=KanArtist/ka
+IDENTITY='^https://github\.com/(KanArtist|JumpKickOSS)/ka/\.github/workflows/release\.yml@refs/tags/v'
 ISSUER=https://token.actions.githubusercontent.com
 
 say() { printf '%s\n' "$*" >&2; }
@@ -54,7 +54,7 @@ prepare_dir() {
 	[ -w "$dir" ] || die "cannot write to $dir (set KA_INSTALL_DIR, or run as root)"
 }
 
-# go_install REF builds github.com/JumpKickOSS/ka/cmd/ka@REF into $dir.
+# go_install REF builds github.com/KanArtist/ka/cmd/ka@REF into $dir.
 go_install() {
 	have_go || die "$1"
 	prepare_dir
@@ -90,7 +90,7 @@ arch=''
 case "$(uname -s)" in
 Linux) os=linux ;;
 Darwin) os=darwin ;;
-MINGW* | MSYS* | CYGWIN*) die "on Windows, run install.ps1 in PowerShell (or: scoop install jumpkick/ka, winget install JumpKick.ka)" ;;
+MINGW* | MSYS* | CYGWIN*) die "on Windows, run install.ps1 in PowerShell (or: scoop install kanartist/ka, winget install KanArtist.ka)" ;;
 esac
 case "$(uname -m)" in
 x86_64 | amd64) arch=amd64 ;;

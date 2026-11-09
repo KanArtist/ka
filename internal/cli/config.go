@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/JumpKickOSS/ka/internal/render"
+	"github.com/KanArtist/ka/internal/render"
 )
 
 func cmdConfig(ctx context.Context, x *IO, args []string) int {

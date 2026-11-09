@@ -5,9 +5,9 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/JumpKickOSS/ka/internal/engine"
-	"github.com/JumpKickOSS/ka/internal/mcpserver"
-	"github.com/JumpKickOSS/ka/internal/render"
+	"github.com/KanArtist/ka/internal/engine"
+	"github.com/KanArtist/ka/internal/mcpserver"
+	"github.com/KanArtist/ka/internal/render"
 )
 
 // TestRealStoreNextBudget renders ka_next for every ready ticket of a real

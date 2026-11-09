@@ -18,11 +18,11 @@ A release contains:
   `actions/check` action uses it).
 - `checksums.txt`, signed keylessly with cosign (a Sigstore bundle, `checksums.txt.sigstore.json`), and
   an SPDX SBOM per archive. Verify with:
-  `cosign verify-blob --bundle checksums.txt.sigstore.json --certificate-identity-regexp 'github.com/JumpKickOSS/ka' --certificate-oidc-issuer https://token.actions.githubusercontent.com checksums.txt`
+  `cosign verify-blob --bundle checksums.txt.sigstore.json --certificate-identity-regexp 'github.com/KanArtist/ka' --certificate-oidc-issuer https://token.actions.githubusercontent.com checksums.txt`
 - `.deb` and `.rpm` packages (depending on `git`).
-- `ghcr.io/jumpkickoss/ka:<version>` (and `latest`) for linux/amd64 and arm64, signed with cosign.
-- Homebrew cask (`JumpKickOSS/homebrew-tap`), Scoop manifest (`JumpKickOSS/scoop-bucket`) and a
-  winget pull request (from `JumpKickOSS/winget-pkgs` to `microsoft/winget-pkgs`).
+- `ghcr.io/kanartist/ka:<version>` (and `latest`) for linux/amd64 and arm64, signed with cosign.
+- Homebrew cask (`KanArtist/homebrew-tap`), Scoop manifest (`KanArtist/scoop-bucket`) and a
+  winget pull request (from `KanArtist/winget-pkgs` to `microsoft/winget-pkgs`).
 
 ## Package-manager credentials
 
@@ -30,24 +30,24 @@ Each package manager is skipped when its secret is unset, and for prereleases.
 
 | Secret | What it is | Repository |
 |---|---|---|
-| `TAP_SSH_KEY` | Private half of a write deploy key ("goreleaser") | `JumpKickOSS/homebrew-tap` |
-| `SCOOP_SSH_KEY` | Private half of a write deploy key ("goreleaser") | `JumpKickOSS/scoop-bucket` |
-| `WINGET_GITHUB_TOKEN` | A classic token with the `public_repo` scope | `JumpKickOSS/winget-pkgs` (a fork of `microsoft/winget-pkgs`) |
+| `TAP_SSH_KEY` | Private half of a write deploy key ("goreleaser") | `KanArtist/homebrew-tap` |
+| `SCOOP_SSH_KEY` | Private half of a write deploy key ("goreleaser") | `KanArtist/scoop-bucket` |
+| `WINGET_GITHUB_TOKEN` | A classic token with the `public_repo` scope | `KanArtist/winget-pkgs` (a fork of `microsoft/winget-pkgs`) |
 
 Deploy keys can push to one repository only, so a leaked key cannot touch anything else. To
 rotate one:
 
 ```bash
 ssh-keygen -t ed25519 -N "" -C goreleaser -f key
-gh repo deploy-key add key.pub -R JumpKickOSS/homebrew-tap --allow-write -t goreleaser
-gh secret set TAP_SSH_KEY -R JumpKickOSS/ka < key && rm key key.pub
+gh repo deploy-key add key.pub -R KanArtist/homebrew-tap --allow-write -t goreleaser
+gh secret set TAP_SSH_KEY -R KanArtist/ka < key && rm key key.pub
 ```
 
 The winget token has to be a classic token (Settings → Developer settings → Personal access
 tokens → Tokens (classic), scope `public_repo` only): it pushes a branch to the fork and opens a
 pull request on `microsoft/winget-pkgs`, and fine-grained tokens cannot open pull requests on
-public repositories outside their owner. Then `gh secret set WINGET_GITHUB_TOKEN -R JumpKickOSS/ka`.
+public repositories outside their owner. Then `gh secret set WINGET_GITHUB_TOKEN -R KanArtist/ka`.
 A new package's first winget pull request
 is reviewed by the winget maintainers before it merges.
 
-`go install github.com/JumpKickOSS/ka/cmd/ka@v1.0.0` also works and reports the tag as its version.
+`go install github.com/KanArtist/ka/cmd/ka@v1.0.0` also works and reports the tag as its version.

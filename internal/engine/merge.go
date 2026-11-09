@@ -9,8 +9,8 @@ import (
 	"slices"
 	"time"
 
-	"github.com/JumpKickOSS/ka/internal/gitx"
-	"github.com/JumpKickOSS/ka/pkg/kaspec"
+	"github.com/KanArtist/ka/internal/gitx"
+	"github.com/KanArtist/ka/pkg/kaspec"
 )
 
 // MergeTickets merges two versions of a ticket.md against their common

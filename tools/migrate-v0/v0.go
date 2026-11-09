@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/JumpKickOSS/ka/pkg/kaspec"
+	"github.com/KanArtist/ka/pkg/kaspec"
 )
 
 // ---- corpus rules ------------------------------------------------------------

@@ -9,9 +9,9 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/JumpKickOSS/ka/internal/api"
-	"github.com/JumpKickOSS/ka/internal/engine"
-	"github.com/JumpKickOSS/ka/internal/mcpserver"
+	"github.com/KanArtist/ka/internal/api"
+	"github.com/KanArtist/ka/internal/engine"
+	"github.com/KanArtist/ka/internal/mcpserver"
 )
 
 var ctx = context.Background()

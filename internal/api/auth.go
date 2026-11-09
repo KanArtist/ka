@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/JumpKickOSS/ka/internal/engine"
+	"github.com/KanArtist/ka/internal/engine"
 )
 
 // Remote mode (PRD §15): a daemon on a non-loopback address authenticates

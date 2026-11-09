@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/JumpKickOSS/ka/pkg/kaspec"
+	"github.com/KanArtist/ka/pkg/kaspec"
 )
 
 // Output formats for ka check (PRD §16: GitHub annotations, SARIF or JSON).
@@ -141,7 +141,7 @@ func sarifLevel(s kaspec.Severity) string {
 
 func writeSARIF(w io.Writer, ws *kaspec.Workspace, diags []kaspec.Diagnostic, base, version string) error {
 	run := sarifRun{Tool: sarifTool{Driver: sarifDriver{Name: "ka", Version: version,
-		InformationURI: "https://github.com/JumpKickOSS/ka/blob/main/spec/v1/README.md", Rules: []sarifRule{}}}, Results: []sarifResult{}}
+		InformationURI: "https://github.com/KanArtist/ka/blob/main/spec/v1/README.md", Rules: []sarifRule{}}}, Results: []sarifResult{}}
 	seen := map[string]bool{}
 	for _, d := range diags {
 		if !seen[d.Code] {

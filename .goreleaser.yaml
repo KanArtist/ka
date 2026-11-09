@@ -52,8 +52,8 @@ nfpms:
     # No version in the name, so releases/latest/download/ka_linux_amd64.deb
     # (and .rpm) always works, like the archives.
     file_name_template: "ka_{{ .Os }}_{{ .Arch }}"
-    vendor: JumpKick
-    homepage: https://github.com/JumpKickOSS/ka
+    vendor: KanArtist
+    homepage: https://github.com/KanArtist/ka
     maintainer: Bryan Sant <BryanSant@users.noreply.github.com>
     description: KanArtist, a git-native work tracker for AI agents and the humans who watch them.
     license: Apache-2.0
@@ -65,7 +65,7 @@ dockers_v2:
   - id: ka
     dockerfile: Dockerfile.release
     images:
-      - ghcr.io/jumpkickoss/ka
+      - ghcr.io/kanartist/ka
     tags:
       - "{{ .Version }}"
       - "{{ if not .Prerelease }}latest{{ end }}"
@@ -73,7 +73,7 @@ dockers_v2:
       - linux/amd64
       - linux/arm64
     labels:
-      org.opencontainers.image.source: https://github.com/JumpKickOSS/ka
+      org.opencontainers.image.source: https://github.com/KanArtist/ka
       org.opencontainers.image.version: "{{ .Version }}"
       org.opencontainers.image.licenses: Apache-2.0
 
@@ -89,14 +89,14 @@ docker_signs:
 homebrew_casks:
   - name: ka
     repository:
-      owner: JumpKickOSS
+      owner: KanArtist
       name: homebrew-tap
       git:
-        url: git@github.com:JumpKickOSS/homebrew-tap.git
+        url: git@github.com:KanArtist/homebrew-tap.git
         private_key: "{{ .Env.TAP_SSH_KEY }}"
     skip_upload: '{{ if or .Prerelease (not (isEnvSet "TAP_SSH_KEY")) }}true{{ else }}false{{ end }}'
     directory: Casks
-    homepage: https://github.com/JumpKickOSS/ka
+    homepage: https://github.com/KanArtist/ka
     description: Git-native work tracker for AI agents and the humans who watch them
     binaries: [ka]
     # The binary is not notarized; clear the quarantine flag so macOS runs it.
@@ -110,26 +110,26 @@ homebrew_casks:
 scoops:
   - name: ka
     repository:
-      owner: JumpKickOSS
+      owner: KanArtist
       name: scoop-bucket
       git:
-        url: git@github.com:JumpKickOSS/scoop-bucket.git
+        url: git@github.com:KanArtist/scoop-bucket.git
         private_key: "{{ .Env.SCOOP_SSH_KEY }}"
     skip_upload: '{{ if or .Prerelease (not (isEnvSet "SCOOP_SSH_KEY")) }}true{{ else }}false{{ end }}'
-    homepage: https://github.com/JumpKickOSS/ka
+    homepage: https://github.com/KanArtist/ka
     description: Git-native work tracker for AI agents and the humans who watch them
     license: Apache-2.0
     depends: [git]
 
 winget:
   - name: ka
-    publisher: JumpKick
+    publisher: KanArtist
     short_description: Git-native work tracker for AI agents and the humans who watch them
     license: Apache-2.0
-    homepage: https://github.com/JumpKickOSS/ka
-    package_identifier: JumpKick.ka
+    homepage: https://github.com/KanArtist/ka
+    package_identifier: KanArtist.ka
     repository:
-      owner: JumpKickOSS
+      owner: KanArtist
       name: winget-pkgs
       branch: "ka-{{ .Version }}"
       token: "{{ .Env.WINGET_GITHUB_TOKEN }}"
@@ -143,7 +143,7 @@ winget:
 
 release:
   github:
-    owner: JumpKickOSS
+    owner: KanArtist
     name: ka
   draft: false
   prerelease: auto

@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/JumpKickOSS/ka/internal/gitx"
-	"github.com/JumpKickOSS/ka/pkg/kaspec"
+	"github.com/KanArtist/ka/internal/gitx"
+	"github.com/KanArtist/ka/pkg/kaspec"
 )
 
 // MergeDriverCommand is the command registered as git's merge.ka.driver,

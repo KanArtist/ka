@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/JumpKickOSS/ka/pkg/kaspec"
+	"github.com/KanArtist/ka/pkg/kaspec"
 )
 
 // Runtime sync behavior (PRD §9.3 class 3, §10.1): how a store pushes and

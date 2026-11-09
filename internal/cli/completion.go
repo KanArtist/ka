@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/JumpKickOSS/ka/internal/engine"
+	"github.com/KanArtist/ka/internal/engine"
 )
 
 // Shell completion (PRD §14: ka completion <shell>). The scripts call the

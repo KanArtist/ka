@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/JumpKickOSS/ka/pkg/kaspec"
+	"github.com/KanArtist/ka/pkg/kaspec"
 )
 
 // NextIn is ka_next's input.

@@ -39,15 +39,15 @@ runs:
         os=$(echo "$RUNNER_OS" | tr '[:upper:]' '[:lower:]'); [ "$os" = macos ] && os=darwin
         arch=$(echo "$RUNNER_ARCH" | tr '[:upper:]' '[:lower:]'); [ "$arch" = x64 ] && arch=amd64
         ext=tar.gz; [ "$os" = windows ] && ext=zip
-        if [ "$KA_VERSION" = latest ]; then base=https://github.com/JumpKickOSS/ka/releases/latest/download
-        else base=https://github.com/JumpKickOSS/ka/releases/download/$KA_VERSION; fi
+        if [ "$KA_VERSION" = latest ]; then base=https://github.com/KanArtist/ka/releases/latest/download
+        else base=https://github.com/KanArtist/ka/releases/download/$KA_VERSION; fi
         dir="$RUNNER_TEMP/ka-bin"; mkdir -p "$dir"
         if curl -fsSL "$base/ka_${os}_${arch}.$ext" -o "$RUNNER_TEMP/ka.$ext"; then
           if [ "$ext" = zip ]; then unzip -q -o "$RUNNER_TEMP/ka.$ext" -d "$dir"; else tar -xzf "$RUNNER_TEMP/ka.$ext" -C "$dir"; fi
         elif command -v go >/dev/null; then
           echo "No ka release asset for $os/$arch at $base; building it with go install."
           v=$KA_VERSION; [ "$v" = latest ] && v=main
-          GOBIN="$dir" go install "github.com/JumpKickOSS/ka/cmd/ka@$v"
+          GOBIN="$dir" go install "github.com/KanArtist/ka/cmd/ka@$v"
         else
           echo "::error::No ka release for $os/$arch, and Go is not installed to build it (add actions/setup-go before this step)."
           exit 1

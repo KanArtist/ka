@@ -1,6 +1,6 @@
 # Install ka from a GitHub release on Windows.
 #
-#   irm https://raw.githubusercontent.com/JumpKickOSS/ka/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/KanArtist/ka/main/install.ps1 | iex
 #
 # Environment:
 #   KA_VERSION      a release to install, e.g. 1.0.3 (default: the latest), or
@@ -24,8 +24,8 @@ $ProgressPreference = 'SilentlyContinue'
 # Windows PowerShell 5.1 may default to TLS 1.0, which GitHub refuses.
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
-$Repo = 'JumpKickOSS/ka'
-$Identity = '^https://github\.com/JumpKickOSS/ka/\.github/workflows/release\.yml@refs/tags/v'
+$Repo = 'KanArtist/ka'
+$Identity = '^https://github\.com/(KanArtist|JumpKickOSS)/ka/\.github/workflows/release\.yml@refs/tags/v'
 $Issuer = 'https://token.actions.githubusercontent.com'
 
 function Say([string]$msg) { [Console]::Error.WriteLine($msg) }
@@ -52,7 +52,7 @@ function Have-Go { [bool](Get-Command go -ErrorAction SilentlyContinue) }
 
 function Prepare-Dir { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
 
-# Go-Install builds github.com/JumpKickOSS/ka/cmd/ka@REF into $dir.
+# Go-Install builds github.com/KanArtist/ka/cmd/ka@REF into $dir.
 function Go-Install([string]$why, [string]$ref) {
     if (-not (Have-Go)) { Die $why }
     Prepare-Dir

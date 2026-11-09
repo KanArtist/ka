@@ -4,7 +4,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/JumpKickOSS/ka/pkg/kaspec"
+	"github.com/KanArtist/ka/pkg/kaspec"
 )
 
 // ConfigEntry is one effective config value and where it came from

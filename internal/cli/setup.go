@@ -9,11 +9,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	karepo "github.com/JumpKickOSS/ka"
-	"github.com/JumpKickOSS/ka/internal/engine"
-	"github.com/JumpKickOSS/ka/internal/gitx"
-	"github.com/JumpKickOSS/ka/internal/setup"
-	"github.com/JumpKickOSS/ka/internal/uisrc"
+	karepo "github.com/KanArtist/ka"
+	"github.com/KanArtist/ka/internal/engine"
+	"github.com/KanArtist/ka/internal/gitx"
+	"github.com/KanArtist/ka/internal/setup"
+	"github.com/KanArtist/ka/internal/uisrc"
 )
 
 // cmdSetup gets this machine ready: git, the web UI's source, and ka's MCP
@@ -66,7 +66,7 @@ func cmdSetup(ctx context.Context, x *IO, args []string) int {
 			}
 		}
 	} else if *checkout != "" {
-		add("ui", "web UI", "failed", *checkout+" is not a checkout of github.com/JumpKickOSS/ka")
+		add("ui", "web UI", "failed", *checkout+" is not a checkout of github.com/KanArtist/ka")
 	} else {
 		add("ui", "web UI", "ok", "embedded in this binary (run ka setup in a ka checkout to serve its ui/)")
 	}

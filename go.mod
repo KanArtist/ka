@@ -1,4 +1,4 @@
-module github.com/JumpKickOSS/ka
+module github.com/KanArtist/ka
 
 go 1.27.3
 

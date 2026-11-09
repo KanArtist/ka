@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/JumpKickOSS/ka/internal/engine"
+	"github.com/KanArtist/ka/internal/engine"
 )
 
 // IdleTimeout drops a session that made no call for this long (a client

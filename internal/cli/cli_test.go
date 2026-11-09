@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JumpKickOSS/ka/internal/testkit"
+	"github.com/KanArtist/ka/internal/testkit"
 )
 
 type res struct {

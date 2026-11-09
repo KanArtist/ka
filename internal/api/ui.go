@@ -14,7 +14,7 @@ import (
 	"strings"
 	"sync"
 
-	ka "github.com/JumpKickOSS/ka"
+	ka "github.com/KanArtist/ka"
 )
 
 // EmbeddedUI is the web UI built into the binary (ui/ at the repository

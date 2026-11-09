@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/JumpKickOSS/ka/internal/api"
+	"github.com/KanArtist/ka/internal/api"
 )
 
 // ka watch (PRD §14): the activity stream in the terminal. It reads the

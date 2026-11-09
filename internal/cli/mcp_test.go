@@ -11,10 +11,10 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/JumpKickOSS/ka/internal/api"
-	"github.com/JumpKickOSS/ka/internal/engine"
-	"github.com/JumpKickOSS/ka/internal/mcpserver"
-	"github.com/JumpKickOSS/ka/internal/testkit"
+	"github.com/KanArtist/ka/internal/api"
+	"github.com/KanArtist/ka/internal/engine"
+	"github.com/KanArtist/ka/internal/mcpserver"
+	"github.com/KanArtist/ka/internal/testkit"
 )
 
 // With a daemon running for the workspace, `ka mcp` proxies to it: writes
