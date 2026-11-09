@@ -121,7 +121,7 @@ func cmdSetup(ctx context.Context, x *IO, args []string) int {
 			fmt.Fprintln(x.Out, "\nRestart running agent sessions to load the ka MCP server and skill.")
 		}
 		if stores == 0 {
-			fmt.Fprintln(x.Out, "\nNo ticket stores yet. Add the repositories that hold your tickets:\n  ka store add git@github.com:ORG/REPO.git\nor start a new one: ka init --project KEY DIR")
+			fmt.Fprintln(x.Out, "\nNo ticket stores yet. Add the repositories that hold your tickets:\n  ka store add git@github.com:ORG/REPO.git\nor start a new one: ka init --project tickets DIR")
 		} else {
 			fmt.Fprintf(x.Out, "\n%d ticket store(s) in your workspace. `ka open` shows the board.\n", stores)
 		}

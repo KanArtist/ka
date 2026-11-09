@@ -53,7 +53,7 @@ don't work around it. Every step is safe to repeat.
 
    and finish with `ka workspace` (clones them) and `ka doctor --fix`
    (registers ka's git merge driver; it should report no failures). If they
-   have none yet, offer to create one: `ka init --project <KEY> <dir>`,
+   have none yet, offer to create one: `ka init --project <key> <dir>` (a short lower-case key, such as `tickets`),
    then push it to a new repository and `ka store add` its URL.
 
 5. **Hand over.** Tell the user what `ka setup` configured, that agent
