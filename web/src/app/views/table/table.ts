@@ -133,6 +133,7 @@ export class Table {
   });
 
   constructor() {
+    this.actions.showsProject(() => this.query.project());
     // Closed groups start collapsed the first time.
     if (!this.saved.collapsed) this.collapsed.set(new Set(['status:done', 'status:canceled']));
     effect(() => {

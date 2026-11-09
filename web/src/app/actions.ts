@@ -1,4 +1,4 @@
-import { Injectable, inject, signal } from '@angular/core';
+import { DestroyRef, Injectable, effect, inject, signal } from '@angular/core';
 import { Api, ApiError, Summary, WriteOut } from './api/api';
 import { Live } from './live';
 import { Toasts } from './ui/toast';
@@ -40,6 +40,28 @@ export class Actions {
   readonly closing = signal<Closing | null>(null);
   /** The create dialog: open with optional defaults. */
   readonly creating = signal<Partial<CreateTicket> | null>(null);
+  /** The project the open view is narrowed to ('' for none): the create dialog's default. */
+  readonly viewProject = signal('');
+  private viewOwner: object | null = null;
+
+  /**
+   * Call from a view's constructor: while the view is open, project() is the
+   * project it shows. Only the view that set it clears it, so the order in
+   * which one view closes and the next opens does not matter.
+   */
+  showsProject(project: () => string): void {
+    const owner = {};
+    effect(() => {
+      const key = project();
+      this.viewOwner = owner;
+      this.viewProject.set(key);
+    });
+    inject(DestroyRef).onDestroy(() => {
+      if (this.viewOwner !== owner) return;
+      this.viewOwner = null;
+      this.viewProject.set('');
+    });
+  }
 
   private path(id: string, rest = ''): string {
     return `/tickets/${encodeURIComponent(id)}${rest}`;

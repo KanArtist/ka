@@ -259,7 +259,15 @@ export class CreateDialog {
       untracked(() => {
         const ps = this.projects();
         const remembered = localStorage.getItem('ka.create.project') ?? '';
-        const key = d.project || (ps.some((p) => p.key === remembered) ? remembered : '') || this.live.schema()?.default_project || ps[0]?.key || '';
+        const writable = (k: string) => (ps.some((p) => p.key === k) ? k : '');
+        // The project asked for, then the one in view, then the last one used.
+        const key =
+          d.project ||
+          writable(this.actions.viewProject()) ||
+          writable(remembered) ||
+          this.live.schema()?.default_project ||
+          ps[0]?.key ||
+          '';
         this.titleText.set(d.title ?? '');
         this.bodyText.set(d.body ?? '');
         this.kind.set(d.kind ?? '');

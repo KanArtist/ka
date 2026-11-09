@@ -233,6 +233,7 @@ export class Board {
     });
     const ws = this.live.workspace();
     untracked(() => this.project.set(ws?.default_project ?? (this.live.schema()?.projects?.length === 1 ? this.live.schema()!.projects![0].key : '')));
+    this.actions.showsProject(() => this.project() || this.query.project());
 
     // A ticket an event touched gets the actor's mark for a few seconds.
     effect(() => {

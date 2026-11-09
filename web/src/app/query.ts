@@ -28,6 +28,12 @@ export class Query {
   /** Whether the query needs the engine (has key:value terms or negations). */
   readonly structured = computed(() => /(^|\s)-?[a-z_][a-z_.]*:/i.test(this.text()));
 
+  /** The one project the query narrows to (project:jk), or ''. */
+  readonly project = computed(() => {
+    const keys = [...this.text().matchAll(/(?:^|\s)project:(\S+)/gi)].map((m) => m[1]);
+    return keys.length === 1 && !keys[0].includes(',') ? keys[0] : '';
+  });
+
   constructor() {
     const read = () => {
       const q = this.router.parseUrl(this.router.url).queryParams['q'];
