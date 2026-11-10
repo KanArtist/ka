@@ -264,3 +264,40 @@ func TestS9PointAHumanAtAnAction(t *testing.T) {
 		t.Fatalf("second approve: %d %s", code, errb.String())
 	}
 }
+
+// An agent edits tickets with ka_update: the title, body and acceptance land,
+// and the result is a JSON object (clients reject array structuredContent).
+// A batch that fails partway reports the applied updates and the error.
+func TestMCPUpdate(t *testing.T) {
+	testkit.GitEnv(t)
+	r := testkit.NewRemote(t, nil)
+	ids := seedTickets(t, testkit.Service(t, r.Clone()),
+		engine.CreateIn{Title: "First", Status: "ready"},
+		engine.CreateIn{Title: "Second", Status: "ready"},
+	)
+	a := connect(t, testkit.Service(t, r.Clone()), "claude-code")
+
+	text, sc := a.ok("ka_update", map[string]any{"updates": []any{map[string]any{
+		"id": ids[0], "set": map[string]any{"title": "Renamed"}, "add": map[string]any{"acceptance": []any{"it works"}}, "body": "new body",
+	}}})
+	results, _ := sc["results"].([]any)
+	if len(results) != 1 || digS(results[0].(map[string]any), "id") != ids[0] {
+		t.Fatalf("results: %v (%s)", sc, text)
+	}
+	if _, ok := sc["error"]; ok {
+		t.Fatalf("unexpected error: %v", sc)
+	}
+	d, err := testkit.Service(t, r.Clone()).Get(engine.GetIn{ID: ids[0]})
+	if err != nil || d.Title != "Renamed" || !strings.Contains(d.Body, "new body") || len(d.AcceptanceAll) != 1 {
+		t.Fatalf("update not published: %+v %v", d, err)
+	}
+
+	text, sc, isErr := a.call("ka_update", map[string]any{"updates": []any{
+		map[string]any{"id": ids[1], "set": map[string]any{"title": "Also renamed"}},
+		map[string]any{"id": ids[0], "set": map[string]any{"priority": "P9"}},
+	}})
+	results, _ = sc["results"].([]any)
+	if isErr || len(results) != 1 || digS(sc, "error", "code") == "" || !strings.Contains(text, "stopped:") {
+		t.Fatalf("partial failure: isErr=%v %v (%s)", isErr, sc, text)
+	}
+}

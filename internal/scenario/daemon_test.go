@@ -11,5 +11,6 @@ func TestScenariosViaDaemon(t *testing.T) {
 	t.Run("S4", TestS4FileFollowUps)
 	t.Run("S8", TestS8CloseTheLoop)
 	t.Run("S9", TestS9PointAHumanAtAnAction)
+	t.Run("Update", TestMCPUpdate)
 	t.Run("TokenBudgets", TestTokenBudgets)
 }

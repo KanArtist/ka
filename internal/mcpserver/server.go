@@ -464,7 +464,13 @@ func (s *Server) addTools() {
 				}
 				lines = append(lines, "stopped: "+render.Error(engine.AsError(err)))
 			}
-			return textResult(strings.Join(lines, "\n"), outs), nil
+			// structuredContent must be a JSON object; clients reject an array.
+			// Same shape as PATCH /api/v1/tickets.
+			res := obj{"results": outs}
+			if err != nil {
+				res["error"] = engine.AsError(err)
+			}
+			return textResult(strings.Join(lines, "\n"), res), nil
 		})
 
 	s.add("ka_claim", "Claim a ticket for yourself (pushed before returning). Fails with claim_lost if someone else holds it.",

@@ -90,8 +90,12 @@ func (a *agentConn) call(name string, args map[string]any) (string, map[string]a
 	}
 	var sc map[string]any
 	if res.StructuredContent != nil {
+		// The MCP spec requires an object; clients such as Claude Code
+		// reject the whole result otherwise.
 		b, _ := json.Marshal(res.StructuredContent)
-		json.Unmarshal(b, &sc)
+		if err := json.Unmarshal(b, &sc); err != nil {
+			a.t.Fatalf("%s: structuredContent is not a JSON object: %s", name, b)
+		}
 	}
 	return text.String(), sc, res.IsError
 }
