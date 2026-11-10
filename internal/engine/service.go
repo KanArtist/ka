@@ -48,6 +48,9 @@ type Service struct {
 
 // New builds the service and its index.
 func New(ctx context.Context, ws *Workspace) (*Service, error) {
+	if err := checkVersions(ws.Stores); err != nil {
+		return nil, err
+	}
 	s := &Service{WS: ws, Now: time.Now, PollStep: 2 * time.Second}
 	s.ix = newIndex(ws.Stores)
 	s.human = s.detectHuman(ctx)
@@ -184,7 +187,7 @@ func (s *Service) rec(id string) (*Rec, error) {
 	r, ok := s.ix.tickets[s.ix.canon(id)]
 	if !ok {
 		e := Errf(CodeNotFound, "check the ID with ka_search", "ticket %s does not exist", id)
-		if _, known := s.ix.projectFor(strings.ToUpper(id)); !known {
+		if _, known := s.ix.projectFor(kaspec.RefID(id)); !known {
 			e.Fix = "IDs look like JK-7QK3M; ka_schema lists project prefixes"
 		}
 		return nil, e
@@ -195,6 +198,7 @@ func (s *Service) rec(id string) (*Rec, error) {
 // Summary is the compact form of a ticket used in lists.
 type Summary struct {
 	ID         string   `json:"id"`
+	Ref        string   `json:"ref"` // ID-slug (spec §4.3): show this one
 	Title      string   `json:"title"`
 	Status     string   `json:"status"`
 	Priority   string   `json:"priority,omitempty"`
@@ -223,7 +227,7 @@ type Claim struct {
 
 func (s *Service) summary(v view, r *Rec) Summary {
 	t := r.T
-	sm := Summary{ID: r.ID, Title: t.Title, Status: t.Status, Priority: t.Priority, Kind: t.Kind, Labels: t.Labels,
+	sm := Summary{ID: r.ID, Ref: r.Ref(), Title: t.Title, Status: t.Status, Priority: t.Priority, Kind: t.Kind, Labels: t.Labels,
 		Assignee: t.Assignee, Parent: t.Parent, Blocked: v.isBlocked(r), Project: r.Project.Key, Updated: t.Updated}
 	if t.Claim != nil {
 		sm.Claim = &Claim{By: t.Claim.By, At: t.Claim.At, Stale: v.stale(r)}
@@ -319,6 +323,7 @@ func (s *Service) Search(in SearchIn) (*SearchOut, error) {
 // Ref is a related ticket, briefly.
 type Ref struct {
 	ID     string `json:"id"`
+	Ref    string `json:"ref,omitempty"` // ID-slug (spec §4.3)
 	Title  string `json:"title,omitempty"`
 	Status string `json:"status,omitempty"`
 }
@@ -407,9 +412,9 @@ func (s *Service) Get(in GetIn) (*Detail, error) {
 
 func (s *Service) ref(id string) Ref {
 	if r, ok := s.ix.tickets[id]; ok {
-		return Ref{ID: id, Title: r.T.Title, Status: r.T.Status}
+		return r.ref()
 	}
-	return Ref{ID: id}
+	return Ref{ID: id, Ref: id}
 }
 
 func (s *Service) detail(r *Rec, include []string) *Detail {
@@ -552,6 +557,7 @@ func stamp(o *Op, c Caller, at string) *Op {
 // WriteOut is the compact result of a write.
 type WriteOut struct {
 	ID        string   `json:"id"`
+	Ref       string   `json:"ref,omitempty"`
 	Status    string   `json:"status,omitempty"`
 	Pushed    bool     `json:"pushed"`
 	Local     bool     `json:"local_only,omitempty"` // the store has no remote
@@ -565,8 +571,8 @@ type WriteOut struct {
 	PushPending bool `json:"push_pending,omitempty"`
 }
 
-func writeOut(id string, res *Result) *WriteOut {
-	w := &WriteOut{ID: id}
+func (s *Service) writeOut(id string, res *Result) *WriteOut {
+	w := &WriteOut{ID: id, Ref: s.ix.refOf(id)}
 	if res != nil {
 		w.Pushed, w.Local, w.PushError, w.Commit, w.Preserved = res.Pushed, !res.HasRemote, res.PushError, short(res.Commit), res.Preserved
 		w.NoChange = res.Commit == ""
@@ -579,6 +585,7 @@ func writeOut(id string, res *Result) *WriteOut {
 type CreateIn struct {
 	Project    string         `json:"project,omitempty"`
 	Title      string         `json:"title"`
+	Slug       string         `json:"slug,omitempty"`
 	Kind       string         `json:"kind,omitempty"`
 	Priority   string         `json:"priority,omitempty"`
 	Status     string         `json:"status,omitempty"`
@@ -732,10 +739,36 @@ func (s *Service) buildFields(pi *ProjectInfo, in map[string]any) (map[string]ka
 	return out, nil
 }
 
+// normSlug normalizes a slug someone typed and checks the limits (spec §4.3).
+func normSlug(s string) (string, error) {
+	n, err := kaspec.NormalizeSlug(s)
+	if err != nil {
+		return "", Errf(CodeInvalid, kaspec.SlugRule, "slug: %s", err.Error())
+	}
+	return n, nil
+}
+
+// newSlug picks the slug a new ticket stores: the one given, else one
+// derived from the title; none while the project has slugs off (a given
+// slug is still checked, so callers learn the rules either way).
+func newSlug(cfg *kaspec.Config, given, title string) (string, error) {
+	if strings.TrimSpace(given) != "" {
+		n, err := normSlug(given)
+		if err != nil || !cfg.Slugs {
+			return "", err
+		}
+		return n, nil
+	}
+	if cfg.Slugs {
+		return kaspec.DeriveSlug(title), nil
+	}
+	return "", nil
+}
+
 func normalizeIDs(l []string) []string {
 	out := make([]string, 0, len(l))
 	for _, x := range l {
-		if x = strings.ToUpper(strings.TrimSpace(x)); x != "" {
+		if x = kaspec.RefID(x); x != "" {
 			out = append(out, x)
 		}
 	}
@@ -768,7 +801,7 @@ func (s *Service) Create(ctx context.Context, c Caller, ins []CreateIn) (*Create
 			break
 		}
 		touched[pi.Store] = true
-		out.Created = append(out.Created, Ref{ID: o.ID, Title: o.New.Title, Status: o.New.Status})
+		out.Created = append(out.Created, Ref{ID: o.ID, Ref: kaspec.Ref(o.ID, kaspec.DisplaySlug(o.New)), Title: o.New.Title, Status: o.New.Status})
 	}
 	out.Pushed, out.Local = true, true
 	for st := range touched {
@@ -839,10 +872,14 @@ func (s *Service) createOp(c Caller, pi *ProjectInfo, in CreateIn) (*Op, error) 
 			owner = ""
 		}
 	}
+	slug, err := newSlug(pi.Cfg, in.Slug, in.Title)
+	if err != nil {
+		return nil, err
+	}
 	now := s.now()
 	t := &kaspec.Ticket{
-		Title: strings.TrimSpace(in.Title), Status: status, Priority: strings.ToUpper(in.Priority), Kind: in.Kind,
-		Labels: in.Labels, Assignee: in.Assignee, Owner: owner, Parent: strings.ToUpper(in.Parent),
+		Title: strings.TrimSpace(in.Title), Slug: slug, Status: status, Priority: strings.ToUpper(in.Priority), Kind: in.Kind,
+		Labels: in.Labels, Assignee: in.Assignee, Owner: owner, Parent: kaspec.RefID(in.Parent),
 		BlockedBy: normalizeIDs(in.BlockedBy), Related: normalizeIDs(in.Related), Links: in.Links,
 		Fields: fields, Created: now, CreatedBy: c.Actor, Updated: now, Body: composeBody(in),
 	}
@@ -899,7 +936,7 @@ func (s *Service) Update(ctx context.Context, c Caller, ins []UpdateIn) ([]*Writ
 			res, err = s.do(ctx, st, o, false)
 			if err == nil {
 				touched[st] = true
-				outs = append(outs, writeOut(o.ID, res))
+				outs = append(outs, s.writeOut(o.ID, res))
 			}
 		}
 		if err != nil {
@@ -925,7 +962,7 @@ func (s *Service) Update(ctx context.Context, c Caller, ins []UpdateIn) ([]*Writ
 }
 
 func (s *Service) updateOp(c Caller, pi *ProjectInfo, in UpdateIn) (*Op, error) {
-	o := &Op{Op: "update", ID: strings.ToUpper(in.ID), Set: map[string]*string{}, Add: in.Add, Remove: in.Remove, Body: in.Body, IfMatch: in.IfMatch}
+	o := &Op{Op: "update", ID: kaspec.RefID(in.ID), Set: map[string]*string{}, Add: in.Add, Remove: in.Remove, Body: in.Body, IfMatch: in.IfMatch}
 	for k, v := range in.Set {
 		if name, ok := strings.CutPrefix(k, "fields."); ok {
 			if err := s.setField(pi, o, name, v); err != nil {
@@ -954,7 +991,13 @@ func (s *Service) updateOp(c Caller, pi *ProjectInfo, in UpdateIn) (*Op, error) 
 		case "priority":
 			str = strings.ToUpper(str)
 		case "parent", "duplicate_of":
-			str = strings.ToUpper(str)
+			str = kaspec.RefID(str)
+		case "slug":
+			n, err := normSlug(str)
+			if err != nil {
+				return nil, err
+			}
+			str = n
 		}
 		o.Set[k] = &str
 	}
@@ -1026,11 +1069,11 @@ func (s *Service) claimLocked(ctx context.Context, c Caller, id string, steal bo
 	}
 	s.ix.mu.RLock()
 	cur := ""
-	if r, ok := s.ix.tickets[strings.ToUpper(id)]; ok {
+	if r, ok := s.ix.tickets[s.ix.canon(id)]; ok {
 		cur = r.T.Status
 	}
 	s.ix.mu.RUnlock()
-	o := stamp(&Op{Op: "claim", ID: strings.ToUpper(id), Steal: steal, Status: startStatus(pi.Cfg, cur)}, c, s.now())
+	o := stamp(&Op{Op: "claim", ID: kaspec.RefID(id), Steal: steal, Status: startStatus(pi.Cfg, cur)}, c, s.now())
 	// Claims always push synchronously (PRD §10.1), even in manual mode.
 	start := time.Now()
 	res, err := st.Do(ctx, s.hooks(st), o, !s.NoPush)
@@ -1038,7 +1081,7 @@ func (s *Service) claimLocked(ctx context.Context, c Caller, id string, steal bo
 	if err != nil {
 		return nil, err
 	}
-	w := writeOut(o.ID, res)
+	w := s.writeOut(o.ID, res)
 	s.ix.mu.RLock()
 	if r, ok := s.ix.tickets[o.ID]; ok {
 		w.Status = r.T.Status
@@ -1058,19 +1101,19 @@ func (s *Service) Release(ctx context.Context, c Caller, id, status string, forc
 	}
 	if status == "" {
 		s.ix.mu.RLock()
-		if r, ok := s.ix.tickets[strings.ToUpper(id)]; ok && category(pi.Cfg, r.T.Status) == "started" {
+		if r, ok := s.ix.tickets[s.ix.canon(id)]; ok && category(pi.Cfg, r.T.Status) == "started" {
 			status = unstartedStatus(pi.Cfg)
 		}
 		s.ix.mu.RUnlock()
 	} else if _, ok := pi.Cfg.StatusByName(status); !ok {
 		return nil, unknownStatus(pi.Cfg, status)
 	}
-	o := stamp(&Op{Op: "release", ID: strings.ToUpper(id), Status: status, Steal: force}, c, s.now())
+	o := stamp(&Op{Op: "release", ID: kaspec.RefID(id), Status: status, Steal: force}, c, s.now())
 	res, err := s.do(ctx, st, o, true)
 	if err != nil {
 		return nil, err
 	}
-	w := writeOut(o.ID, res)
+	w := s.writeOut(o.ID, res)
 	w.Status = status
 	return w, nil
 }
@@ -1098,7 +1141,7 @@ func (s *Service) Transition(ctx context.Context, c Caller, in TransitionIn) (*W
 		return nil, unknownStatus(pi.Cfg, in.Status)
 	}
 	now := s.now()
-	o := stamp(&Op{Op: "transition", ID: strings.ToUpper(in.ID), Status: in.Status}, c, now)
+	o := stamp(&Op{Op: "transition", ID: kaspec.RefID(in.ID), Status: in.Status}, c, now)
 	if closedCategory(stt.Category) {
 		res := in.Resolution
 		if res == "" {
@@ -1125,7 +1168,7 @@ func (s *Service) Transition(ctx context.Context, c Caller, in TransitionIn) (*W
 	if err != nil {
 		return nil, err
 	}
-	w := writeOut(o.ID, res)
+	w := s.writeOut(o.ID, res)
 	w.Status = in.Status
 	if o.Comment != nil {
 		w.Comment = o.CommentName
@@ -1174,7 +1217,7 @@ func (s *Service) Comment(ctx context.Context, c Caller, in CommentIn) (*WriteOu
 	now := s.now()
 	if typ == "progress" && pi.Cfg.ProgressMinInterval > 0 {
 		s.ix.mu.RLock()
-		r, ok := s.ix.tickets[strings.ToUpper(in.ID)]
+		r, ok := s.ix.tickets[kaspec.RefID(in.ID)]
 		var last string
 		if ok {
 			for _, ce := range r.Comments {
@@ -1186,11 +1229,11 @@ func (s *Service) Comment(ctx context.Context, c Caller, in CommentIn) (*WriteOu
 		s.ix.mu.RUnlock()
 		if lt, err := parseTS(last); err == nil {
 			if wait := pi.Cfg.ProgressMinInterval - s.Now().Sub(lt); wait > 0 {
-				return nil, Errf(CodeThrottled, fmt.Sprintf("fold this into your next progress note (allowed again in %ds)", int(wait.Seconds()+0.999)), "progress notes on %s are limited to one per %s", strings.ToUpper(in.ID), pi.Cfg.ProgressMinInterval).With("retry_after_s", int(wait.Seconds()+0.999))
+				return nil, Errf(CodeThrottled, fmt.Sprintf("fold this into your next progress note (allowed again in %ds)", int(wait.Seconds()+0.999)), "progress notes on %s are limited to one per %s", kaspec.RefID(in.ID), pi.Cfg.ProgressMinInterval).With("retry_after_s", int(wait.Seconds()+0.999))
 			}
 		}
 	}
-	o := stamp(&Op{Op: "comment", ID: strings.ToUpper(in.ID)}, c, now)
+	o := stamp(&Op{Op: "comment", ID: kaspec.RefID(in.ID)}, c, now)
 	o.CommentName = kaspec.CommentFilename(now, kaspec.RandomBase32(4))
 	o.Comment = &kaspec.Comment{Type: typ, Author: c.Actor, OnBehalfOf: c.OnBehalfOf, Session: c.Session, Created: now,
 		Supersedes: in.Supersedes, Retracts: in.Retracts, Body: strings.TrimSpace(in.Body)}
@@ -1198,7 +1241,7 @@ func (s *Service) Comment(ctx context.Context, c Caller, in CommentIn) (*WriteOu
 	if err != nil {
 		return nil, err
 	}
-	w := writeOut(o.ID, res)
+	w := s.writeOut(o.ID, res)
 	w.Comment = o.CommentName
 	return w, nil
 }
@@ -1221,7 +1264,7 @@ func (s *Service) CheckItems(ctx context.Context, c Caller, in CheckIn) (*WriteO
 	if err != nil {
 		return nil, "", err
 	}
-	o := stamp(&Op{Op: "check", ID: strings.ToUpper(in.ID), Check: in.Items}, c, s.now())
+	o := stamp(&Op{Op: "check", ID: kaspec.RefID(in.ID), Check: in.Items}, c, s.now())
 	res, err := s.do(ctx, st, o, true)
 	if err != nil {
 		return nil, "", err
@@ -1232,7 +1275,7 @@ func (s *Service) CheckItems(ctx context.Context, c Caller, in CheckIn) (*WriteO
 		progress = s.summary(s.view(), r).Acceptance
 	}
 	s.ix.mu.RUnlock()
-	return writeOut(o.ID, res), progress, nil
+	return s.writeOut(o.ID, res), progress, nil
 }
 
 // AskIn is ka_ask's input.
@@ -1274,7 +1317,7 @@ func (s *Service) Ask(ctx context.Context, c Caller, in AskIn) (*AskOut, error) 
 		return nil, err
 	}
 	now := s.now()
-	o := stamp(&Op{Op: "comment", ID: strings.ToUpper(in.ID)}, c, now)
+	o := stamp(&Op{Op: "comment", ID: kaspec.RefID(in.ID)}, c, now)
 	o.CommentName = kaspec.CommentFilename(now, kaspec.RandomBase32(4))
 	o.Comment = &kaspec.Comment{Type: "question", Author: c.Actor, OnBehalfOf: c.OnBehalfOf, Session: c.Session, Created: now,
 		To: to, Options: opts, Body: strings.TrimSpace(in.Question)}
@@ -1283,7 +1326,7 @@ func (s *Service) Ask(ctx context.Context, c Caller, in AskIn) (*AskOut, error) 
 	if err != nil {
 		return nil, err
 	}
-	out := &AskOut{WriteOut: *writeOut(o.ID, res), Question: o.CommentName}
+	out := &AskOut{WriteOut: *s.writeOut(o.ID, res), Question: o.CommentName}
 	if in.Wait > 0 {
 		ans, err := s.waitAnswer(ctx, st, o.ID, o.CommentName, in.Wait)
 		if err != nil {
@@ -1387,7 +1430,7 @@ func (s *Service) Answer(ctx context.Context, c Caller, in AnswerIn) (*WriteOut,
 		return nil, err
 	}
 	now := s.now()
-	o := stamp(&Op{Op: "comment", ID: strings.ToUpper(in.ID)}, c, now)
+	o := stamp(&Op{Op: "comment", ID: kaspec.RefID(in.ID)}, c, now)
 	o.CommentName = kaspec.CommentFilename(now, kaspec.RandomBase32(4))
 	cm := &kaspec.Comment{Author: c.Actor, OnBehalfOf: c.OnBehalfOf, Session: c.Session, Created: now, Answers: q.Name, Body: strings.TrimSpace(in.Text)}
 	if in.Approved != nil {
@@ -1409,7 +1452,7 @@ func (s *Service) Answer(ctx context.Context, c Caller, in AnswerIn) (*WriteOut,
 	if err != nil {
 		return nil, err
 	}
-	w := writeOut(o.ID, res)
+	w := s.writeOut(o.ID, res)
 	w.Comment = o.CommentName
 	return w, nil
 }
@@ -1417,6 +1460,7 @@ func (s *Service) Answer(ctx context.Context, c Caller, in AnswerIn) (*WriteOut,
 // InboxItem is one entry in an inbox.
 type InboxItem struct {
 	ID       string     `json:"id"`
+	Ref      string     `json:"ref,omitempty"`
 	Title    string     `json:"title"`
 	Comment  CommentOut `json:"comment"`
 	Question string     `json:"question,omitempty"` // for answers: the question's filename
@@ -1456,11 +1500,11 @@ func (s *Service) Inbox(c Caller, since string) *InboxOut {
 			if k == nil || k.Answers == "" || !mine[k.Answers] || (since != "" && k.Created < since) {
 				continue
 			}
-			out.Answers = append(out.Answers, InboxItem{ID: id, Title: r.T.Title, Comment: recCommentOut(r, ce), Question: k.Answers})
+			out.Answers = append(out.Answers, InboxItem{ID: id, Ref: r.Ref(), Title: r.T.Title, Comment: recCommentOut(r, ce), Question: k.Answers})
 		}
 		for _, q := range openQuestions(r) {
 			if roles[q.Comment.To] || (q.Comment.To == "" && r.T.Owner == c.Actor) {
-				out.Questions = append(out.Questions, InboxItem{ID: id, Title: r.T.Title, Comment: commentOut(q)})
+				out.Questions = append(out.Questions, InboxItem{ID: id, Ref: r.Ref(), Title: r.T.Title, Comment: commentOut(q)})
 			}
 		}
 	}

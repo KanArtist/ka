@@ -13,6 +13,7 @@ import (
 
 	"github.com/KanArtist/ka/internal/api"
 	"github.com/KanArtist/ka/internal/engine"
+	"github.com/KanArtist/ka/pkg/kaspec"
 )
 
 // cmdOpen opens the web UI (PRD §13.3): it starts the workspace's daemon if
@@ -40,7 +41,7 @@ func cmdOpen(ctx context.Context, x *IO, args []string) int {
 	}
 	next := "/"
 	if len(pos) == 1 {
-		next = "/ticket/" + url.PathEscape(strings.ToUpper(pos[0]))
+		next = "/ticket/" + url.PathEscape(kaspec.RefID(pos[0]))
 	}
 	u := rt.URL + "/auth?" + url.Values{"token": {rt.Token}, "next": {next}}.Encode()
 	if *printOnly {

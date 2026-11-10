@@ -119,7 +119,9 @@ func AgentsMD(project, prefix string) string {
 	return fmt.Sprintf(`## Tickets (KanArtist)
 
 Tickets live in this store under `+"`projects/%[1]s/tickets/<ID>/`"+`. Prefer the `+"`ka`"+` MCP tools or CLI
-(`+"`ka next`, `ka show <id>`, `ka move <id> done -m \"…\"`"+`). Without `+"`ka`"+`, follow this protocol:
+(`+"`ka next`, `ka show <id>`, `ka move <id> done -m \"…\"`"+`). Refer to tickets by the reference `+"`ka`"+`
+prints, the ID plus a slug (`+"`%[2]s-7QK3M-compiler-warnings`"+`), in commits, PRs and messages.
+Without `+"`ka`"+`, follow this protocol:
 
 1. **New ticket:** pick 5 random characters from `+"`0123456789ABCDEFGHJKMNPQRSTVWXYZ`"+`, form
    `+"`%[2]s-<SUFFIX>`"+`, and check that `+"`projects/%[1]s/tickets/<ID>/`"+` does not exist. Write

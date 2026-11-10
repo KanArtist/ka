@@ -72,6 +72,8 @@ var Codes = map[string]Severity{
 	// identity and layout
 	"invalid_store":             SevError,
 	"spec_unsupported":          SevError,
+	"ka_outdated":               SevError,
+	"slugs_unguarded":           SevWarning,
 	"project_key_mismatch":      SevError,
 	"project_missing_file":      SevError,
 	"ticket_missing_file":       SevError,

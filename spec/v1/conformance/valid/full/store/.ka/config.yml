@@ -1,3 +1,4 @@
+slugs: true
 fields:
   estimate:
     type: enum

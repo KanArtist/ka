@@ -83,7 +83,7 @@ func TestTokenBudgets(t *testing.T) {
 			text, _ := a.ok("ka_transition", args)
 			return args, text
 		}},
-		{"ka_search returning 20 summaries", 1200, func() (map[string]any, string) {
+		{"ka_search returning 20 summaries", 1300, func() (map[string]any, string) {
 			args := map[string]any{"query": "label:cache", "limit": 20}
 			text, _ := a.ok("ka_search", args)
 			if n := strings.Count(text, "\n") + 1; n < 20 {

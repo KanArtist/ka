@@ -22,7 +22,10 @@ type StoreFile struct {
 	Spec        int
 	Name        string
 	Description string
-	Extends     []Parent
+	// RequiresKa is the oldest ka release that may read or write the store
+	// (spec §5.1), e.g. "1.2.0"; empty means any.
+	RequiresKa string
+	Extends    []Parent
 }
 
 // Repo is a code repository a project's links can point into.
@@ -108,6 +111,7 @@ func ParseStoreFile(p string, data []byte) (*StoreFile, []Diagnostic) {
 		r.diags = append(r.diags, diag("missing_field", p, 1, "", "required field \"name\" is missing"))
 	}
 	sf.Description = r.str("description")
+	sf.RequiresKa = r.strRe("requires_ka", versionRe, "a release version such as 1.2.0")
 	if e := r.get("extends"); e != nil {
 		if e.Kind != SeqNode {
 			r.bad("extends", "", "must be a list of {url, ref}")
@@ -128,8 +132,11 @@ func ParseStoreFile(p string, data []byte) (*StoreFile, []Diagnostic) {
 			}
 		}
 	}
-	r.unknown([]string{"spec", "name", "description", "extends"})
+	r.unknown([]string{"spec", "name", "description", "requires_ka", "extends"})
 	diags = append(diags, r.diags...)
+	if !KaVersionSatisfies(sf.RequiresKa) {
+		diags = append(diags, diag("ka_outdated", p, n.KeyLines["requires_ka"], UpgradeHint, "store %s requires ka %s or newer; this is ka %s", sf.Name, sf.RequiresKa, KaVersion))
+	}
 	if sf.Spec != 0 && sf.Spec != SpecVersion {
 		diags = append(diags, diag("spec_unsupported", p, n.KeyLines["spec"], "upgrade ka, or run `ka migrate`", "store uses spec %d; this implementation supports spec %d", sf.Spec, SpecVersion))
 	}

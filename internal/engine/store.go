@@ -285,6 +285,9 @@ func (s *Store) Do(ctx context.Context, h hooks, o *Op, push bool) (*Result, err
 	if s.ReadOnly {
 		return nil, Errf(CodeReadOnly, "this store is only reachable through extends; add it to your workspace to write to it", "store %s is read-only here", s.Name)
 	}
+	if err := s.checkVersion(); err != nil {
+		return nil, err
+	}
 	unlock, err := s.lock(ctx)
 	if err != nil {
 		return nil, err
@@ -363,6 +366,12 @@ func (s *Store) pushLocked(ctx context.Context, h hooks, res *Result, mine strin
 				mine = ir.MineSHA
 			}
 		}
+		if IsCode(err, CodeKaOutdated) {
+			// The remote now needs a newer ka: keep the commit local,
+			// like an offline push, and say why.
+			res.PushError = AsError(err).Message + "; " + AsError(err).Fix
+			return nil
+		}
 		if err != nil {
 			return err
 		}
@@ -407,6 +416,9 @@ func (s *Store) integrateLocked(ctx context.Context, h hooks, remote, branch, mi
 	res := &integrateResult{MineSHA: mine}
 	if upSHA == "" || upSHA == head {
 		return res, nil
+	}
+	if err := s.checkUpstreamVersion(ctx, up); err != nil {
+		return nil, err
 	}
 	if head == "" {
 		if _, err := s.git.Run(ctx, "reset", "-q", "--keep", up); err != nil {
@@ -780,6 +792,9 @@ func (s *Store) integrateReadOnly(ctx context.Context, h hooks, remote, branch s
 	before := s.git.Head(ctx)
 	if _, err := s.git.Run(ctx, "fetch", "-q", remote, "+refs/heads/"+branch+":refs/remotes/"+remote+"/"+branch); err != nil {
 		return false, nil
+	}
+	if err := s.checkUpstreamVersion(ctx, "refs/remotes/"+remote+"/"+branch); err != nil {
+		return false, err
 	}
 	if _, err := s.git.Run(ctx, "merge", "-q", "--ff-only", "refs/remotes/"+remote+"/"+branch); err != nil {
 		return false, nil

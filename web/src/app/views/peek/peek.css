@@ -20,6 +20,20 @@
 .spacer {
   flex: 1;
 }
+.top .ref {
+  border: 0;
+  padding: 0;
+  background: none;
+  cursor: copy;
+}
+.top .ref .slug {
+  color: var(--faint, var(--muted));
+  opacity: 0.75;
+}
+.top .ref:hover .slug,
+.top .ref:focus-visible .slug {
+  opacity: 1;
+}
 .status {
   display: inline-flex;
   align-items: center;

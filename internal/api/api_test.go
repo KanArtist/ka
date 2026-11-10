@@ -253,7 +253,7 @@ func TestEveryServiceMethodHasAnEndpoint(t *testing.T) {
 		"Search": "listTickets", "Get": "getTicket", "Create": "createTickets", "Update": "updateTickets", "Claim": "claimTicket",
 		"Release": "releaseTicket", "Transition": "transitionTicket", "Comment": "createComment", "CheckItems": "checkAcceptance",
 		"Ask": "askQuestion", "Answer": "answerQuestion", "Inbox": "getInbox", "Next": "next", "Schema": "getSchema",
-		"Sync": "sync", "ResolveLink": "resolveLink", "Validate": "check", "ReplaceTicket": "replaceTicketSource", "Fix": "fix",
+		"Sync": "sync", "ResolveLink": "resolveLink", "Validate": "check", "ReplaceTicket": "replaceTicketSource", "Fix": "fix", "FixWith": "fix",
 		"WorkspaceInfo": "getWorkspace", "Stores": "listStores", "Boards": "listBoards", "Actors": "listActors", "Kick": "gitHook", "Activity": "getActivity", "Commit": "getCommit",
 		"ConfigExplain": "explainConfig", "MoveProject": "moveProject", "RenameProject": "renameProject", "SaveBoard": "saveBoard", "Docs": "listDocs", "RestorePreserved": "restorePreserved", "Doc": "getDoc", "DeleteBoard": "deleteBoard",
 	}

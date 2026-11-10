@@ -2,6 +2,7 @@
 # This is the bottom layer of every project's config chain (spec §6).
 # A copy lives at spec/v1/defaults.yml; a test keeps the two identical.
 id_suffix_length: 5
+slugs: false
 workflow:
   statuses:
     - name: triage

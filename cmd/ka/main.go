@@ -13,6 +13,7 @@ import (
 
 	"github.com/KanArtist/ka/internal/cli"
 	"github.com/KanArtist/ka/internal/engine"
+	"github.com/KanArtist/ka/pkg/kaspec"
 )
 
 // version is set by release builds (-ldflags "-X main.version=1.2.3").
@@ -24,6 +25,7 @@ func main() {
 	if bi, ok := debug.ReadBuildInfo(); ok && strings.HasSuffix(version, "-dev") && strings.HasPrefix(bi.Main.Version, "v") && !strings.HasPrefix(bi.Main.Version, "v0.0.0-") {
 		cli.Version = strings.TrimPrefix(bi.Main.Version, "v")
 	}
+	kaspec.KaVersion = cli.Version
 	if exe, err := os.Executable(); err == nil {
 		if real, err := filepath.EvalSymlinks(exe); err == nil {
 			exe = real

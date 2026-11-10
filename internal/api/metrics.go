@@ -30,7 +30,7 @@ type httpStats struct {
 }
 
 var (
-	idInPath  = regexp.MustCompile(`/[A-Z][A-Z0-9]{0,9}-[0-9A-HJKMNP-TV-Z]{5,8}(/|$)`)
+	idInPath  = regexp.MustCompile(`/[A-Za-z][A-Za-z0-9]{0,9}-[0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{5,8}(?:-[a-z0-9-]*)?(/|$)`)
 	shaInPath = regexp.MustCompile(`/[0-9a-f]{7,64}(/|$)`)
 )
 

@@ -271,10 +271,20 @@ func apply(env applyEnv, o *Op) ([]change, string, error) {
 		}
 		extra = append(extra, change{Path: lt.dir + "/ticket.md", Data: data})
 	}
+	subject = refSubject(o.ID, t, subject)
 	if len(extra) == 0 {
 		return nil, subject, nil
 	}
 	return extra, subject, nil
+}
+
+// refSubject starts a commit subject with the ticket's reference
+// (JK-7QK3M-compiler-warnings: ...) instead of its bare ID (spec §10).
+func refSubject(id string, t *kaspec.Ticket, subject string) string {
+	if rest, ok := strings.CutPrefix(subject, id+":"); ok {
+		return kaspec.Ref(id, kaspec.DisplaySlug(t)) + ":" + rest
+	}
+	return subject
 }
 
 func applyChecks(t *kaspec.Ticket, o *Op) error {
@@ -342,11 +352,11 @@ func applyCreate(env applyEnv, o *Op) ([]change, string, error) {
 	if err := validateTicket(env, cfg, dir, &t, data); err != nil {
 		return nil, "", err
 	}
-	return []change{{Path: dir + "/ticket.md", Data: data}}, fmt.Sprintf("%s: created %q", o.ID, t.Title), nil
+	return []change{{Path: dir + "/ticket.md", Data: data}}, refSubject(o.ID, &t, fmt.Sprintf("%s: created %q", o.ID, t.Title)), nil
 }
 
 // setKeys are the ticket fields ka_update can set as scalars.
-var setKeys = []string{"title", "priority", "kind", "assignee", "owner", "parent", "duplicate_of", "milestone", "due"}
+var setKeys = []string{"title", "slug", "priority", "kind", "assignee", "owner", "parent", "duplicate_of", "milestone", "due"}
 
 // listKeys are the list fields ka_update can add to and remove from.
 var listKeys = []string{"labels", "blocked_by", "related", "links", "acceptance"}
@@ -366,6 +376,11 @@ func applyUpdate(env applyEnv, cfg *kaspec.Config, t *kaspec.Ticket, o *Op) (str
 		switch k {
 		case "title":
 			t.Title = v
+		case "slug":
+			if v != "" && !cfg.Slugs {
+				return "", slugsOff()
+			}
+			t.Slug = v
 		case "priority":
 			t.Priority = v
 		case "kind":
@@ -389,7 +404,7 @@ func applyUpdate(env applyEnv, cfg *kaspec.Config, t *kaspec.Ticket, o *Op) (str
 		}
 		if v == "" {
 			parts = append(parts, "-"+k)
-		} else if k == "title" {
+		} else if k == "title" || k == "slug" {
 			parts = append(parts, "title")
 		} else {
 			parts = append(parts, k+"="+v)
@@ -621,4 +636,9 @@ func lev(a, b string) int {
 		prev = cur
 	}
 	return prev[len(rb)]
+}
+
+func slugsOff() error {
+	return Errf(CodeInvalid, "turn slugs on with `slugs: true` in the project's config, after every client of the store runs ka "+kaspec.SlugsMinKa+" or newer and the store sets requires_ka (spec §4.3)",
+		"this project does not store slugs yet")
 }

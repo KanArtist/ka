@@ -35,13 +35,24 @@ explains any command.
    the resolution and unblocks dependent tickets. If you stop without
    finishing, `ka_release` (`ka release <ID>`) so others can pick it up.
 
+## Referring to tickets
+
+`ka` shows each ticket as its **reference**: the ID plus a short slug, such
+as `JK-7QK3M-compiler-warnings`. Use the reference when you mention a ticket
+in messages, commits, PR descriptions and notes, so readers know what it is
+without looking it up. Any command accepts either the reference or the bare
+ID; the slug part is ignored when looking a ticket up, so an old reference
+still works after the slug changes.
+
 ## Creating and changing tickets
 
 - `ka_schema` (`ka schema`) lists projects, statuses, kinds, labels and custom
   fields. Use those names exactly; don't invent statuses.
-- `ka_create` (`ka new --project <key> -t "Title" --kind feature -m - < body.md`)
+- `ka_create` (`ka new --project <key> -t "Title" --slug short-name --kind feature -m - < body.md`)
   creates tickets; follow-ups found while working belong in new tickets, not
-  in scope creep.
+  in scope creep. Give each a `slug`: 2-4 lower-case words that name the work
+  (at most 24 characters), such as `compiler-warnings`. Without one, `ka`
+  derives it from the title.
 - `ka_update` (`ka edit <ID> --set priority=P1 --add labels=ci`; no flags opens
   an editor) changes fields, labels, blockers and the description. Status
   changes always go through `ka_transition`.

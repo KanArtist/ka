@@ -97,17 +97,17 @@ func (s *Service) commitEvents(st *Store, c gitx.Commit) []Event {
 	defer s.ix.mu.RUnlock()
 	v := view{ix: s.ix, now: s.Now()}
 	var sum *Summary
-	ref := Ref{ID: o.ID}
+	ref := Ref{ID: o.ID, Ref: o.ID}
 	if r := s.ix.tickets[o.ID]; r != nil {
 		x := s.summary(v, r)
 		sum = &x
 		base.Project = r.Project.Key
-		ref.Title, ref.Status = r.T.Title, r.T.Status
+		ref = r.ref()
 	} else if pi, ok := s.ix.projectFor(o.ID); ok {
 		base.Project = pi.Key
 	}
 	if sum == nil {
-		sum = &Summary{ID: o.ID, Project: base.Project}
+		sum = &Summary{ID: o.ID, Ref: o.ID, Project: base.Project}
 		if o.New != nil {
 			sum.Title, sum.Status = o.New.Title, o.New.Status
 		}

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/KanArtist/ka/pkg/kaspec"
 )
 
 // Domain events (PRD §8.1, §12.2). The index diffs every ticket it reloads,
@@ -181,7 +183,7 @@ func (s *Service) diffEvents(v view, at, actor string, old, nw *Rec) []Event {
 	for _, c := range old.Comments {
 		seen[c.Name] = true
 	}
-	ref := Ref{ID: nw.ID, Title: nw.T.Title, Status: nw.T.Status}
+	ref := nw.ref()
 	for _, c := range nw.Comments {
 		if seen[c.Name] || c.Comment == nil {
 			continue
@@ -330,7 +332,7 @@ func ParseEventFilter(types, projects, tickets string) EventFilter {
 	}
 	f := EventFilter{Types: split(types), Projects: split(projects), Tickets: split(tickets)}
 	for i, t := range f.Tickets {
-		f.Tickets[i] = strings.ToUpper(t)
+		f.Tickets[i] = kaspec.RefID(t)
 	}
 	return f
 }

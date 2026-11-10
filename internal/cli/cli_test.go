@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/KanArtist/ka/internal/testkit"
+	"github.com/KanArtist/ka/pkg/kaspec"
 )
 
 type res struct {
@@ -38,20 +39,23 @@ func TestCLIWorkflow(t *testing.T) {
 
 	r := ka(t, dir, "new", "-t", "Fix the flaky cache test", "--kind", "bug", "--priority", "P1", "--status", "ready", "--accept", "passes 100 runs", "--json")
 	var created struct {
-		Created []struct{ ID string }
+		Created []struct{ ID, Ref string }
 	}
 	if r.code != 0 || json.Unmarshal([]byte(r.out), &created) != nil || len(created.Created) != 1 {
 		t.Fatalf("new: %+v", r)
 	}
-	id := created.Created[0].ID
+	id, ref := created.Created[0].ID, created.Created[0].Ref
+	if ref != id+"-fix-flaky-cache" {
+		t.Fatalf("ref %q, want %s-fix-flaky-cache", ref, id)
+	}
 
-	if r := ka(t, dir, "ls", "kind:bug"); r.code != 0 || !strings.Contains(r.out, id+" P1 bug ready") {
+	if r := ka(t, dir, "ls", "kind:bug"); r.code != 0 || !strings.Contains(r.out, ref+" P1 bug ready") {
 		t.Fatalf("ls: %+v", r)
 	}
 	if r := ka(t, dir, "next", "--claim", "--as", "agent/claude"); r.code != 0 || !strings.Contains(r.out, "claimed") {
 		t.Fatalf("next: %+v", r)
 	}
-	if r := ka(t, dir, "edit", id, "--set", "priority=P0", "--add", "labels=cache"); r.code != 0 || !strings.Contains(r.out, id+" updated") {
+	if r := ka(t, dir, "edit", id, "--set", "priority=P0", "--add", "labels=cache"); r.code != 0 || !strings.Contains(r.out, ref+" updated") {
 		t.Fatalf("edit: %+v", r)
 	}
 	if r := ka(t, dir, "check-item", id, "0", "--as", "agent/claude"); r.code != 0 || !strings.Contains(r.out, "acceptance 1/1") {
@@ -260,7 +264,7 @@ func TestCompletion(t *testing.T) {
 	testkit.Git(t, dir, "add", "-A")
 	testkit.Git(t, dir, "commit", "-qm", "init")
 	r := ka(t, dir, "new", "-t", "Complete me", "--no-push")
-	id := strings.Fields(r.out)[0]
+	id := kaspec.RefID(strings.Fields(r.out)[0])
 	for _, c := range []struct {
 		args []string
 		want string

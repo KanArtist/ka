@@ -236,7 +236,7 @@ func (s *Service) Sync(ctx context.Context, force bool) *SyncOut {
 				co := commentOut(ce)
 				_, perr := preservedOp(co.Body)
 				co.Body = clip(co.Body, 200)
-				out.Conflicts = append(out.Conflicts, InboxItem{ID: id, Title: r.T.Title, Comment: co, Restorable: perr == nil})
+				out.Conflicts = append(out.Conflicts, InboxItem{ID: id, Ref: r.Ref(), Title: r.T.Title, Comment: co, Restorable: perr == nil})
 			}
 		}
 	}
@@ -379,7 +379,7 @@ func (s *Service) ReplaceTicket(ctx context.Context, c Caller, id string, data [
 			res = r2
 		}
 	}
-	return writeOut(old.ID, res), nil
+	return s.writeOut(old.ID, res), nil
 }
 
 // diffOp expresses the difference between two versions of a ticket as an

@@ -177,6 +177,7 @@ Frontmatter keys, in canonical order. **R** marks required fields. Unknown keys 
 |---|---|---|
 | `id` **R** | ID | Equals the directory name and uses the project prefix. |
 | `title` **R** | string | One line, at most 300 characters. |
+| `slug` | slug | A short name shown after the ID (§4.3). |
 | `status` **R** | status name | A status in the project's workflow (§6.6). |
 | `priority` | `P0` \| `P1` \| `P2` \| `P3` | Fixed vocabulary, P0 highest. Absent means none. |
 | `kind` | kind name | One of the project's `kinds`. |
@@ -206,7 +207,29 @@ Value formats:
   `role/<name>` (same name pattern).
 - **Status, kind and milestone names:** `^[a-z][a-z0-9_-]{0,63}$`.
 
-### 4.3 Body
+### 4.3 Slugs and references
+
+A slug is a short, human-readable name for a ticket: 1 to 4 lower-case words of ASCII letters and
+digits joined by single hyphens, at most 24 characters (`^[a-z0-9]+(-[a-z0-9]+){0,3}$`). It is
+optional and is not part of the ID.
+
+A ticket's **reference** is its ID followed by `-` and its slug: `JK-7QK3M-compiler-warnings`.
+Tools SHOULD show the reference wherever they show a ticket, so that a list of IDs carries some
+meaning. When a ticket has no stored slug, a tool MAY show one derived from the title; such a slug
+is never written.
+
+- Anywhere a tool accepts a ticket ID from a person or agent, it SHOULD accept a reference as well,
+  and it MUST resolve it by the ID alone: the slug part is ignored, so a reference with an old slug
+  still names the ticket. The ID ends where its suffix ends, because suffixes never contain `-` and
+  slugs are lower case.
+- Relations (§8.1) store bare IDs, never references.
+- A slug MAY be changed; references written before still resolve. Changing the title does not change
+  the slug.
+- Writers store a slug on new tickets only when the project's config sets `slugs: true` (§6.6). A
+  store whose tickets have slugs SHOULD set `requires_ka` (§5.1) to at least `1.2.0`, because older
+  `ka` releases reject the key (`slugs_unguarded` otherwise).
+
+### 4.4 Body
 
 The body is free Markdown describing the work. The project's `template.sections` (default:
 Problem, Approach, Non-goals, Notes) are recommended headings, not required ones. Acceptance
@@ -234,6 +257,7 @@ extends:
 | `spec` **R** | integer | The major spec version. This document is `1`. |
 | `name` **R** | string | `^[a-z0-9][a-z0-9._-]{0,63}$`. |
 | `description` | string | |
+| `requires_ka` | version | The oldest `ka` release that may read or write this store, as `MAJOR.MINOR.PATCH` (e.g. `1.2.0`). A tool that implements an older release's behavior MUST NOT read or write the store, and reports `ka_outdated` with how to upgrade (§12). |
 | `extends` | list | Parent stores, in order. Each item has `url` (**R**: any git URL, or a path relative to this store's root such as `../org`) and `ref` (a branch, tag or commit; default: the parent's default branch). |
 
 ### 5.2 `projects/<key>/project.yml`
@@ -367,6 +391,7 @@ copy of the missing parent's config. Checkers report an unresolvable parent as
 | Key | Type | Default | Notes |
 |---|---|---|---|
 | `id_suffix_length` | integer 5–8 | 5 | Length of new ID suffixes. Existing IDs keep theirs. |
+| `slugs` | boolean | false | Store a slug on new tickets (§4.3). Readers accept slugs either way. |
 | `workflow.statuses` | list of `{name, category, blocked?, description?}` | §6.2 | Status names are free; categories are fixed: `triage`, `backlog`, `unstarted`, `started`, `completed`, `canceled`. |
 | `workflow.initial` | status | `backlog` | Status of new tickets. |
 | `workflow.agent_created_initial` | status | (none) | Status of tickets agents create, e.g. `triage`. |
@@ -470,11 +495,13 @@ implementations.
 | `unknown_label` | error | Label outside a closed label set. |
 | `unknown_field` | error | Custom field not declared in config. |
 | `invalid_field_value` | error | Custom field value does not match its type. |
-| `placeholder_text` | warning | Template residue in a body (§4.3). |
+| `placeholder_text` | warning | Template residue in a body (§4.4). |
 | `low_entropy_id` | warning | ID suffix does not look random (§4.1). |
 | `unknown_repo` | warning | A symbolic link names an undeclared repo. |
 | `invalid_store` | error | `.ka/store.yml` is missing. |
 | `spec_unsupported` | error | The store uses a spec version the tool does not support. |
+| `ka_outdated` | error | The store's `requires_ka` names a newer `ka` release than the tool implements. |
+| `slugs_unguarded` | warning | Tickets have slugs, or config sets `slugs: true`, but `requires_ka` is below 1.2.0. |
 | `project_key_mismatch` | error | `project.yml` `key` differs from the directory name. |
 | `project_missing_file` | error | A project directory has no `project.yml`. |
 | `ticket_missing_file` | error | A ticket directory has no `ticket.md`. |
@@ -507,7 +534,8 @@ implementations.
 This section is informative in version 1; `ka` follows it and the activity feed reads it.
 
 - One logical change per commit, on a linear history (rebase, never merge).
-- The subject reads like an activity feed: `JK-7QK3M: in_progress → review`.
+- The subject reads like an activity feed: `JK-7QK3M-compiler-warnings: in_progress → review`,
+  starting with the ticket's reference (§4.3).
 - Structured trailers describe the change: `Ka-Op` (the operation, replayable during rebase),
   `Ka-Actor`, `Ka-On-Behalf-Of`, `Ka-Session`, `Ka-Spec`. Trailers are hints: readers derive what
   changed from the diff and use trailers only to enrich it.
@@ -553,3 +581,9 @@ ignore (new optional keys in new files, new diagnostic codes, new reserved direc
 change it. A change that would make existing valid data invalid, or valid data mean something
 different, increments it, and `ka migrate` upgrades a store in one commit. A tool MUST NOT write to
 a store whose spec version it does not support.
+
+Some additions within a version are new keys in existing files, which older readers reject as
+`unknown_key` (ticket slugs, §4.3, are one). A store that uses such an addition sets `requires_ka`
+(§5.1) to the first `ka` release that supports it, so an older client stops with an explanation
+instead of failing on individual files. Raise `requires_ka` only once every client of the store has
+upgraded.

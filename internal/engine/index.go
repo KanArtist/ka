@@ -302,10 +302,11 @@ func (ix *Index) rebuild() {
 	ix.derive()
 }
 
-// canon normalizes a ticket ID: upper case, and a former project prefix
+// canon normalizes a ticket ID: upper case, any slug dropped
+// (JK-7QK3M-compiler-warnings is JK-7QK3M), and a former project prefix
 // replaced by the current one (KA-7QK3M is KAN-7QK3M after a rename).
 func (ix *Index) canon(id string) string {
-	id = strings.ToUpper(strings.TrimSpace(id))
+	id = kaspec.RefID(id)
 	if _, ok := ix.tickets[id]; ok {
 		return id
 	}
@@ -315,6 +316,22 @@ func (ix *Index) canon(id string) string {
 	}
 	if pi, ok := ix.prefixes[pfx]; ok && pi.Prefix != pfx {
 		return pi.Prefix + "-" + sfx
+	}
+	return id
+}
+
+// Ref is the ticket's reference: ID-slug, with a slug derived from the
+// title when none is stored (spec §4.3).
+func (r *Rec) Ref() string { return kaspec.Ref(r.ID, kaspec.DisplaySlug(r.T)) }
+
+func (r *Rec) ref() Ref { return Ref{ID: r.ID, Ref: r.Ref(), Title: r.T.Title, Status: r.T.Status} }
+
+// refOf returns the reference of a ticket by ID (the ID if unknown).
+func (ix *Index) refOf(id string) string {
+	ix.mu.RLock()
+	defer ix.mu.RUnlock()
+	if r, ok := ix.tickets[id]; ok {
+		return r.Ref()
 	}
 	return id
 }

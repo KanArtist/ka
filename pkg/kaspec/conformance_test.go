@@ -52,8 +52,13 @@ func TestConformance(t *testing.T) {
 			if v := n.Map["now"]; v != nil {
 				now, _ = time.Parse(time.RFC3339, v.Value)
 			}
+			KaVersion = ""
+			if v := n.Map["ka_version"]; v != nil {
+				KaVersion = v.Value
+			}
 			ws := testWorkspace(t, dir, stores)
 			diags := Check(ws, CheckOptions{Now: now})
+			KaVersion = ""
 			var got []string
 			for _, d := range diags {
 				got = append(got, d.Code+" "+d.Path)

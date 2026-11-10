@@ -127,7 +127,7 @@ func (s *Service) Doc(project, rel string) (*DocOut, error) {
 			}
 		}
 		if hit {
-			out.Backlinks = append(out.Backlinks, Ref{ID: r.ID, Title: r.T.Title, Status: r.T.Status})
+			out.Backlinks = append(out.Backlinks, r.ref())
 		}
 	}
 	return out, nil

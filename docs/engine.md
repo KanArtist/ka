@@ -117,6 +117,44 @@ rewritten; the command reminds you. Also `POST /api/v1/projects/{key}/rename`.
 `ka store set-url NAME URL [--name NEW]` follows a store's repository to a new URL (a rename or a
 transfer): it moves the managed clone, unpushed commits and all, and updates its remote.
 
+## Slugs and references
+
+Every ticket is shown as its reference, the ID plus a slug (`JK-7QK3M-compiler-warnings`, spec
+§4.3): in CLI and MCP text, in the `ref` field of JSON results, in commit subjects and in the web
+UI's ticket header (click to copy). A ticket without a stored slug shows one derived from its title
+(up to three significant words within 24 characters). Every place that takes an ID also takes a
+reference, in any case; lookups ignore the slug, so a reference with an old slug still resolves.
+Relations are always stored as bare IDs.
+
+Storing slugs is off until a project sets `slugs: true` in its config (or `.ka/config.yml` for the
+whole store). Then `ka_create`/`ka new --slug` stores the slug given, normalized ("Compiler
+warnings" becomes `compiler-warnings`) and checked against the limits (4 words, 24 characters;
+too long is an error, never cut short), or one derived from the title. `ka edit --slug` changes it;
+renaming the title does not. While slugs are off, a given slug is checked but not stored, and
+setting one with `ka edit` is refused.
+
+ka before 1.2.0 rejects a ticket with a slug, so turn slugs on for a store in this order:
+
+1. Upgrade every client of the store (every machine, CI job and action that runs `ka`) to 1.2.0 or
+   newer.
+2. Add `requires_ka: 1.2.0` to the store's `.ka/store.yml`, commit and push. Any client still older
+   than that now stops with an explanation instead of failing on individual tickets.
+3. Set `slugs: true` in the config, commit and push.
+4. Run `ka fix --slugs` once to give existing tickets a slug derived from their titles (one commit
+   per store). It refuses while step 2 is missing.
+
+`ka check` warns (`slugs_unguarded`) when a store has slugs but no such `requires_ka`.
+
+## Version requirements
+
+A store's `requires_ka` (spec §5.1) names the oldest ka release that may use it. A ka older than
+that refuses the store: `ka` commands and `ka mcp` fail to start with `ka_outdated` and how to
+upgrade; writes are refused; and sync will not bring in a remote whose `store.yml` raised the
+requirement, so an older ka never reads or rewrites data it does not understand. A write made after
+the remote raised it stays committed locally and reports why it was not pushed. Development builds
+(versions with a `-` suffix) are never refused. `ka check` and `ka doctor` report it as
+`ka_outdated`.
+
 ## The index
 
 All tickets, comments, projects, configs and actors are loaded into memory, in parallel. The

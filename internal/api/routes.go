@@ -277,7 +277,7 @@ type ticketOut struct {
 }
 
 type ticketPatch struct {
-	Set    map[string]any      `json:"set,omitempty" doc:"Scalar and custom fields to set; null clears. Keys: title, status, priority, kind, assignee, owner, parent, duplicate_of, fields.<name>."`
+	Set    map[string]any      `json:"set,omitempty" doc:"Scalar and custom fields to set; null clears. Keys: title, slug, status, priority, kind, assignee, owner, parent, duplicate_of, fields.<name>."`
 	Add    map[string][]string `json:"add,omitempty" doc:"Values to add to labels, blocked_by, related, links or acceptance."`
 	Remove map[string][]string `json:"remove,omitempty" doc:"Values to remove."`
 	Body   *string             `json:"body,omitempty" doc:"The new markdown body. Requires If-Match."`
@@ -657,9 +657,10 @@ func (s *Server) adminRoutes() {
 			CallerHeaders
 			Body struct {
 				DryRun bool `json:"dry_run,omitempty"`
+				Slugs  bool `json:"slugs,omitempty" doc:"Also give tickets without a slug one derived from the title (projects with slugs: true)."`
 			}
 		}) (*body[*engine.FixOut], error) {
-			out, err := s.svc.Fix(ctx, s.caller(in.CallerHeaders), in.Body.DryRun)
+			out, err := s.svc.FixWith(ctx, s.caller(in.CallerHeaders), engine.FixOptions{DryRun: in.Body.DryRun, Slugs: in.Body.Slugs})
 			return &body[*engine.FixOut]{out}, err
 		})
 	reg(s, get("getDaemon", "/daemon", "The daemon's version, PID and address", "daemon"),

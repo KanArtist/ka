@@ -731,6 +731,7 @@ export interface components {
             push_pending?: boolean;
             pushed: boolean;
             question: string;
+            ref?: string;
             status?: string;
             unblocked?: string[] | null;
         };
@@ -823,6 +824,7 @@ export interface components {
             push_error?: string;
             push_pending?: boolean;
             pushed: boolean;
+            ref?: string;
             status?: string;
             unblocked?: string[] | null;
         };
@@ -842,6 +844,7 @@ export interface components {
             push_error?: string;
             push_pending?: boolean;
             pushed: boolean;
+            ref?: string;
             status?: string;
             unblocked?: string[] | null;
         };
@@ -929,6 +932,7 @@ export interface components {
             problem?: string;
             project?: string;
             related?: string[] | null;
+            slug?: string;
             status?: string;
             title: string;
         };
@@ -978,6 +982,7 @@ export interface components {
             priority?: string;
             project: string;
             recent_comments?: components["schemas"]["CommentOut"][] | null;
+            ref: string;
             related?: string[] | null;
             status: string;
             store: string;
@@ -1058,11 +1063,14 @@ export interface components {
         };
         FixRequest: {
             dry_run?: boolean;
+            /** @description Also give tickets without a slug one derived from the title (projects with slugs: true). */
+            slugs?: boolean;
         };
         InboxItem: {
             comment: components["schemas"]["CommentOut"];
             id: string;
             question?: string;
+            ref?: string;
             restorable?: boolean;
             title: string;
         };
@@ -1159,6 +1167,7 @@ export interface components {
         };
         Ref: {
             id: string;
+            ref?: string;
             status?: string;
             title?: string;
         };
@@ -1312,6 +1321,7 @@ export interface components {
             parent?: string;
             priority?: string;
             project: string;
+            ref: string;
             status: string;
             title: string;
             updated?: string;
@@ -1352,7 +1362,7 @@ export interface components {
             remove?: {
                 [key: string]: string[] | null;
             };
-            /** @description Scalar and custom fields to set; null clears. Keys: title, status, priority, kind, assignee, owner, parent, duplicate_of, fields.<name>. */
+            /** @description Scalar and custom fields to set; null clears. Keys: title, slug, status, priority, kind, assignee, owner, parent, duplicate_of, fields.<name>. */
             set?: {
                 [key: string]: unknown;
             };
@@ -1398,6 +1408,7 @@ export interface components {
             push_error?: string;
             push_pending?: boolean;
             pushed: boolean;
+            ref?: string;
             status?: string;
             unblocked?: string[] | null;
         };

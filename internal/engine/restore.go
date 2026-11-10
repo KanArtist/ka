@@ -15,7 +15,7 @@ import (
 // against the current ticket, so a claim someone else holds still fails.
 func (s *Service) RestorePreserved(ctx context.Context, c Caller, id, comment string) (*WriteOut, error) {
 	s.ix.catchUp()
-	id = strings.ToUpper(id)
+	id = kaspec.RefID(id)
 	s.ix.mu.RLock()
 	r, err := s.rec(id)
 	var body string
@@ -64,7 +64,7 @@ func (s *Service) RestorePreserved(ctx context.Context, c Caller, id, comment st
 	if err != nil {
 		return nil, err
 	}
-	w := writeOut(id, res)
+	w := s.writeOut(id, res)
 	w.Comment = o.CommentName
 	return w, nil
 }

@@ -1,6 +1,10 @@
 <article class="peek" [class.panel]="panel()" [attr.aria-label]="'Ticket ' + id()" (click)="linkClick($event)">
   <header class="top">
-    <span class="id">{{ id() }}</span>
+    @if (detail(); as d) {
+      <button type="button" class="id ref" (click)="copyRef(d.ref || d.id)" [title]="'Copy ' + (d.ref || d.id)">{{ d.id }}<span class="slug">{{ (d.ref || d.id).slice(d.id.length) }}</span></button>
+    } @else {
+      <span class="id">{{ id() }}</span>
+    }
     @if (detail(); as d) {
       <button #statusBtn type="button" class="status prop-btn" [attr.data-cat]="category()" [disabled]="!writable()" (click)="openMenu('status', statusBtn)" title="Change status (s)"><span class="dot" [attr.data-cat]="category()"></span>{{ d.status | status }}</button>
       @if (d.blocked && d.status !== 'blocked') {

@@ -142,7 +142,7 @@ func (s *Server) trackPresence(next mcp.MethodHandler) mcp.MethodHandler {
 				ID string `json:"id"`
 			}
 			json.Unmarshal(p.Arguments, &args)
-			call.Ticket = strings.ToUpper(args.ID)
+			call.Ticket = kaspec.RefID(args.ID)
 		}
 		if tr, ok := res.(*mcp.CallToolResult); ok && tr != nil {
 			if tr.IsError {
@@ -337,7 +337,7 @@ var NextRenderOptions = render.DetailOptions{MaxTokens: nextTokens, MinBody: 150
 func (s *Server) addTools() {
 	v := s.vocab()
 	query := str("filters, e.g. `project:jk kind:bug -label:infra priority:P0,P1 is:blocked assignee:agent/*` plus free text")
-	idProp := str("ticket ID, e.g. JK-7QK3M")
+	idProp := str("ticket ID or reference, e.g. JK-7QK3M or JK-7QK3M-compiler-warnings")
 
 	s.add("ka_next", "Find the best ready ticket (unblocked, unclaimed, highest priority) and claim it for you. Returns the ticket with a context digest.",
 		object(obj{
@@ -403,6 +403,7 @@ func (s *Server) addTools() {
 	ticket := object(obj{
 		"project":    enum("project key (default: the workspace's)", v.projects),
 		"title":      str("one line"),
+		"slug":       str("2-4 lower-case words naming the work, max 24 chars, e.g. compiler-warnings; shown after the ID"),
 		"kind":       enum("", v.kinds),
 		"priority":   enum("", kaspec.Priorities),
 		"status":     enum("default: the project's initial status", v.statuses),
@@ -440,7 +441,7 @@ func (s *Server) addTools() {
 	s.add("ka_update", "Patch tickets: set scalar fields (null clears), add/remove list items, replace the description. Status changes go through ka_transition.",
 		object(obj{"updates": obj{"type": "array", "minItems": 1, "items": object(obj{
 			"id":     idProp,
-			"set":    obj{"type": "object", "description": "title, priority, kind, assignee, owner, parent, duplicate_of, milestone, due, fields.<name>"},
+			"set":    obj{"type": "object", "description": "title, slug, priority, kind, assignee, owner, parent, duplicate_of, milestone, due, fields.<name>"},
 			"add":    listOps,
 			"remove": listOps,
 			"body":   str("new markdown description"),

@@ -1,0 +1,6 @@
+description: "A store that requires a newer ka than the one checking it is rejected."
+stores:
+  - store
+ka_version: 1.2.0
+expect:
+  - ka_outdated store/.ka/store.yml

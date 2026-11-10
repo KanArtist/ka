@@ -20,10 +20,14 @@ Release a ticket you cannot finish with **`ka_release`**, saying why in a commen
 ## Filing work
 
 **`ka_create`** takes many tickets in one call (one commit each, pushed once). Give each a
-one-line title, `kind`, `priority` (P0 urgent, P1 high, P2 normal, P3 someday), `problem`,
+one-line title, a `slug` (2-4 lower-case words naming the work, at most 24 characters, such as
+`compiler-warnings`), `kind`, `priority` (P0 urgent, P1 high, P2 normal, P3 someday), `problem`,
 `approach`, two to five observable `acceptance` items, `parent` for the epic, and `blocked_by` for
 ordering. IDs are generated locally and never collide. `ka_schema` lists the projects, kinds,
 labels and custom fields you may use; values outside them are rejected with the valid options.
+
+Mention tickets by the reference `ka` shows, the ID plus its slug (`JK-7QK3M-compiler-warnings`),
+so readers know what a ticket is without looking it up. Tools accept the reference or the bare ID.
 
 ## Asking a human
 

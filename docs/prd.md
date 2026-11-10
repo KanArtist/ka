@@ -952,7 +952,7 @@ contract, because many clients support only tools.
 | `ka_next` with claim and context digest | ≤ 800 |
 | `ka_transition` to done with resolution | ≤ 150 |
 | `ka_comment` (progress) | ≤ 100 |
-| `ka_search` returning 20 summaries | ≤ 1,200 |
+| `ka_search` returning 20 summaries | ≤ 1,300 (each line starts with the ticket's reference, ID plus slug) |
 
 These are measured in CI with a tokenizer harness against fixture stores, and treated as regression
 budgets.

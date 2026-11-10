@@ -13,10 +13,10 @@ import (
 
 // SummaryLine renders one ticket in a list:
 //
-//	JK-7QK3M P1 bug in_progress @agent/claude [cache] 2/5 Title…
+//	JK-7QK3M-cache-eviction P1 bug in_progress @agent/claude [cache] 2/5 Title…
 func SummaryLine(s engine.Summary) string {
 	var b strings.Builder
-	b.WriteString(s.ID)
+	b.WriteString(or(s.Ref, s.ID))
 	for _, f := range []string{s.Priority, s.Kind, s.Status} {
 		if f != "" {
 			b.WriteString(" " + f)
@@ -60,7 +60,7 @@ func Search(out *engine.SearchOut) string {
 func refs(rs []engine.Ref) string {
 	var parts []string
 	for _, r := range rs {
-		p := r.ID
+		p := or(r.Ref, r.ID)
 		if r.Status != "" {
 			p += " (" + r.Status + ")"
 		}
@@ -120,7 +120,7 @@ func detail(d *engine.Detail, o DetailOptions) string {
 		b.WriteString(strings.Join(meta, " · ") + "\n")
 	}
 	if d.ParentRef != nil {
-		fmt.Fprintf(&b, "parent: %s %s (%s)\n", d.ParentRef.ID, d.ParentRef.Title, d.ParentRef.Status)
+		fmt.Fprintf(&b, "parent: %s %s (%s)\n", or(d.ParentRef.Ref, d.ParentRef.ID), d.ParentRef.Title, d.ParentRef.Status)
 	}
 	if len(d.BlockedBy) > 0 {
 		b.WriteString("blocked by: " + refs(d.BlockedBy) + "\n")
@@ -260,7 +260,7 @@ func Comment(c engine.CommentOut) string {
 
 // Write renders a write result in one line.
 func Write(verb string, w *engine.WriteOut) string {
-	s := w.ID + " " + verb
+	s := or(w.Ref, w.ID) + " " + verb
 	if w.Status != "" {
 		s += " → " + w.Status
 	}
@@ -313,7 +313,7 @@ func Next(n *engine.NextOut, o DetailOptions) string {
 func Created(c *engine.CreateOut) string {
 	var b strings.Builder
 	for _, r := range c.Created {
-		fmt.Fprintf(&b, "%s %s %s\n", r.ID, r.Status, r.Title)
+		fmt.Fprintf(&b, "%s %s %s\n", or(r.Ref, r.ID), r.Status, r.Title)
 	}
 	note := strings.TrimPrefix(pushNote(c.Pushed, c.Local, ""), ", ")
 	if c.PushPending {
@@ -394,12 +394,12 @@ func sortedFieldNames[V any](m map[string]V) []string {
 func Inbox(in *engine.InboxOut) string {
 	var b strings.Builder
 	for _, a := range in.Answers {
-		fmt.Fprintf(&b, "%s %s\n%s\n", a.ID, a.Title, Comment(a.Comment))
+		fmt.Fprintf(&b, "%s %s\n%s\n", or(a.Ref, a.ID), a.Title, Comment(a.Comment))
 	}
 	if len(in.Questions) > 0 {
 		b.WriteString("open questions for you:\n")
 		for _, q := range in.Questions {
-			fmt.Fprintf(&b, "%s %s\n%s\n", q.ID, q.Title, Comment(q.Comment))
+			fmt.Fprintf(&b, "%s %s\n%s\n", or(q.Ref, q.ID), q.Title, Comment(q.Comment))
 		}
 	}
 	if b.Len() == 0 {
@@ -446,4 +446,11 @@ func Error(e *engine.Error) string {
 		s += "\nfix: " + e.Fix
 	}
 	return s
+}
+
+func or(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
 }

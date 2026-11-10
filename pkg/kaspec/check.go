@@ -255,13 +255,36 @@ func ProjectConfig(w *Workspace, s *Store, pr *Project) (*Config, []Diagnostic) 
 func (c *checker) checkProject(s *Store, pr *Project) {
 	cfg := c.effectiveConfig(s, pr)
 	pr.Config = cfg
+	slugged := ""
 	for _, id := range pr.IDs {
 		te := pr.Tickets[id]
 		if te.Ticket == nil {
 			continue
 		}
+		if te.Ticket.Slug != "" && slugged == "" {
+			slugged = te.Ticket.ID
+		}
 		c.checkTicket(s, pr, cfg, te)
 	}
+	if (cfg.Slugs || slugged != "") && !slugsGuarded(s.File) {
+		why := "project " + pr.Key + " sets slugs: true"
+		if !cfg.Slugs {
+			why = slugged + " has a slug"
+		}
+		c.diags = append(c.diags, diag("slugs_unguarded", s.p(".ka/store.yml"), 0,
+			"add `requires_ka: "+SlugsMinKa+"` to .ka/store.yml once every client runs ka "+SlugsMinKa+" or newer",
+			"%s, but the store does not require ka %s; older ka cannot read tickets with slugs", why, SlugsMinKa))
+	}
+}
+
+// SlugsMinKa is the first ka release that reads ticket slugs.
+const SlugsMinKa = "1.2.0"
+
+func slugsGuarded(sf *StoreFile) bool {
+	if sf == nil {
+		return false
+	}
+	return VersionAtLeastRelease(sf.RequiresKa, SlugsMinKa)
 }
 
 func (c *checker) checkTicket(s *Store, pr *Project, cfg *Config, te *TicketEntry) {

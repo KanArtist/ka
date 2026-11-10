@@ -12,7 +12,7 @@ var Priorities = []string{"P0", "P1", "P2", "P3"}
 
 // TicketKeys is the canonical frontmatter key order of ticket.md.
 var TicketKeys = []string{
-	"id", "title", "status", "priority", "kind", "labels",
+	"id", "title", "slug", "status", "priority", "kind", "labels",
 	"assignee", "owner", "claim",
 	"parent", "blocked_by", "related", "duplicate_of",
 	"links", "acceptance", "milestone", "due", "fields", "moved_to",
@@ -45,6 +45,7 @@ type FieldValue struct {
 type Ticket struct {
 	ID          string                `json:"id,omitempty"`
 	Title       string                `json:"title,omitempty"`
+	Slug        string                `json:"slug,omitempty"`
 	Status      string                `json:"status,omitempty"`
 	Priority    string                `json:"priority,omitempty"`
 	Kind        string                `json:"kind,omitempty"`
@@ -94,6 +95,13 @@ func ParseTicket(path string, data []byte) (*Ticket, []Diagnostic) {
 		r.bad("title", "", "must be a single line")
 	} else if len([]rune(t.Title)) > 300 {
 		r.bad("title", "shorten it and move detail into the body", "is longer than 300 characters")
+	}
+	t.Slug = r.str("slug")
+	if t.Slug != "" {
+		if err := CheckSlug(t.Slug); err != nil {
+			r.bad("slug", SlugRule, "%s", err.Error())
+			t.Slug = ""
+		}
 	}
 	t.Status = r.strRe("status", nameRe, "")
 	if p := r.str("priority"); p != "" {
@@ -232,6 +240,7 @@ func FormatTicket(t *Ticket) []byte {
 	fm := []KV{
 		{"id", t.ID},
 		{"title", t.Title},
+		{"slug", t.Slug},
 		{"status", t.Status},
 		{"priority", t.Priority},
 		{"kind", t.Kind},

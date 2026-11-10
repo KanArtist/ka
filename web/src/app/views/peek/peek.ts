@@ -9,6 +9,7 @@ import { FieldPipe, KindPipe, StatusPipe, categoryLabel, fieldLabel, kindLabel, 
 import { followInternalLink, renderMarkdown } from '../../ui/markdown';
 import { Menu, MenuOption } from '../../ui/menu';
 import { Clock, ago, exact } from '../../ui/time';
+import { Toasts } from '../../ui/toast';
 import { describe } from '../activity/describe';
 
 interface Entry {
@@ -57,6 +58,8 @@ export class Peek {
   private clock = inject(Clock);
   protected actions = inject(Actions);
 
+  private toasts = inject(Toasts);
+
   protected readonly detail = signal<Detail | null>(null);
   /** The ETag of the loaded version, sent as If-Match when saving the body. */
   private etag = '';
@@ -72,6 +75,14 @@ export class Peek {
   protected readonly ago = ago;
   protected readonly exact = exact;
   protected readonly isAgent = isAgent;
+
+  /** Copies the ticket's reference (ID-slug) for pasting into chat or a commit. */
+  protected copyRef(ref: string): void {
+    navigator.clipboard?.writeText(ref).then(
+      () => this.toasts.show('Copied ' + ref),
+      () => this.toasts.show('Could not copy ' + ref, 'error'),
+    );
+  }
 
   protected readonly description = computed(() => render(this.detail()?.body));
   protected readonly category = computed(() => {

@@ -22,6 +22,7 @@ func cmdNew(ctx context.Context, x *IO, args []string) int {
 	var labels, accept, blocked, links, fields multi
 	fl.StringVar(&in.Title, "t", "", "title")
 	fl.StringVar(&in.Title, "title", "", "title")
+	fl.StringVar(&in.Slug, "slug", "", "2-4 words shown after the ID, e.g. compiler-warnings (default: from the title)")
 	fl.StringVar(&in.Project, "project", "", "project key")
 	fl.StringVar(&in.Kind, "kind", "", "kind")
 	fl.StringVar(&in.Priority, "priority", "", "P0-P3")
@@ -79,7 +80,8 @@ func cmdNew(ctx context.Context, x *IO, args []string) int {
 func cmdEdit(ctx context.Context, x *IO, args []string) int {
 	fl, c := newFlags("edit", "ID [--set K=V]... [--add K=V]... [--remove K=V]...", x)
 	var sets, adds, removes multi
-	fl.Var(&sets, "set", "set a field: title=..., priority=P1, fields.estimate=M; K= clears (repeatable)")
+	fl.Var(&sets, "set", "set a field: title=..., slug=..., priority=P1, fields.estimate=M; K= clears (repeatable)")
+	slug := fl.String("slug", "", "set the slug (same as --set slug=...)")
 	fl.Var(&adds, "add", "add to a list: labels=cache, blocked_by=JK-..., acceptance=... (repeatable)")
 	fl.Var(&removes, "remove", "remove from a list (repeatable)")
 	body := fl.String("body", "", "replace the description (- reads stdin)")
@@ -94,7 +96,10 @@ func cmdEdit(ctx context.Context, x *IO, args []string) int {
 	if err != nil {
 		return fail(x, c, err)
 	}
-	id := strings.ToUpper(pos[0])
+	id := kaspec.RefID(pos[0])
+	if *slug != "" {
+		sets = append(sets, "slug="+*slug)
+	}
 	if len(sets)+len(adds)+len(removes) == 0 && *body == "" {
 		return editInEditor(ctx, x, c, svc, caller, id)
 	}
@@ -438,8 +443,9 @@ func cmdSync(ctx context.Context, x *IO, args []string) int {
 }
 
 func cmdFix(ctx context.Context, x *IO, args []string) int {
-	fl, c := newFlags("fix", "[--dry-run]", x)
+	fl, c := newFlags("fix", "[--dry-run] [--slugs]", x)
 	dry := fl.Bool("dry-run", false, "report only")
+	slugs := fl.Bool("slugs", false, "give tickets without a slug one derived from the title (projects with slugs: true; the store must set requires_ka)")
 	if _, err := parse(fl, args); err != nil {
 		return 2
 	}
@@ -447,7 +453,7 @@ func cmdFix(ctx context.Context, x *IO, args []string) int {
 	if err != nil {
 		return fail(x, c, err)
 	}
-	out, err := svc.Fix(ctx, caller, *dry)
+	out, err := svc.FixWith(ctx, caller, engine.FixOptions{DryRun: *dry, Slugs: *slugs})
 	if err != nil {
 		return fail(x, c, err)
 	}
@@ -458,7 +464,11 @@ func cmdFix(ctx context.Context, x *IO, args []string) int {
 			fmt.Fprintf(&b, " (commit %s)", cat.Commit)
 		}
 		b.WriteString("\n")
-		for _, f := range cat.Files {
+		for i, f := range cat.Files {
+			if i == 20 && len(cat.Files) > 25 {
+				fmt.Fprintf(&b, "  … and %d more\n", len(cat.Files)-20)
+				break
+			}
 			b.WriteString("  " + f + "\n")
 		}
 	}

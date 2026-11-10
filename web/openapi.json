@@ -154,6 +154,9 @@
           "question": {
             "type": "string"
           },
+          "ref": {
+            "type": "string"
+          },
           "status": {
             "type": "string"
           },
@@ -514,6 +517,9 @@
           "pushed": {
             "type": "boolean"
           },
+          "ref": {
+            "type": "string"
+          },
           "status": {
             "type": "string"
           },
@@ -591,6 +597,9 @@
           },
           "pushed": {
             "type": "boolean"
+          },
+          "ref": {
+            "type": "string"
           },
           "status": {
             "type": "string"
@@ -927,6 +936,9 @@
               "null"
             ]
           },
+          "slug": {
+            "type": "string"
+          },
           "status": {
             "type": "string"
           },
@@ -1145,6 +1157,9 @@
               "null"
             ]
           },
+          "ref": {
+            "type": "string"
+          },
           "related": {
             "items": {
               "type": "string"
@@ -1171,6 +1186,7 @@
           "store",
           "path",
           "id",
+          "ref",
           "title",
           "status",
           "project"
@@ -1413,6 +1429,10 @@
         "properties": {
           "dry_run": {
             "type": "boolean"
+          },
+          "slugs": {
+            "description": "Also give tickets without a slug one derived from the title (projects with slugs: true).",
+            "type": "boolean"
           }
         },
         "type": "object"
@@ -1427,6 +1447,9 @@
             "type": "string"
           },
           "question": {
+            "type": "string"
+          },
+          "ref": {
             "type": "string"
           },
           "restorable": {
@@ -1771,6 +1794,9 @@
         "additionalProperties": false,
         "properties": {
           "id": {
+            "type": "string"
+          },
+          "ref": {
             "type": "string"
           },
           "status": {
@@ -2302,6 +2328,9 @@
           "project": {
             "type": "string"
           },
+          "ref": {
+            "type": "string"
+          },
           "status": {
             "type": "string"
           },
@@ -2314,6 +2343,7 @@
         },
         "required": [
           "id",
+          "ref",
           "title",
           "status",
           "project"
@@ -2457,7 +2487,7 @@
           },
           "set": {
             "additionalProperties": {},
-            "description": "Scalar and custom fields to set; null clears. Keys: title, status, priority, kind, assignee, owner, parent, duplicate_of, fields.\u003cname\u003e.",
+            "description": "Scalar and custom fields to set; null clears. Keys: title, slug, status, priority, kind, assignee, owner, parent, duplicate_of, fields.\u003cname\u003e.",
             "type": "object"
           }
         },
@@ -2625,6 +2655,9 @@
           },
           "pushed": {
             "type": "boolean"
+          },
+          "ref": {
+            "type": "string"
           },
           "status": {
             "type": "string"

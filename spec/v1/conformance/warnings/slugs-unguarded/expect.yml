@@ -1,0 +1,5 @@
+description: "A ticket has a slug but the store does not require a ka that can read slugs."
+stores:
+  - store
+expect:
+  - slugs_unguarded store/.ka/store.yml

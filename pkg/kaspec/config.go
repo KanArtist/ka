@@ -23,7 +23,7 @@ var Categories = []string{"triage", "backlog", "unstarted", "started", "complete
 var FieldTypes = []string{"string", "text", "number", "integer", "boolean", "enum", "date", "timestamp", "actor", "url", "id", "list"}
 
 // ConfigKeys is the set of top-level keys allowed in .ka/config.yml and a project's config block.
-var ConfigKeys = []string{"id_suffix_length", "workflow", "kinds", "labels", "fields", "claims", "comments", "attachments", "template", "locked", "runtime"}
+var ConfigKeys = []string{"id_suffix_length", "workflow", "kinds", "labels", "fields", "claims", "comments", "attachments", "template", "locked", "runtime", "slugs"}
 
 // Status is one workflow status.
 type Status struct {
@@ -41,7 +41,10 @@ type FieldDef struct {
 
 // Config is the effective data config of a project.
 type Config struct {
-	IDSuffixLength      int
+	IDSuffixLength int
+	// Slugs: writers store a slug on new tickets (spec §4.3). Off by default:
+	// ka before 1.2.0 cannot read a ticket that has one.
+	Slugs               bool
 	Statuses            []Status
 	Initial             string
 	AgentCreatedInitial string
@@ -461,6 +464,12 @@ func decodeConfig(n *Node, layers []ConfigLayer) (*Config, []Diagnostic) {
 	}
 
 	cfg.IDSuffixLength = int(intOf("id_suffix_length", get(n, "id_suffix_length"), 5, 8))
+	if v := get(n, "slugs"); v != nil {
+		if v.Kind != ScalarNode || v.Quoted || (v.Value != "true" && v.Value != "false") {
+			bad("slugs", "must be true or false")
+		}
+		cfg.Slugs = v.Value == "true" && !v.Quoted
+	}
 
 	wf := get(n, "workflow")
 	if st := get(wf, "statuses"); st == nil || st.Kind != SeqNode || len(st.Items) == 0 {
