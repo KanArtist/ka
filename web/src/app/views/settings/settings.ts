@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, effect, inject, signal, untracked } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router } from '@angular/router';
 import { Api } from '../../api/api';
 import { Live } from '../../live';
@@ -245,7 +246,7 @@ export class Settings {
       this.project.set(typeof p === 'string' && p ? p : fallback);
     };
     read();
-    this.router.events.subscribe((e) => {
+    this.router.events.pipe(takeUntilDestroyed()).subscribe((e) => {
       if (e instanceof NavigationEnd) read();
     });
     effect(() => {

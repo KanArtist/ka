@@ -87,12 +87,18 @@ export class Api {
     const res = await fetch('/api/v1' + path, init);
     const seq = Number(res.headers.get('Ka-Event-Seq') ?? 0);
     const text = await res.text();
-    const json = text ? JSON.parse(text) : undefined;
     if (!res.ok) {
       if (res.status === 401) this.unauthorized.set(true);
-      throw new ApiError(res.status, json ?? {});
+      // A proxy or a crashed daemon may answer with HTML, not a Problem.
+      let problem: Partial<Problem> = {};
+      try {
+        problem = text ? JSON.parse(text) : {};
+      } catch {
+        problem = { detail: `HTTP ${res.status} ${res.statusText}`.trim() };
+      }
+      throw new ApiError(res.status, problem);
     }
-    return { body: json as T, seq, etag: res.headers.get('ETag') ?? undefined };
+    return { body: (text ? JSON.parse(text) : undefined) as T, seq, etag: res.headers.get('ETag') ?? undefined };
   }
 
   get<T>(path: string) {

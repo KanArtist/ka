@@ -320,6 +320,8 @@ export class Table {
 
   /** j/k (or arrows) move between rows; Enter opens the focused row. */
   protected rowKey(e: KeyboardEvent, t: Summary): void {
+    // Keys bubbling from the cells' own buttons are theirs.
+    if (e.target !== e.currentTarget) return;
     if (e.key === 'Enter') {
       e.preventDefault();
       this.open(t);

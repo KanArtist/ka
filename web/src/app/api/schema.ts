@@ -1334,6 +1334,7 @@ export interface components {
                 [key: string]: string;
             };
             stores: components["schemas"]["SyncState"][] | null;
+            unpreserved?: string[] | null;
         };
         SyncRequest: {
             force?: boolean;

@@ -3,6 +3,9 @@ import { NavigationEnd, Router } from '@angular/router';
 import { Api, SearchOut, Summary } from './api/api';
 import { Live } from './live';
 
+const RUN_DEBOUNCE_MS = 180;
+const RUN_MAX_WAIT_MS = 1000;
+
 /**
  * The query shared by the Board and the Table (PRD §13.1: board and table
  * views over a shared query). It lives in the URL (?q=), so a view with a
@@ -24,6 +27,8 @@ export class Query {
   readonly busy = signal(false);
   private seq = 0;
   private timer?: ReturnType<typeof setTimeout>;
+  /** When the pending run was first scheduled, for the debounce's max wait. */
+  private pendingSince?: number;
 
   /** Whether the query needs the engine (has key:value terms or negations). */
   readonly structured = computed(() => /(^|\s)-?[a-z_][a-z_.]*:/i.test(this.text()));
@@ -45,19 +50,29 @@ export class Query {
       if (e instanceof NavigationEnd) read();
     });
     // Re-run a structured query when it changes, and when tickets change
-    // (a moved card may stop matching is:ready).
+    // (a moved card may stop matching is:ready) or a question opens or is
+    // answered (is:question). Other comments leave tickets() alone, so they
+    // do not re-run it. A steady stream of changes delays a run by at most
+    // RUN_MAX_WAIT_MS.
     effect(() => {
       const text = this.text();
       const structured = this.structured();
-      this.live.ticketTick();
+      this.live.tickets();
+      this.live.questionTick();
       untracked(() => {
         clearTimeout(this.timer);
         if (!structured) {
+          this.pendingSince = undefined;
           this.matched.set(null);
           this.error.set('');
           return;
         }
-        this.timer = setTimeout(() => void this.run(text), 180);
+        const since = (this.pendingSince ??= Date.now());
+        const wait = Math.max(0, Math.min(RUN_DEBOUNCE_MS, since + RUN_MAX_WAIT_MS - Date.now()));
+        this.timer = setTimeout(() => {
+          this.pendingSince = undefined;
+          void this.run(text);
+        }, wait);
       });
     });
   }

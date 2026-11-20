@@ -2394,6 +2394,15 @@
               "array",
               "null"
             ]
+          },
+          "unpreserved": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           }
         },
         "required": [

@@ -345,10 +345,14 @@ export class Health {
     const timer = setInterval(() => void this.refreshStores(), 10_000);
     inject(DestroyRef).onDestroy(() => clearInterval(timer));
     // Ticket and store changes may fix (or cause) findings and conflicts.
+    // The 10 s refresh above only moves fetch and push times, which must not
+    // re-run the (expensive) check.
+    const storeState = computed(() => JSON.stringify(this.live.stores().map(({ last_fetch, last_push, ...rest }) => rest)));
     let t: ReturnType<typeof setTimeout> | undefined;
+    inject(DestroyRef).onDestroy(() => clearTimeout(t));
     effect(() => {
       this.live.ticketTick();
-      this.live.stores();
+      storeState();
       untracked(() => {
         clearTimeout(t);
         t = setTimeout(() => void this.load(), 1500);

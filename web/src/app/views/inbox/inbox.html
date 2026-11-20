@@ -20,7 +20,7 @@
           <span class="spacer"></span>
           <a class="ticket" [routerLink]="[]" [queryParams]="{ peek: q.id }" queryParamsHandling="merge"><span class="id">{{ q.id }}</span> {{ q.title }}</a>
         </div>
-        <div class="md body" [innerHTML]="html(q.comment.body)"></div>
+        <div class="md body" [innerHTML]="bodies().get(key(q))" (click)="linkClick($event)"></div>
 
         @if (state(q).done; as label) {
           <p class="done" role="status">You {{ label }}. The agent sees it on its next <code>ka_inbox</code> call.</p>

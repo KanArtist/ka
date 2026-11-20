@@ -33,6 +33,11 @@ const docLink: TokenizerAndRendererExtension = {
 
 /** Ticket IDs (spec §3.1) standing alone in text open in the side panel. */
 const TICKET_ID = /^[A-Z][A-Z0-9]{0,9}-[0-9A-HJKMNP-TV-Z]{5,8}(?![A-Za-z0-9_-])/;
+
+/** Whether s is a whole ticket ID (spec §3.1). */
+export function isTicketId(s: string): boolean {
+  return /^[A-Z][A-Z0-9]{0,9}-[0-9A-HJKMNP-TV-Z]{5,8}$/.test(s);
+}
 const ticketLink: TokenizerAndRendererExtension = {
   name: 'ticketLink',
   level: 'inline',
@@ -52,6 +57,9 @@ const ticketLink: TokenizerAndRendererExtension = {
   },
 };
 
+/** Link schemes that render as links; others (vscode:, ssh:, javascript:) render as their text. */
+const SAFE_SCHEMES = new Set(['http', 'https', 'mailto']);
+
 const md = new Marked({ gfm: true, async: false });
 md.use({
   extensions: [docLink, ticketLink],
@@ -64,6 +72,22 @@ md.use({
     }
   },
   renderer: {
+    // Ticket text is written by agents and others: raw HTML shows as text,
+    // so it cannot dress up as the app's own buttons or forms. HTML comments
+    // (ticket templates use them for hints) stay hidden.
+    html(t: Tokens.HTML | Tokens.Tag) {
+      return esc(t.text.replace(/<!--[\s\S]*?-->/g, ''));
+    },
+    // Only known-safe schemes link; web links open in a new tab, without
+    // the opener or the referrer. Relative, #hash and in-app links render as usual.
+    link(t: Tokens.Link) {
+      const href = t.href.trim();
+      const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(href)?.[1]?.toLowerCase();
+      if (scheme && !SAFE_SCHEMES.has(scheme)) return this.parser.parseInline(t.tokens);
+      if (scheme !== 'http' && scheme !== 'https') return false; // the default renderer
+      const title = t.title ? ` title="${esc(t.title)}"` : '';
+      return `<a href="${esc(href)}"${title} target="_blank" rel="noopener noreferrer">${this.parser.parseInline(t.tokens)}</a>`;
+    },
     // `projects/jk/docs/a.md` in backticks links too.
     codespan(t: Tokens.Codespan) {
       const m = DOC_PATH.exec(t.text);
@@ -73,7 +97,10 @@ md.use({
   },
 });
 
-/** Markdown to HTML. Angular's [innerHTML] sanitizer strips scripts, handlers and unsafe URLs. */
+/**
+ * Markdown to HTML, with raw HTML escaped and link schemes allowlisted.
+ * Angular's [innerHTML] sanitizer still strips scripts, handlers and unsafe URLs.
+ */
 export function renderMarkdown(src: string | undefined): string {
   if (!src?.trim()) return '';
   return md.parse(src) as string;
@@ -89,7 +116,8 @@ export function followInternalLink(e: MouseEvent, router: Router): void {
   const href = a?.getAttribute('href');
   if (href?.startsWith('?peek=')) {
     e.preventDefault();
-    void router.navigate([], { queryParams: { peek: decodeURIComponent(href.slice(6)) }, queryParamsHandling: 'merge' });
+    const id = (new URLSearchParams(href).get('peek') ?? '').toUpperCase();
+    if (isTicketId(id)) void router.navigate([], { queryParams: { peek: id }, queryParamsHandling: 'merge' });
     return;
   }
   if (!href || !href.startsWith('/') || href.startsWith('//')) return;

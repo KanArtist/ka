@@ -9,7 +9,11 @@ import { Peek } from './peek';
   selector: 'ka-ticket-page',
   imports: [Peek],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `<ka-peek [id]="id()" [panel]="false" />`,
+  // Keyed by id: /ticket/A -> /ticket/B reuses this route component, but
+  // each ticket gets a fresh peek (no drafts carried over).
+  template: `@for (tid of [id()]; track tid) {
+    <ka-peek [id]="tid" [panel]="false" />
+  }`,
 })
 export class TicketPage {
   protected readonly id = toSignal(inject(ActivatedRoute).paramMap.pipe(map((p) => (p.get('id') ?? '').toUpperCase())), {

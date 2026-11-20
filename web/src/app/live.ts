@@ -20,6 +20,9 @@ const EVENT_TYPES = [
 
 /** How many recent events the Activity view keeps in memory. */
 const EVENT_LIMIT = 2000;
+/** Reconnect backoff after the stream closes or a resync fails: 1 s, doubling, capped. */
+const RETRY_MIN_MS = 1000;
+const RETRY_MAX_MS = 30_000;
 
 export type Connection = 'connecting' | 'live' | 'reconnecting';
 
@@ -33,6 +36,12 @@ export class Live {
   private api = inject(Api);
   private source?: EventSource;
   private lastSeq = 0;
+  /** The newest event in `events`, so a replay after a resync does not list it twice. */
+  private newestEvent = 0;
+  /** Bumped by each snapshot: an older one still in flight is dropped. */
+  private generation = 0;
+  private retryMs = RETRY_MIN_MS;
+  private retryTimer?: ReturnType<typeof setTimeout>;
 
   readonly workspace = signal<WorkspaceOut | null>(null);
   readonly schema = signal<SchemaOut | null>(null);
@@ -47,8 +56,10 @@ export class Live {
   readonly loaded = signal(false);
   /** Bumped on every ticket change, for views that watch one ticket. */
   readonly ticketTick = signal(0);
-  /** The ID of the last ticket an event touched, with the actor, for highlights. */
-  readonly touched = signal<{ id: string; actor?: string; at: number } | null>(null);
+  /** Bumped when a question is opened or answered (is:question matches change without a ticket change). */
+  readonly questionTick = signal(0);
+  /** The ID of the last ticket an event touched, with the actor and event ID, for highlights. */
+  readonly touched = signal<{ id: string; actor?: string; at: number; seq: number } | null>(null);
 
   readonly you = computed(() => this.workspace()?.you ?? '');
   /** project -> status -> category (unstarted, started, completed, canceled, backlog, triage). */
@@ -78,7 +89,9 @@ export class Live {
     this.subscribe();
   }
 
-  private async snapshot(): Promise<void> {
+  /** Loads the snapshot; false if a newer snapshot started meanwhile. */
+  private async snapshot(): Promise<boolean> {
+    const gen = ++this.generation;
     void this.refreshActors();
     const [ws, schema, stores, tickets, presence, inbox, boards] = await Promise.all([
       this.api.get<WorkspaceOut>('/workspace'),
@@ -89,6 +102,7 @@ export class Live {
       this.api.get<InboxOut>('/inbox?since=7d'),
       this.api.get<{ boards: BoardOut[] }>('/boards'),
     ]);
+    if (gen !== this.generation) return false;
     this.workspace.set(ws.body);
     this.schema.set(schema.body);
     this.stores.set(stores.body.stores ?? []);
@@ -100,25 +114,55 @@ export class Live {
     this.lastSeq = Math.min(ws.seq, stores.seq, tickets.seq, presence.seq, inbox.seq);
     this.ticketTick.update((n) => n + 1);
     this.loaded.set(true);
+    return true;
   }
 
   private subscribe(): void {
     this.source?.close();
     const es = new EventSource(`/api/v1/events?last_event_id=${this.lastSeq}`);
     this.source = es;
-    es.onopen = () => this.connection.set('live');
-    es.onerror = () => this.connection.set(es.readyState === EventSource.CLOSED ? 'reconnecting' : 'reconnecting');
+    es.onopen = () => {
+      this.connection.set('live');
+      this.retryMs = RETRY_MIN_MS;
+    };
+    es.onerror = () => {
+      this.connection.set('reconnecting');
+      // EventSource retries network errors itself, but any non-200 answer
+      // (a restarted daemon that 401s the old cookie, a 502) closes it for good.
+      if (es.readyState === EventSource.CLOSED && es === this.source) this.retry();
+    };
     for (const type of EVENT_TYPES) {
-      es.addEventListener(type, (m) => this.apply(JSON.parse((m as MessageEvent).data) as KaEvent));
+      es.addEventListener(type, (m) => {
+        if (es === this.source) this.apply(JSON.parse((m as MessageEvent).data) as KaEvent);
+      });
     }
   }
 
+  /**
+   * A fresh snapshot, then a fresh stream from its Ka-Event-Seq: events that
+   * arrived while it loaded are replayed over it, so the older snapshot never
+   * wins. On failure it retries with backoff; a 401 shows the sign-in gate.
+   */
   private async resync(): Promise<void> {
+    clearTimeout(this.retryTimer);
+    this.retryTimer = undefined;
     try {
-      await this.snapshot();
+      if (await this.snapshot()) this.subscribe();
     } catch {
-      /* the stream's reconnect will try again */
+      if (this.api.unauthorized()) {
+        this.source?.close();
+        return;
+      }
+      this.connection.set('reconnecting');
+      this.retry();
     }
+  }
+
+  private retry(): void {
+    if (this.retryTimer) return;
+    const ms = this.retryMs;
+    this.retryMs = Math.min(this.retryMs * 2, RETRY_MAX_MS);
+    this.retryTimer = setTimeout(() => void this.resync(), ms);
   }
 
   async refreshBoards(): Promise<void> {
@@ -148,6 +192,9 @@ export class Live {
 
   private apply(e: KaEvent): void {
     this.lastSeq = Math.max(this.lastSeq, e.id);
+    // Replayed after a resync: re-apply the state, but do not list or highlight it again.
+    const fresh = e.id > this.newestEvent;
+    this.newestEvent = Math.max(this.newestEvent, e.id);
     switch (e.type) {
       case 'store.changed':
         if (e.data?.what === 'boards') {
@@ -178,6 +225,7 @@ export class Live {
         break;
       case 'question.opened':
       case 'question.answered':
+        this.questionTick.update((n) => n + 1);
         this.refreshInbox();
         break;
       case 'presence.changed':
@@ -189,8 +237,8 @@ export class Live {
         }
         break;
     }
-    if (e.ticket) this.touched.set({ id: e.ticket, actor: e.actor, at: Date.now() });
-    if (e.type !== 'presence.changed' || e.data?.state !== 'active') {
+    if (fresh && e.ticket) this.touched.set({ id: e.ticket, actor: e.actor, at: Date.now(), seq: e.id });
+    if (fresh && (e.type !== 'presence.changed' || e.data?.state !== 'active')) {
       this.events.update((list) => [e, ...list].slice(0, EVENT_LIMIT));
     }
   }

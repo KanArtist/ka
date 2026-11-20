@@ -173,7 +173,7 @@
                   <div class="diff">
                     @if (commit(); as c) {
                       <p class="subject">{{ c.subject }}</p>
-                      <pre><code>@for (l of diffLines(c.diff); track $index) {<span [class]="l.cls">{{ l.text }}
+                      <pre><code>@for (l of diff(); track $index) {<span [class]="l.cls">{{ l.text }}
 </span>}</code></pre>
                       @if (c.truncated) {
                         <p class="muted">The diff is longer than this; see the commit in git.</p>

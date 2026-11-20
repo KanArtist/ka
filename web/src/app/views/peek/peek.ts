@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, ElementRef, HostListener, computed, effect, inject, input, output, signal, untracked, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, HostListener, computed, effect, inject, input, output, signal, untracked, viewChild } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { Api, ApiError, CommentOut, Detail, KaEvent } from '../../api/api';
 import { Actions } from '../../actions';
@@ -38,6 +38,9 @@ interface CommitView {
  * acceptance, relations, and a timeline that merges comments with the
  * git-derived changes, each linked to the commit behind it. It follows the
  * ticket live.
+ *
+ * One instance shows one ticket: hosts key it by id (@for … track id), so
+ * drafts, ETags and menus never carry over to another ticket.
  */
 @Component({
   selector: 'ka-peek',
@@ -59,6 +62,7 @@ export class Peek {
   protected actions = inject(Actions);
 
   private toasts = inject(Toasts);
+  private host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   protected readonly detail = signal<Detail | null>(null);
   /** The ETag of the loaded version, sent as If-Match when saving the body. */
@@ -70,6 +74,10 @@ export class Peek {
   protected readonly openCommit = signal<string>('');
   protected readonly commit = signal<CommitView | null>(null);
   protected readonly commitError = signal('');
+  protected readonly diff = computed(() => {
+    const c = this.commit();
+    return c ? diffLines(c.diff) : [];
+  });
 
   protected readonly now = this.clock.now;
   protected readonly ago = ago;
@@ -115,7 +123,7 @@ export class Peek {
       out.push({ key: 'c:' + c.name, at: c.created, actor: c.author, verb: line.verb, tone: line.tone, comment: c, html: render(c.body), commit: ev?.commit, store: ev?.store });
     }
     // Closing makes a move and a resolution comment; keep the comment.
-    out.sort((a, b) => a.at.localeCompare(b.at) || (a.comment ? 1 : -1));
+    out.sort((a, b) => a.at.localeCompare(b.at) || Number(!!a.comment) - Number(!!b.comment));
     return out.filter((e, i) => {
       const next = out[i + 1];
       return !(e.commit && !e.comment && next?.comment?.type === 'resolution' && next.commit === e.commit);
@@ -123,6 +131,11 @@ export class Peek {
   });
 
   private reloadTimer?: ReturnType<typeof setTimeout>;
+  /** Sequence of load() and toggleCommit() calls: only the latest one lands. */
+  private loadSeq = 0;
+  private commitSeq = 0;
+  /** Ka-Event-Seq of the last load: events up to it are already shown. */
+  private loadedSeq = 0;
 
   // ---- editing ----
   protected readonly menu = signal<{ kind: MenuKind; anchor: HTMLElement } | null>(null);
@@ -188,35 +201,42 @@ export class Peek {
   constructor() {
     effect(() => {
       const id = this.id();
-      untracked(() => {
-        this.detail.set(null);
-        this.error.set(null);
-        this.openCommit.set('');
-        void this.load(id);
-      });
+      untracked(() => void this.load(id));
     });
-    // Follow the ticket live: reload when an event touches it.
+    // Follow the ticket live: reload when an event touches it, unless the
+    // last load already includes the event (the echo of our own write) or
+    // it happened before this peek opened.
+    const opened = Date.now();
     effect(() => {
       const t = this.live.touched();
-      if (t && t.id === untracked(this.id)) {
+      if (t && t.id === untracked(this.id) && t.at >= opened && t.seq > this.loadedSeq) {
         clearTimeout(this.reloadTimer);
         this.reloadTimer = setTimeout(() => void this.load(t.id), 200);
       }
     });
+    inject(DestroyRef).onDestroy(() => clearTimeout(this.reloadTimer));
   }
 
   private async load(id: string): Promise<void> {
+    const n = ++this.loadSeq;
     try {
       const [d, h] = await Promise.all([
         this.api.get<Detail>(`/tickets/${encodeURIComponent(id)}?include=comments`),
         this.api.get<{ events: KaEvent[] }>(`/activity?ticket=${encodeURIComponent(id)}&limit=300`),
       ]);
-      if (id !== this.id()) return;
+      if (n !== this.loadSeq || id !== this.id()) return;
       this.detail.set(d.body);
       this.etag = d.etag ?? '';
       this.history.set(h.body.events ?? []);
+      this.loadedSeq = Math.min(d.seq, h.seq);
+      this.error.set(null);
     } catch (e) {
-      if (id === this.id()) this.error.set(e instanceof ApiError ? e : new ApiError(0, { detail: String(e) }));
+      if (n !== this.loadSeq || id !== this.id()) return;
+      const err = e instanceof ApiError ? e : new ApiError(0, { detail: String(e) });
+      // A failed background reload keeps the ticket on screen; the next
+      // event retries. Only a removed ticket replaces it with the error.
+      if (this.detail() && err.status !== 404) return;
+      this.error.set(err);
     }
   }
 
@@ -226,23 +246,17 @@ export class Peek {
       this.openCommit.set('');
       return;
     }
+    const n = ++this.commitSeq;
     this.openCommit.set(e.key);
     this.commit.set(null);
     this.commitError.set('');
     try {
       const q = e.store ? `?store=${encodeURIComponent(e.store)}` : '';
       const r = await this.api.get<CommitView>(`/commits/${e.commit}${q}`);
-      this.commit.set(r.body);
+      if (n === this.commitSeq) this.commit.set(r.body);
     } catch (err: any) {
-      this.commitError.set(err?.message ?? String(err));
+      if (n === this.commitSeq) this.commitError.set(err?.message ?? String(err));
     }
-  }
-
-  protected diffLines(diff: string): { cls: string; text: string }[] {
-    return diff.split('\n').map((text) => ({
-      text,
-      cls: text.startsWith('+++') || text.startsWith('---') ? 'meta' : text.startsWith('+') ? 'add' : text.startsWith('-') ? 'del' : text.startsWith('@@') ? 'hunk' : text.startsWith('diff ') ? 'file' : '',
-    }));
   }
 
   protected linkClick(e: MouseEvent): void {
@@ -280,6 +294,9 @@ export class Peek {
   }
 
   protected async saveTitle(v: string): Promise<void> {
+    // Escape (cancel) or Enter already ended the edit; the blur that follows
+    // the input's removal must not save.
+    if (!this.editingTitle()) return;
     this.editingTitle.set(false);
     const d = this.detail();
     const t = v.trim();
@@ -295,14 +312,14 @@ export class Peek {
     this.bodyConflict.set(false);
     this.bodyError.set('');
     this.editingBody.set(true);
-    setTimeout(() => document.querySelector<HTMLTextAreaElement>('ka-peek .body-editor textarea')?.focus());
+    setTimeout(() => this.host.nativeElement.querySelector<HTMLTextAreaElement>('.body-editor textarea')?.focus());
   }
 
   protected editTitle(): void {
     if (!this.writable()) return;
     this.editingTitle.set(true);
     setTimeout(() => {
-      const el = document.querySelector<HTMLInputElement>('ka-peek .title-edit');
+      const el = this.host.nativeElement.querySelector<HTMLInputElement>('.title-edit');
       el?.focus();
       el?.select();
     });
@@ -414,6 +431,13 @@ export class Peek {
     const t = this.live.tickets().get(id);
     return t ? this.live.category(t) : '';
   }
+}
+
+function diffLines(diff: string): { cls: string; text: string }[] {
+  return diff.split('\n').map((text) => ({
+    text,
+    cls: text.startsWith('+++') || text.startsWith('---') ? 'meta' : text.startsWith('+') ? 'add' : text.startsWith('-') ? 'del' : text.startsWith('@@') ? 'hunk' : text.startsWith('diff ') ? 'file' : '',
+  }));
 }
 
 const PRIO_HINT: Record<string, string> = { P0: 'urgent', P1: 'high', P2: 'normal', P3: 'someday' };

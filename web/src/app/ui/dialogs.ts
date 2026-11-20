@@ -148,7 +148,10 @@ export class CloseDialog {
       if (!c) return;
       untracked(() => {
         this.text.set('');
-        this.resolution.set(c.category === 'canceled' ? (c.resolutions.find((r) => r !== 'done') ?? 'wontfix') : 'done');
+        // The default must be one the store allows (resolutions are configurable).
+        const rs = c.resolutions;
+        const pick = c.category === 'canceled' ? (rs.includes('wontfix') ? 'wontfix' : rs.find((r) => r !== 'done')) : rs.includes('done') ? 'done' : undefined;
+        this.resolution.set(pick ?? rs[0] ?? '');
         setTimeout(() => this.summary()?.nativeElement.focus());
       });
     });

@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   ElementRef,
   afterRenderEffect,
   computed,
@@ -10,6 +11,7 @@ import {
   untracked,
   viewChild,
 } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink } from '@angular/router';
 import { BoardOut, Summary } from '../../api/api';
 import { Actions } from '../../actions';
@@ -41,6 +43,8 @@ const COLUMN_CAP = 60;
 /** Closed columns show only recently updated tickets. */
 const CLOSED_WINDOW_MS = 14 * 86_400_000;
 const PRIORITY_ORDER = ['P0', 'P1', 'P2', 'P3'];
+/** How long a changed card wears the actor's mark. */
+const MARK_MS = 3200;
 
 /**
  * The board (PRD §13.2): columns by status, optional
@@ -127,9 +131,14 @@ export class Board {
 
   protected pickBoard(id: string): void {
     const b = this.live.boards().find((x) => x.id === id);
+    // The swimlanes and project follow from ?board= (see the constructor).
     void this.router.navigate([], { queryParams: { board: id || null, q: b?.filter || null }, queryParamsHandling: 'merge' });
-    if (b) this.lane.set(laneOf(b.swimlanes));
-    else this.lane.set('none');
+  }
+
+  /** The project the board starts on: the workspace default, or the only one. */
+  private defaultProject(): string {
+    const ps = this.live.schema()?.projects ?? [];
+    return this.live.workspace()?.default_project ?? (ps.length === 1 ? ps[0].key : '');
   }
 
   protected startSave(asNew: boolean): void {
@@ -229,26 +238,45 @@ export class Board {
       if (id !== untracked(this.boardId)) this.boardId.set(id);
     };
     readBoard();
-    this.router.events.subscribe((e) => {
+    this.router.events.pipe(takeUntilDestroyed()).subscribe((e) => {
       if (e instanceof NavigationEnd) readBoard();
     });
-    const ws = this.live.workspace();
-    untracked(() => this.project.set(ws?.default_project ?? (this.live.schema()?.projects?.length === 1 ? this.live.schema()!.projects![0].key : '')));
+    untracked(() => this.project.set(this.defaultProject()));
     this.actions.showsProject(() => this.project() || this.query.project());
 
+    // A saved board brings its swimlanes, whether picked here or deep-linked
+    // (?board=), and once the boards have loaded. Its filter carries any
+    // project, so the project picker steps aside rather than narrowing it.
+    let applied = '';
+    effect(() => {
+      const b = this.board();
+      const id = b?.id ?? '';
+      if (id === applied) return;
+      applied = id;
+      untracked(() => {
+        this.lane.set(laneOf(b?.swimlanes));
+        this.project.set(b ? '' : this.defaultProject());
+      });
+    });
+
     // A ticket an event touched gets the actor's mark for a few seconds.
+    const timers = new Set<ReturnType<typeof setTimeout>>();
+    inject(DestroyRef).onDestroy(() => timers.forEach(clearTimeout));
     effect(() => {
       const t = this.live.touched();
-      if (!t || !t.actor) return;
+      // Only fresh events: on opening the board, the last one may be old.
+      if (!t || !t.actor || Date.now() - t.at > MARK_MS) return;
       untracked(() => {
         const m = new Map(this.moved());
         m.set(t.id, t.actor!);
         this.moved.set(m);
-        setTimeout(() => {
+        const timer = setTimeout(() => {
+          timers.delete(timer);
           const n = new Map(this.moved());
           if (n.get(t.id) === t.actor) n.delete(t.id);
           this.moved.set(n);
-        }, 3200);
+        }, MARK_MS);
+        timers.add(timer);
       });
     });
 
@@ -281,10 +309,14 @@ export class Board {
 
   // ---- moving cards (PRD §13.2: drag and drop, with keyboard equivalents) ----
 
+  /** Projects whose tickets can be edited here, computed once per schema change. */
+  private readonly writableProjects = computed(
+    () => new Set((this.live.schema()?.projects ?? []).filter((p) => !p.read_only && !p.archived).map((p) => p.key)),
+  );
+
   /** Whether t can be edited here (its project is writable). */
   protected canMove(t: Summary): boolean {
-    const p = this.live.schema()?.projects?.find((x) => x.key === t.project);
-    return !!p && !p.read_only && !p.archived;
+    return this.writableProjects().has(t.project);
   }
 
   /** Whether t may land in column status of row: the status exists in its project, and the lane can change. */
@@ -341,17 +373,19 @@ export class Board {
     const field = l === 'priority' ? 'priority' : l === 'assignee' ? 'assignee' : '';
     const laneChange = field && lane !== undefined && lane !== laneKey(t, l);
     if (status === t.status && !laneChange) return;
-    const patch: Partial<Summary> = {};
-    if (status !== t.status) patch.status = status;
-    if (laneChange) (patch as any)[field] = lane || undefined;
-    const undo = this.live.patchTicket(t.id, patch);
+    // Two optimistic patches, so a failed lane change undoes only the lane.
+    const undoStatus = status !== t.status ? this.live.patchTicket(t.id, { status }) : () => {};
+    const undoLane = laneChange ? this.live.patchTicket(t.id, { [field]: lane || undefined }) : () => {};
     this.moved.set(new Map(this.moved()).set(t.id, this.live.you()));
-    let ok = true;
-    if (status !== t.status) ok = await this.actions.transition(t, status);
-    if (ok && laneChange) ok = !!(await this.actions.set(t.id, { [field]: lane || null }));
-    if (!ok) {
-      undo();
+    if (status !== t.status && !(await this.actions.transition(t, status))) {
+      undoLane();
+      undoStatus();
       this.announce.set(`${t.id} was not moved`);
+      return;
+    }
+    if (laneChange && !(await this.actions.set(t.id, { [field]: lane || null }))) {
+      undoLane();
+      this.announce.set(status !== t.status ? `Moved ${t.id} to ${statusLabel(status)}, but its ${field} did not change` : `${t.id} was not moved`);
       return;
     }
     this.announce.set(`Moved ${t.id} to ${statusLabel(status)}${laneChange ? `, ${this.laneLabel(lane!, l)}` : ''}`);
@@ -389,6 +423,9 @@ export class Board {
     if (target) {
       e.preventDefault();
       this.focusCard(target.id);
+    } else if (e.key === 'j' || e.key === 'k') {
+      // At the end of a column: j and k stay with the board, not the peek's shortcuts.
+      e.preventDefault();
     }
   }
 

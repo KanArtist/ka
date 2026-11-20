@@ -105,7 +105,10 @@
       </div>
       @if (peek() && live.loaded()) {
         <aside class="peek-panel" aria-label="Ticket">
-          <ka-peek [id]="peek()" (close)="closePeek()" />
+          <!-- Keyed by id: each ticket gets a fresh peek, so drafts never move to another ticket. -->
+          @for (tid of [peek()]; track tid) {
+            <ka-peek [id]="tid" (close)="closePeek()" />
+          }
         </aside>
       }
     </main>

@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, effect, inject, signal, untracked } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink } from '@angular/router';
 import { Api, ApiError } from '../../api/api';
 import { Live } from '../../live';
@@ -221,7 +222,7 @@ export class Docs {
       this.path.set(typeof qp['path'] === 'string' ? qp['path'] : '');
     };
     read();
-    this.router.events.subscribe((e) => {
+    this.router.events.pipe(takeUntilDestroyed()).subscribe((e) => {
       if (e instanceof NavigationEnd) read();
     });
     effect(() => {

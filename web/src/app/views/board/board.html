@@ -27,9 +27,9 @@
       <ka-query-bar />
       @if (projects().length > 1) {
         <select [value]="project()" (change)="project.set($any($event.target).value)" aria-label="Project">
-          <option value="">All projects</option>
+          <option value="" [selected]="!project()">All projects</option>
           @for (p of projects(); track p.key) {
-            <option [value]="p.key">{{ p.name || p.key }}</option>
+            <option [value]="p.key" [selected]="p.key === project()">{{ p.name || p.key }}</option>
           }
         </select>
       }

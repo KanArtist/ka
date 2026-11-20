@@ -1,10 +1,10 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { marked } from 'marked';
+import { Router, RouterLink } from '@angular/router';
 import { Api, ApiError, InboxItem } from '../../api/api';
 import { Live } from '../../live';
 import { Prefs } from '../../prefs';
 import { ActorPipe, Actor } from '../../ui/actor';
+import { followInternalLink, renderMarkdown } from '../../ui/markdown';
 import { Clock, ago, exact } from '../../ui/time';
 
 type State = { busy?: boolean; error?: string; done?: string };
@@ -24,6 +24,7 @@ type State = { busy?: boolean; error?: string; done?: string };
 })
 export class Inbox {
   private api = inject(Api);
+  private router = inject(Router);
   protected live = inject(Live);
   protected prefs = inject(Prefs);
   private clock = inject(Clock);
@@ -53,8 +54,11 @@ export class Inbox {
     return o.length === 2 && o[0] === 'Approve' && o[1] === 'Reject';
   }
 
-  protected html(body: string | undefined): string {
-    return body ? (marked.parse(body, { gfm: true, async: false }) as string) : '';
+  /** Rendered question bodies by key, once per inbox change (not per change detection). */
+  protected readonly bodies = computed(() => new Map(this.questions().map((q) => [this.key(q), renderMarkdown(q.comment.body)])));
+
+  protected linkClick(e: MouseEvent): void {
+    followInternalLink(e, this.router);
   }
 
   protected draft(q: InboxItem): string {
