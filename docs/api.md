@@ -171,6 +171,8 @@ peer, principal, actor), and `--log-format json` writes JSON lines for a log pip
 | `POST /stores/{name}/require` | RequireKa | `ka store require` |
 | `GET /links/resolve?link=…` | ResolveLink | `ka_resolve_link` |
 | `GET /check`, `POST /fix` | Validate, Fix | `ka check`, `ka fix` |
+| `POST /stores/{name}/compact` | Compact (`dry_run`, `summary`; a real run needs `confirm` = the store name, and in remote mode the local token) | `ka_compact`, `ka compact` |
+| `GET /stores/{name}/history`, `GET /stores/{name}/history/{file}` | History, HistorySummary | `ka_history`, `ka history` |
 | `GET /events` (SSE) | SetEvents, WatchLocal | |
 | `GET /presence` | (daemon only) | |
 | `GET /daemon`, `POST /daemon/shutdown` | | `ka daemon status`, `stop` |
@@ -246,6 +248,7 @@ refetching.
 | `sync.state` | a store's `SyncState`, when it changes and after every sync |
 | `sync.conflict_preserved` | `{preserved: [paths]}` |
 | `store.changed` | config, projects or boards changed; refetch the schema |
+| `store.compacted` | the store's history was compacted here or adopted from upstream (`data`: `from`, `root`, `summary`, `adopted`); every commit SHA changed, so refetch activity and timelines |
 | `reset` | refetch your snapshot |
 | `presence.changed` | `{state, session}` (see Presence) |
 

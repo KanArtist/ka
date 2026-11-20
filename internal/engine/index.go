@@ -468,7 +468,7 @@ func (ix *Index) reload(s *Store, paths []string) (touched []recChange, full boo
 	}
 	dirs := map[string]bool{}
 	for _, p := range paths {
-		if strings.HasPrefix(p, ".ka/") || strings.HasSuffix(p, "/project.yml") || strings.HasPrefix(p, "boards/") {
+		if strings.HasPrefix(p, ".ka/") || strings.HasSuffix(p, "/project.yml") || strings.HasPrefix(p, "boards/") || strings.HasPrefix(p, "history/") {
 			ix.rebuild()
 			return nil, true
 		}

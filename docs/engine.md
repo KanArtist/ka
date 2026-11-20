@@ -232,6 +232,78 @@ the requirement and refuses a version newer than the running ka. Run it only onc
 the store runs that version. `ka init` does not set `requires_ka`: a new store may still be shared
 with clients on older releases, so raising it stays a deliberate step.
 
+## Compacting history
+
+Over years a store's git history grows while its value as an audit trail fades. `ka compact`
+replaces a store's history with one commit holding the current tree, the equivalent of a shallow
+clone force-pushed over the old repository, and keeps a summary of what was dropped (spec §10.1).
+
+```
+ka compact --store org --dry-run                 # what would happen; also the default without --yes
+ka compact --store org --summary-file notes.md --yes
+ka history [--store org] [FILE]                  # the summaries: facts, and the narrative
+```
+
+MCP: `ka_compact` (`store`, `summary`, and `confirm`: without `confirm` equal to the store name it
+only reports) and `ka_history`. REST: `POST /stores/{name}/compact`, `GET /stores/{name}/history`,
+`GET /stores/{name}/history/{file}`. ka never writes the narrative itself: it comes from
+`--summary`/`--summary-file` or the `summary` argument (an agent can draft it from the activity
+feed).
+
+All under the store's write lock:
+
+1. **Sync.** It refuses unless the clone is level with upstream (nothing unpushed, nothing to
+   fetch), is writable, has a remote, is on a branch, has no merge or rebase in progress and no
+   uncommitted changes to tracked files. A store that is a subdirectory of a larger repository is
+   refused: its whole repository's history would go.
+2. **Summary.** It writes `history/<UTC time>-<XXXX>.md` (facts in the frontmatter: `from`, the
+   tip's `tree`, commit count, date range, commits per actor, tickets created and closed, the
+   `previous` summary; the narrative as the body), raises `requires_ka` to 1.3.0 when it is lower,
+   commits both (`Ka-Compaction-Summary` trailer) and pushes normally. If that push is rejected,
+   the commit is taken back and nothing has changed.
+3. **Root.** `git commit-tree` makes one root commit with the same tree, subject `Compact history:
+   N commits up to <date>` and trailers `Ka-Compacted-From` (the summary commit),
+   `Ka-Compacted-Tree` and `Ka-Compaction-Summary`; the local branch points at it.
+4. **Force push with a lease** (`--force-with-lease=<branch>:<summary commit>`). If someone pushed
+   meanwhile (`git_busy`), or the host refuses force pushes (`git_error`, "allow force pushes to
+   <branch> for this operation, or compact on the host"), the branch goes back to the summary
+   commit. The summary stays published: running `ka compact` again reuses it when nothing else
+   arrived, and otherwise writes a new one that names it as `previous`.
+5. **Cleanup.** Only after the push: `refs/ka/*` (replay backups) and `ORIG_HEAD` go, reflogs
+   expire and `git gc --prune=now` runs (bounded by 10 minutes; a failure is a warning, as is a
+   ref such as a tag, another branch or a stash that still holds the old history). The index needs
+   no reload (the tree is the same), and `store.compacted` is published.
+
+**Adopting.** Every ka 1.3.0+ client copes on its own. When a fetch brings a history that shares
+no commit with the clone, ka checks whether it is a compaction of this store before refusing it as
+"not this store's repository":
+
+- its root commit carries `Ka-Compacted-From`, and its `.ka/store.yml` names the same store;
+- **exact:** the clone has one of the recorded commits (the root's `Ka-Compacted-From`, or any
+  summary's `from`, newest first), related to its HEAD, and that commit's tree equals the recorded
+  tree; or
+- **behind** (it never saw where a compaction started): it takes the upstream commit it last knew
+  (the tracking ref before the fetch, else the newest earlier value in that ref's reflog that is
+  part of the old history; a writable clone without either is refused), and at least 95% of the
+  ticket directories there must exist in the new tree. Tickets are never deleted in normal
+  operation, so a real compaction has all of them.
+
+Otherwise the error is as before, with the reason added (not a compaction, another store, a tree
+mismatch, or "only N of the M tickets"). Adopting is recovery in place: a backup ref keeps the old
+HEAD, the branch moves (`reset --keep`, so uncommitted edits that would be overwritten stop it with
+"commit or stash local edits"), and commits that were never published (after the matched commit)
+are replayed as in any sync, all or nothing; a compaction's own summary commit is skipped, being in
+the new tree already. Then the same cleanup runs (the backup ref is kept when the replay preserved
+conflicts), the index reloads fully, `ka sync` reports it, and `store.compacted` reaches the UI.
+Read-only (`extends`) clones adopt the same way without a replay. The daemon's unlocked fetch and
+`ka_ask`'s polling hand a compacted remote to the locked sync, which adopts it.
+
+Clients older than 1.3.0 that know `requires_ka` (1.2.x) stop with `ka_outdated` instead of
+"shares no history"; older ones say the remote shares no history. After a compaction, the activity
+feed and ticket timelines end with a `store.compacted` entry for the root commit, naming the
+summary files; `ka history` shows what came before. A commit SHA from before the compaction (in an
+old link, or a preserved-conflict comment) is simply not found.
+
 ## The index
 
 All tickets, comments, projects, configs and actors are loaded into memory, in parallel. The
@@ -384,6 +456,7 @@ Tools:
 - `ka_claim`, `ka_release`, `ka_transition`, `ka_comment`, `ka_check`;
 - `ka_ask` (with `wait`), `ka_inbox`, `ka_schema`, `ka_sync`, `ka_resolve_link`;
 - `ka_tree`, `ka_initiative_from_label`.
+- `ka_compact` (only with `confirm`; see [Compacting history](#compacting-history)), `ka_history`.
 
 Input schemas list the workspace's real projects, statuses, kinds, closed labels and custom
 fields as enums. Results are compact text plus `structuredContent`; errors are tool results with

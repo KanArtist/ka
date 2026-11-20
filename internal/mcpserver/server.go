@@ -291,6 +291,9 @@ type handler func(ctx context.Context, c engine.Caller, args json.RawMessage) (*
 
 func (s *Server) add(name, desc string, schema obj, h handler) {
 	s.MCP.AddTool(&mcp.Tool{Name: name, Description: desc, InputSchema: schema}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		if req != nil && req.Extra != nil && req.Extra.Header != nil && req.Extra.Header.Get("X-Ka-Principal") != "" {
+			ctx = context.WithValue(ctx, remoteClient{}, true)
+		}
 		res, err := h(ctx, s.caller(req), req.Params.Arguments)
 		if err != nil {
 			return errResult(err), nil
@@ -298,6 +301,10 @@ func (s *Server) add(name, desc string, schema obj, h handler) {
 		return res, nil
 	})
 }
+
+// remoteClient marks (in a tool call's context) a client the daemon
+// authenticated with an API token or a proxy: not the local user.
+type remoteClient struct{}
 
 func decode(args json.RawMessage, v any) error {
 	if len(args) == 0 {
@@ -697,6 +704,63 @@ func (s *Server) addTools() {
 				return nil, err
 			}
 			return textResult(render.FromLabel(out), out), nil
+		})
+
+	var stores []string
+	for _, st := range s.svc.WS.Stores {
+		if !st.ReadOnly {
+			stores = append(stores, st.Name)
+		}
+	}
+	s.add("ka_compact", "Squash a store's git history into one commit, keeping a summary in history/. Rewrites shared history; not undoable on the remote. "+
+		"Only when the user asks. Without confirm it changes nothing and reports what would happen; show that to the user and get their explicit OK, "+
+		"then call again with confirm set to the store name.",
+		object(obj{
+			"store":   enum("", stores),
+			"summary": str("Narrative of what the dropped history contained (Markdown), for the summary file; offer to write it from the activity feed"),
+			"confirm": str("The store name, only after the user explicitly approved the dry run"),
+		}, "store"),
+		func(ctx context.Context, c engine.Caller, args json.RawMessage) (*mcp.CallToolResult, error) {
+			var in struct{ Store, Summary, Confirm string }
+			if err := decode(args, &in); err != nil {
+				return nil, err
+			}
+			if in.Confirm != "" && in.Confirm != in.Store {
+				return nil, engine.Errf(engine.CodeInvalid, "set confirm to the store name, \""+in.Store+"\"", "confirm %q does not match store %q", in.Confirm, in.Store)
+			}
+			if in.Confirm != "" && ctx.Value(remoteClient{}) != nil {
+				return nil, engine.Errf("forbidden", "run ka compact on the daemon's machine", "a remote client cannot compact a store")
+			}
+			out, err := s.svc.Compact(ctx, c, engine.CompactIn{Store: in.Store, Summary: in.Summary, DryRun: in.Confirm == "", Confirm: in.Confirm})
+			if err != nil {
+				return nil, err
+			}
+			text := render.Compact(out)
+			if out.DryRun {
+				text += "Nothing was changed. After the user approves, call ka_compact again with confirm: \"" + in.Store + "\"."
+			}
+			return textResult(text, out), nil
+		})
+
+	s.add("ka_history", "List a store's history summaries (what each compaction dropped), or read one with file.",
+		object(obj{"store": str("The store (default: every store)"), "file": str("A summary file name, e.g. 20261107T120000Z-4F2A.md")}),
+		func(ctx context.Context, c engine.Caller, args json.RawMessage) (*mcp.CallToolResult, error) {
+			var in struct{ Store, File string }
+			if err := decode(args, &in); err != nil {
+				return nil, err
+			}
+			if in.File != "" {
+				out, err := s.svc.HistorySummary(in.Store, in.File)
+				if err != nil {
+					return nil, err
+				}
+				return textResult(render.HistorySummary(out), out), nil
+			}
+			out, err := s.svc.History(ctx, in.Store)
+			if err != nil {
+				return nil, err
+			}
+			return textResult(render.History(out), out), nil
 		})
 
 	s.add("ka_resolve_link", "Resolve a repo://path[@ref][#Lline] link to a local file or a forge URL.",

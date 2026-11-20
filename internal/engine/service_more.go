@@ -213,6 +213,9 @@ type SyncOut struct {
 	Conflicts   []InboxItem       `json:"conflicts,omitempty"` // recent preserved-conflict comments
 	Errors      []*Error          `json:"errors,omitempty"`
 	Renamed     map[string]string `json:"renamed,omitempty"`
+	// Compacted names stores whose compacted history this sync adopted.
+	Compacted []string `json:"compacted,omitempty"`
+	Warnings  []string `json:"warnings,omitempty"`
 }
 
 // Sync syncs every store (when force is set) and reports state.
@@ -228,6 +231,11 @@ func (s *Service) Sync(ctx context.Context, force bool) *SyncOut {
 				out.Errors = append(out.Errors, &e)
 			}
 			if res != nil {
+				if res.Compacted {
+					out.Compacted = append(out.Compacted, st.Name)
+					s.publish(Event{Type: EvStoreCompacted, At: s.now(), Store: st.Name, Data: st.adoptedEvent()})
+				}
+				out.Warnings = append(out.Warnings, res.Warnings...)
 				out.Preserved = append(out.Preserved, res.Preserved...)
 				out.Unpreserved = append(out.Unpreserved, res.Unpreserved...)
 				for k, v := range res.Renamed {

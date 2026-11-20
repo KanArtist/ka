@@ -447,6 +447,12 @@ func Sync(s *engine.SyncOut) string {
 	for _, k := range sortedFieldNames(s.Renamed) {
 		fmt.Fprintf(&b, "renamed %s → %s (ID collision)\n", k, s.Renamed[k])
 	}
+	for _, st := range s.Compacted {
+		fmt.Fprintf(&b, "%s: the remote's history was compacted; adopted it (ka history shows what it held)\n", st)
+	}
+	for _, w := range s.Warnings {
+		b.WriteString("warning: " + w + "\n")
+	}
 	if len(s.Preserved) > 0 {
 		fmt.Fprintf(&b, "%d conflicting edit(s) preserved as comments\n", len(s.Preserved))
 	}

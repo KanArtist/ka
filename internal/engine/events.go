@@ -31,13 +31,14 @@ const (
 	EvSyncState         = "sync.state"
 	EvConflictPreserved = "sync.conflict_preserved"
 	EvStoreChanged      = "store.changed"
+	EvStoreCompacted    = "store.compacted" // history compacted here, or adopted from upstream
 	EvPresenceChanged   = "presence.changed"
 	EvReset             = "reset"
 )
 
 // EventTypes lists every event type.
 var EventTypes = []string{EvTicketCreated, EvTicketUpdated, EvTicketMoved, EvTicketRemoved, EvCommentCreated, EvClaimChanged,
-	EvQuestionOpened, EvQuestionAnswered, EvSyncState, EvConflictPreserved, EvStoreChanged, EvPresenceChanged, EvReset}
+	EvQuestionOpened, EvQuestionAnswered, EvSyncState, EvConflictPreserved, EvStoreChanged, EvStoreCompacted, EvPresenceChanged, EvReset}
 
 // Event is one domain event.
 type Event struct {
@@ -434,6 +435,10 @@ func (s *Service) syncEvents(st *Store, res *Result) {
 			data["unpreserved"] = res.Unpreserved
 		}
 		evs = append(evs, Event{Type: EvConflictPreserved, At: at, Store: st.Name, Data: data})
+	}
+	if res.Compacted {
+		// Every commit changed: clients reload activity and timelines.
+		evs = append(evs, Event{Type: EvStoreCompacted, At: at, Store: st.Name, Data: st.adoptedEvent()})
 	}
 	s.publish(evs...)
 }

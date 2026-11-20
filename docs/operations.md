@@ -69,6 +69,31 @@ changes pushed by others to appear within a second, add a GitHub webhook (push e
 store repository: URL `https://ka.example.com/api/v1/hooks/github`, content type JSON, and the
 secret in `--webhook-secret-file`.
 
+## Compacting a store's history
+
+`ka compact --store NAME` squashes a store's history into one commit (see
+[engine.md](engine.md#compacting-history)). On a server:
+
+- **Run it where the local token is.** Over REST (`POST /api/v1/stores/{name}/compact`) and MCP,
+  only the daemon's local token may compact; API tokens and proxied users get 403 (a dry run is
+  allowed).
+- **Branch protection.** The compaction force-pushes (with a lease) to the store's branch. If the
+  host protects it, ka stops with "allow force pushes to <branch> for this operation" and nothing
+  is rewritten. Allow force pushes for the deploy key or your account, compact, then protect the
+  branch again.
+- **Back up first.** The remote's old history cannot be recovered by ka. Keep a mirror
+  (`git clone --mirror <url>`) or a host backup from before the compaction for as long as you want
+  the audit trail.
+- **Other clones.** ka 1.3.0+ adopts the new history on its next fetch (the daemon within one
+  `fetch_interval`), replaying unpushed work. Clients of ka 1.2.x stop with "requires ka 1.3.0".
+  Clones made with plain git, forks, other branches and tags keep the old history: re-clone them
+  (or `git fetch && git reset --hard origin/<branch>` once nothing local matters). A fork that
+  pushes the old history back is refused by ka clients, which see a remote that is not a
+  compaction.
+- **Disk on the host.** The old objects stay on the host until it garbage-collects them; that is
+  up to the host (GitHub and GitLab do it on their own schedule, a bare repository needs
+  `git gc --prune=now`), and pull-request refs or forks may keep them alive there.
+
 ## Monitoring
 
 - `GET /healthz` (no token) for liveness.

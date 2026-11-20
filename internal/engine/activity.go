@@ -77,6 +77,15 @@ func (s *Service) commitEvents(st *Store, c gitx.Commit) []Event {
 	if a := c.Trailers["Ka-Actor"]; a != "" {
 		base.Actor = a
 	}
+	if from := c.Trailers[TrailerCompactedFrom]; from != "" {
+		// The root of a compacted history: what came before is only in
+		// the summaries.
+		e := base
+		e.Type, e.Text = EvStoreCompacted, c.Subject
+		e.Data = CompactedEvent{From: from, Root: c.SHA, Summary: c.Trailers[TrailerCompactionSummary],
+			Summaries: st.summaryNames(context.Background(), c.SHA)}
+		return []Event{e}
+	}
 	raw := c.Trailers["Ka-Op"]
 	if raw == "" {
 		e := base
@@ -240,7 +249,7 @@ func (s *Service) Commit(ctx context.Context, store, sha string) (*CommitOut, er
 		out.Diff = diff
 		return out, nil
 	}
-	return nil, Errf(CodeNotFound, "check the store and hash", "no commit %s in the workspace", sha)
+	return nil, Errf(CodeNotFound, "check the store and hash; commits from before a history compaction are gone (ka history lists what they held)", "no commit %s in the workspace", sha)
 }
 
 func isHexSHA(s string) bool {

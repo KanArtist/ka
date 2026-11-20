@@ -137,12 +137,17 @@ type Result struct {
 	Unpreserved []string `json:"unpreserved,omitempty"`
 	// Renamed maps IDs that collided with upstream during replay to their new IDs.
 	Renamed map[string]string `json:"renamed,omitempty"`
+	// Compacted: the remote's history was compacted and this clone adopted it.
+	Compacted bool     `json:"compacted,omitempty"`
+	Warnings  []string `json:"warnings,omitempty"`
 }
 
 func (r *Result) absorb(ir *integrateResult) {
 	r.Replayed += ir.Replayed
 	r.Preserved = append(r.Preserved, ir.Preserved...)
 	r.Unpreserved = append(r.Unpreserved, ir.Unpreserved...)
+	r.Compacted = r.Compacted || ir.Compacted
+	r.Warnings = append(r.Warnings, ir.Warnings...)
 	for k, v := range ir.IDMap {
 		if r.Renamed == nil {
 			r.Renamed = map[string]string{}
@@ -663,7 +668,9 @@ type integrateResult struct {
 	// Unpreserved describes local changes that lost and could not be
 	// recorded as a comment; the pre-replay branch stays in refs/ka/backup.
 	Unpreserved []string
-	conflicted  bool // a hand edit was cherry-picked with conflicts
+	Compacted   bool     // a compacted upstream history was adopted
+	Warnings    []string // cleanup after adopting it that did not finish
+	conflicted  bool     // a hand edit was cherry-picked with conflicts
 }
 
 // keepBackups is how many refs/ka/backup/* refs a clone keeps.
@@ -675,6 +682,9 @@ const keepBackups = 20
 // preserved as a system comment (PRD §10.4). A replay is all or nothing: if
 // any step fails, the branch goes back to where it was.
 func (s *Store) integrateLocked(ctx context.Context, h hooks, remote, branch, mine string) (*integrateResult, error) {
+	// What this clone knew of upstream, in case the fetch brings a
+	// compacted history (adoptLocked).
+	prev := s.remoteHead(ctx, remote, branch)
 	if err := s.fetch(ctx, remote, branch); err != nil {
 		ferr := Errf(CodeGit, "check the network and credentials, then run ka sync", "fetch failed: %s", firstLine(err.Error()))
 		return &integrateResult{MineSHA: mine, FetchErr: ferr}, ferr
@@ -703,12 +713,12 @@ func (s *Store) integrateLocked(ctx context.Context, h hooks, remote, branch, mi
 	}
 	base, _ := s.git.Run(ctx, "merge-base", head, upSHA)
 	if base == "" {
-		// No common commit: the remote is a different repository (renamed
-		// or moved, and its old URL now names something else). Replaying
-		// the store onto it would publish the store there, so stop.
-		u, _ := s.git.Run(ctx, "remote", "get-url", remote)
-		return nil, Errf(CodeGit, "check the store's remote: ka store set-url, or git remote set-url for an attached checkout",
-			"%s shares no history with store %s; it is not this store's repository", strings.TrimSpace(u)+" "+branch, s.Name)
+		// No common commit. Either the store's history was compacted
+		// (adopt it), or the remote is a different repository (renamed or
+		// moved, and its old URL now names something else): replaying the
+		// store onto that would publish the store there, so adoptLocked
+		// refuses it.
+		return s.adoptLocked(ctx, h, res, remote, branch, head, upSHA, prev, mine)
 	}
 	switch base {
 	case upSHA: // we are ahead
@@ -1139,6 +1149,7 @@ func (s *Store) integrateReadOnly(ctx context.Context, h hooks, remote, branch s
 		return false, nil // never move someone's attached checkout we do not write to
 	}
 	before := s.git.Head(ctx)
+	prev := s.remoteHead(ctx, remote, branch)
 	if err := s.fetch(ctx, remote, branch); err != nil {
 		s.note(false, false, Errf(CodeGit, "check the network and credentials", "fetch failed: %s", firstLine(err.Error())))
 		return false, nil
@@ -1149,6 +1160,19 @@ func (s *Store) integrateReadOnly(ctx context.Context, h hooks, remote, branch s
 		return false, err
 	}
 	if _, err := s.git.Run(ctx, "merge", "-q", "--ff-only", up); err != nil {
+		if mb, _ := s.git.Run(ctx, "merge-base", "HEAD", up); mb == "" && before != "" {
+			// A compacted history: adopt it as a writable clone does.
+			unlock, err := s.lock(ctx)
+			if err != nil {
+				return false, err
+			}
+			defer unlock()
+			if _, err := s.adoptLocked(context.WithoutCancel(ctx), h, &integrateResult{}, remote, branch, before, up, prev, ""); err != nil {
+				s.note(false, false, err)
+				return false, err
+			}
+			return true, nil
+		}
 		return false, nil
 	}
 	after := s.git.Head(ctx)

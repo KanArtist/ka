@@ -687,6 +687,39 @@ func (s *Server) adminRoutes() {
 			out, err := s.svc.FixWith(ctx, s.caller(in.CallerHeaders), engine.FixOptions{DryRun: in.Body.DryRun, Slugs: in.Body.Slugs})
 			return &body[*engine.FixOut]{out}, err
 		})
+	op = post("compactStore", "/stores/{name}/compact", "Compact a store's history into one commit (ka compact)", "sync")
+	op.Description = "Publishes a summary in history/, then replaces the store's branch with one root commit (a force push with a lease). " +
+		"Without dry_run it requires confirm equal to the store name, and in remote mode only the daemon's local token may run it."
+	reg(s, op, func(ctx context.Context, in *struct {
+		CallerHeaders
+		Name string `path:"name" doc:"The store's workspace name."`
+		Body struct {
+			Summary string `json:"summary,omitempty" doc:"The narrative of the summary file (Markdown)."`
+			DryRun  bool   `json:"dry_run,omitempty" doc:"Report what would happen; change nothing."`
+			Confirm string `json:"confirm,omitempty" doc:"The store's name: required to compact for real."`
+		}
+	}) (*body[*engine.CompactOut], error) {
+		if in.Principal != "" && !in.Body.DryRun { // an API token or a proxied user, not the local token
+			return nil, newProblem(codeForbidden, "run `ka compact` on the daemon's machine", "only the daemon's local token can compact a store")
+		}
+		out, err := s.svc.Compact(ctx, s.caller(in.CallerHeaders), engine.CompactIn{Store: in.Name, Summary: in.Body.Summary, DryRun: in.Body.DryRun, Confirm: in.Body.Confirm})
+		return &body[*engine.CompactOut]{out}, err
+	})
+	reg(s, get("listHistory", "/stores/{name}/history", "A store's history summaries: what each compaction dropped (ka history)", "sync"),
+		func(ctx context.Context, in *struct {
+			Name string `path:"name" doc:"The store's workspace name."`
+		}) (*body[*engine.HistoryOut], error) {
+			out, err := s.svc.History(ctx, in.Name)
+			return &body[*engine.HistoryOut]{out}, err
+		})
+	reg(s, get("getHistorySummary", "/stores/{name}/history/{file}", "One history summary with its narrative", "sync"),
+		func(ctx context.Context, in *struct {
+			Name string `path:"name" doc:"The store's workspace name."`
+			File string `path:"file" doc:"The summary's file name, such as 20261107T120000Z-4F2A.md."`
+		}) (*body[*engine.HistoryEntry], error) {
+			out, err := s.svc.HistorySummary(in.Name, in.File)
+			return &body[*engine.HistoryEntry]{out}, err
+		})
 	reg(s, get("getDaemon", "/daemon", "The daemon's version, PID and address", "daemon"),
 		func(ctx context.Context, in *struct{}) (*body[daemonInfo], error) {
 			s.mu.RLock()

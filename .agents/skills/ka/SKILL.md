@@ -1,6 +1,6 @@
 ---
 name: ka
-description: Track work as KanArtist tickets with ka. Use when picking up, claiming, updating, commenting on or closing tickets, asking a human a question, or when the user mentions tickets, the board, KanArtist or ka.
+description: Track work as KanArtist tickets with ka. Use when picking up, claiming, updating, commenting on or closing tickets, asking a human a question, or when the user mentions tickets, the board, KanArtist or ka. Also use when the user asks to compact a store, reduce or shrink its git history, flatten or squash ticket history, or says the ticket repository is too big.
 ---
 
 # KanArtist tickets (ka)
@@ -83,6 +83,31 @@ Plan new ones with the `ka/plan-initiative` and `ka/plan-epic` prompts;
 Your actor name is `agent/<you>`, set by `KA_ACTOR` (the MCP server is
 registered with it). Comments, claims and commits record it, so people can
 see which agent did what.
+
+## Compacting history
+
+A store's git history can be squashed into one commit to shrink the
+repository (`ka_compact`, CLI `ka compact --store NAME`). Only do this when
+the user asks for it (compaction, history reduction, a repository that is too
+big); never on your own initiative.
+
+1. Tell the user what it does: it rewrites the store's shared history (a force
+   push) and cannot be undone on the remote. Tickets and their current state
+   stay; the commit-by-commit history goes, except for a summary file kept in
+   `history/`. Other ka clients adopt the new history by themselves; plain git
+   clones and forks must re-clone. Suggest a backup first
+   (`git clone --mirror`).
+2. Run the dry run: `ka_compact` without `confirm` (`ka compact --store NAME
+   --dry-run`) and show the user what it reports.
+3. Offer to write the narrative for the summary: what the dropped history held
+   (major work, decisions, who did what), drafted from the activity feed
+   (`ka watch --history 500`, or `GET /activity`) and the tickets. Show it to the
+   user.
+4. Only after the user explicitly says to go ahead, run it: `ka_compact` with
+   `confirm` set to the store name and `summary` (`ka compact --store NAME
+   --summary-file notes.md --yes`). Report the result, including warnings.
+
+`ka_history` (`ka history`) lists earlier compactions and shows a summary.
 
 ## When something is off
 
