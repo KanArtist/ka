@@ -92,6 +92,7 @@ func Check(w *Workspace, opt CheckOptions) []Diagnostic {
 		}
 	}
 	c.cycles()
+	c.hierarchy()
 	out := dedupe(c.diags)
 	SortDiagnostics(out)
 	return out

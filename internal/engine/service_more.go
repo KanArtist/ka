@@ -18,6 +18,9 @@ type NextIn struct {
 	Query   string `json:"query,omitempty"` // extra filters: project:jk kind:bug label:cache
 	Project string `json:"project,omitempty"`
 	Peek    bool   `json:"peek,omitempty"` // do not claim (claim: false)
+	// Within limits candidates to the tickets below an initiative, epic or
+	// other parent ticket, at any depth.
+	Within string `json:"within,omitempty" doc:"Only tickets below this initiative, epic or parent ticket (at any depth)."`
 }
 
 // NextOut is ka_next's output.
@@ -35,12 +38,23 @@ func (s *Service) Next(ctx context.Context, c Caller, in NextIn) (*NextOut, erro
 	q := in.Query
 	if in.Project != "" {
 		q += " project:" + in.Project
-	} else if s.WS.Project != "" && !strings.Contains(q, "project:") {
+	} else if s.WS.Project != "" && in.Within == "" && !strings.Contains(q, "project:") {
+		// (within names its own scope, which may span projects)
 		q += " project:" + s.WS.Project
 	}
 	query, err := ParseQuery(q)
 	if err != nil {
 		return nil, err
+	}
+	if in.Within != "" {
+		s.ix.catchUp()
+		s.ix.mu.RLock()
+		r, err := s.rec(in.Within)
+		s.ix.mu.RUnlock()
+		if err != nil {
+			return nil, err
+		}
+		query.terms = append(query.terms, term{key: "within", values: []string{r.ID}})
 	}
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
@@ -86,8 +100,8 @@ func (s *Service) candidates(c Caller, q *Query, skip map[string]bool, peek bool
 	v := s.view()
 	var out []*Rec
 	for _, r := range s.ix.tickets {
-		if skip[r.ID] || r.Invalid || r.Project.File.Archived || r.T.MovedTo != "" || (r.Store.ReadOnly && !peek) {
-			continue
+		if skip[r.ID] || r.Invalid || r.Project.File.Archived || r.T.MovedTo != "" || (r.Store.ReadOnly && !peek) || isContainer(r) {
+			continue // containers are not work
 		}
 		if category(r.Project.Cfg, r.T.Status) != "unstarted" || r.T.Claim != nil || v.isBlocked(r) {
 			continue

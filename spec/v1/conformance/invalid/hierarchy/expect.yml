@@ -1,0 +1,7 @@
+description: "Containers nested against the rules: an initiative with a parent, an epic under a work ticket, an epic under an epic."
+stores:
+  - store
+expect:
+  - hierarchy_invalid store/projects/jk/tickets/JK-9GDPR/ticket.md
+  - hierarchy_invalid store/projects/jk/tickets/JK-4EPC1/ticket.md
+  - hierarchy_invalid store/projects/jk/tickets/JK-5EP6Q/ticket.md

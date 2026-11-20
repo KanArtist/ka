@@ -35,7 +35,7 @@ type textTerm struct {
 
 // QueryKeys are the recognized filter keys.
 var QueryKeys = []string{"id", "project", "store", "status", "category", "priority", "kind", "label",
-	"assignee", "owner", "claimed", "parent", "blocked_by", "blocks", "created_by", "is", "has", "sort"}
+	"assignee", "owner", "claimed", "parent", "initiative", "epic", "blocked_by", "blocks", "created_by", "is", "has", "sort"}
 
 var keyAliases = map[string]string{"cat": "category", "p": "priority", "labels": "label", "proj": "project", "state": "status"}
 
@@ -176,6 +176,7 @@ type view struct {
 	ix   *Index
 	now  time.Time
 	full bool // summaries carry owner, created and custom fields
+	memo *viewMemo
 }
 
 func (v view) isBlocked(r *Rec) bool {
@@ -237,6 +238,9 @@ func (q *Query) match(v view, r *Rec) bool {
 			ok = anyMatch(tm.values, []string{t.CreatedBy})
 		case "parent":
 			ok = anyMatch(tm.values, []string{t.Parent})
+		case "initiative", "epic", "within":
+			// Every ticket below the named ones, at any depth.
+			ok = v.under(r, tm.values)
 		case "blocked_by":
 			ok = anyMatch(tm.values, t.BlockedBy)
 		case "blocks":
@@ -307,8 +311,12 @@ func (v view) is(r *Rec, what string) bool {
 		return v.isBlocked(r)
 	case "unblocked":
 		return !v.isBlocked(r)
-	case "ready":
-		return cat == "unstarted" && r.T.Claim == nil && !v.isBlocked(r)
+	case "ready": // claimable work: containers are never ready
+		return cat == "unstarted" && r.T.Claim == nil && !isContainer(r) && !v.isBlocked(r)
+	case "initiative", "epic":
+		return r.T.Kind == what
+	case "container":
+		return isContainer(r)
 	case "invalid":
 		return r.Invalid
 	case "archived":

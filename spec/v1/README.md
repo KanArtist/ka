@@ -189,7 +189,7 @@ Frontmatter keys, in canonical order. **R** marks required fields. Unknown keys 
 | `assignee` | actor | Who is doing the work now (may be an agent). |
 | `owner` | actor | The accountable human. |
 | `claim` | mapping | `by` (actor, **R**), `at` (timestamp, **R**), `session` (string, optional). Present only while claimed. |
-| `parent` | ID | Parent ticket (sub-issue or epic). Children are derived. |
+| `parent` | ID | Parent ticket: a sub-issue's ticket, an epic or an initiative (§4.5). Children are derived. |
 | `blocked_by` | list of IDs | Tickets that must finish first. `blocks` is derived. |
 | `related` | list of IDs | Related tickets. Stored once, on the ticket that declares it. |
 | `duplicate_of` | ID | |
@@ -242,6 +242,35 @@ repeated as a heading.
 
 Template residue is a `placeholder_text` warning: an empty checklist item (`- [ ]`), a
 `{{variable}}` outside code, or a heading whose section is empty or holds only a bare `-`.
+
+### 4.5 Initiatives and epics
+
+Two kinds are **containers**: `initiative` and `epic`. A container is a ticket like any other (same
+file, fields and workflow), used to group work: an initiative is a long-running theme ("GDPR",
+"Windows support", "Release 1.2") holding epics and tickets; an epic is a body of work holding
+tickets. Every other ticket is **work**. The hierarchy is project > initiative > epic > ticket;
+initiatives and epics are optional, and the links are ordinary `parent` fields, which may cross
+projects and stores like any relation (§8.1).
+
+Nesting rules (`hierarchy_invalid` otherwise):
+
+1. An initiative has no `parent`.
+2. An epic's `parent`, when set, is an initiative.
+3. A work ticket's `parent` may be an initiative, an epic or another work ticket (a sub-issue).
+
+So a container is never the child of a work ticket. The names `initiative` and `epic` carry this
+meaning wherever they appear in a project's `kinds`; a project whose config removes them simply has
+no containers.
+
+A container's status is set by hand; nothing changes it automatically. Tools SHOULD show a container
+with a **rollup** over all its descendants that are work tickets (transitively, through nested
+epics): how many there are, done (`completed` category), canceled, started, blocked and ready. A
+container is not work: tools that hand out work (`ka_next`) MUST NOT hand out a container. An open
+container whose descendant work tickets are all closed, or a closed container with open
+descendants, is a `container_status` warning.
+
+ka before 1.3.0 rejects the container kinds (`unknown_kind`), so a store with containers SHOULD set
+`requires_ka` (§5.1) to at least `1.3.0` (`containers_unguarded` otherwise).
 
 ## 5. Store files
 
@@ -345,7 +374,7 @@ Boards never store ticket membership or ordering.
 
 The bottom layer of every chain is [`defaults.yml`](defaults.yml): the workflow `triage, backlog,
 ready, in_progress, blocked, review, done, canceled`, the kinds `feature, bug, chore, research,
-design, refactor, perf`, open labels, no custom fields, a 24-hour stale-claim threshold and size
+design, refactor, perf, initiative, epic` (the last two are containers, §4.5), open labels, no custom fields, a 24-hour stale-claim threshold and size
 limits.
 
 ### 6.3 The chain and merge rules
@@ -506,6 +535,7 @@ implementations.
 | `spec_unsupported` | error | The store uses a spec version the tool does not support. |
 | `ka_outdated` | error | The store's `requires_ka` names a newer `ka` release than the tool implements. |
 | `slugs_unguarded` | warning | Tickets have slugs, or config sets `slugs: true`, but `requires_ka` is below 1.2.0. |
+| `containers_unguarded` | warning | A ticket is an initiative or an epic, but `requires_ka` is below 1.3.0 (§4.5). |
 | `project_key_mismatch` | error | `project.yml` `key` differs from the directory name. |
 | `project_missing_file` | error | A project directory has no `project.yml`. |
 | `ticket_missing_file` | error | A ticket directory has no `ticket.md`. |
@@ -524,6 +554,8 @@ implementations.
 | `self_ref` | error | A ticket references itself. |
 | `cycle` | error | A cycle in `parent` or `blocked_by`. |
 | `answer_dangling` | error | `answers`/`supersedes`/`retracts` names a missing comment. |
+| `hierarchy_invalid` | error | A `parent` breaks the nesting rules of initiatives and epics (§4.5). |
+| `container_status` | warning | An open initiative or epic whose work tickets are all closed, or a closed one with open descendants (§4.5). |
 | `stale_claim` | info | A claim is older than `claims.stale_after`. |
 | `archived_project` | info | A ticket in an archived project is still in a started status. |
 | `secret_suspect` | warning | Text that looks like a credential. |
@@ -587,8 +619,8 @@ change it. A change that would make existing valid data invalid, or valid data m
 different, increments it, and `ka migrate` upgrades a store in one commit. A tool MUST NOT write to
 a store whose spec version it does not support.
 
-Some additions within a version are new keys in existing files, which older readers reject as
-`unknown_key` (ticket slugs, §4.3, are one). A store that uses such an addition sets `requires_ka`
+Some additions within a version are new keys or values in existing files, which older readers
+reject (ticket slugs, §4.3, as `unknown_key`; the container kinds, §4.5, as `unknown_kind`). A store that uses such an addition sets `requires_ka`
 (§5.1) to the first `ka` release that supports it, so an older client stops with an explanation
 instead of failing on individual files. Raise `requires_ka` only once every client of the store has
 upgraded.

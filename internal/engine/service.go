@@ -175,7 +175,7 @@ func (s *Service) ActorFor(nameOrEmail string) string {
 
 // ---- reading -----------------------------------------------------------------
 
-func (s *Service) view() view { return view{ix: s.ix, now: s.Now()} }
+func (s *Service) view() view { return view{ix: s.ix, now: s.Now(), memo: &viewMemo{}} }
 
 func (s *Service) rec(id string) (*Rec, error) {
 	r, ok := s.ix.tickets[s.ix.canon(id)]

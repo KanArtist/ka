@@ -107,6 +107,12 @@ type applyEnv interface {
 	// ref reports whether a referenced ID exists, and whether its prefix
 	// belongs to the workspace at all (unknown prefixes are external).
 	ref(id string) (exists, known bool)
+	// kind returns a ticket's kind (ok false when the ticket is unknown),
+	// childKinds a ticket's children and their kinds, and containersGuard
+	// an error unless the store may hold initiatives and epics (spec §4.5).
+	kind(id string) (kind string, ok bool)
+	childKinds(id string) map[string]string
+	containersGuard() error
 }
 
 // loadedTicket is a ticket read from disk.
@@ -174,7 +180,13 @@ func apply(env applyEnv, o *Op) ([]change, string, error) {
 
 	switch o.Op {
 	case "update":
+		oldKind := t.Kind
 		subject, err = applyUpdate(env, cfg, t, o)
+		_, setParent := o.Set["parent"]
+		// An unknown kind is reported by validateTicket below.
+		if err == nil && (setParent || t.Kind != oldKind) && (t.Kind == "" || slices.Contains(cfg.Kinds, t.Kind)) {
+			err = checkContainers(env, t, t.Kind != oldKind)
+		}
 	case "claim":
 		if t.Claim != nil && claimedAgainst(t.Claim, o) {
 			stale := claimStale(t.Claim, cfg, o.At)
@@ -366,6 +378,9 @@ func applyCreate(env applyEnv, o *Op) ([]change, string, error) {
 	t.ID = o.ID
 	data := kaspec.FormatTicket(&t)
 	if err := validateTicket(env, cfg, dir, &t, data); err != nil {
+		return nil, "", err
+	}
+	if err := checkContainers(env, &t, true); err != nil {
 		return nil, "", err
 	}
 	return []change{{Path: dir + "/ticket.md", Data: data}}, refSubject(o.ID, &t, fmt.Sprintf("%s: created %q", o.ID, t.Title)), nil

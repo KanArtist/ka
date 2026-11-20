@@ -29,6 +29,17 @@ labels and custom fields you may use; values outside them are rejected with the 
 Mention tickets by the reference `ka` shows, the ID plus its slug (`JK-7QK3M-compiler-warnings`),
 so readers know what a ticket is without looking it up. Tools accept the reference or the bare ID.
 
+## Initiatives and epics
+
+Work can be grouped: project > initiative > epic > ticket. An **initiative** (`kind: initiative`) is
+a long-running theme ("GDPR", "Windows support"); an **epic** (`kind: epic`, parent an initiative or
+none) is a body of work; tickets point at either through `parent`. **`ka_tree`** shows one with
+every ticket below it and a progress rollup; `ka_search` scopes with `initiative:ID` and `epic:ID`.
+To run an initiative: `ka_tree id=<initiative>` → pick an epic → workers call `ka_next
+within=<epic>` → close the epic with `ka_transition` once its rollup is complete, and the initiative
+last. `ka_next` never hands out a container. `ka_initiative_from_label` turns a label used as a
+theme into an initiative.
+
 ## Asking a human
 
 **`ka_ask`** puts a question (optionally with `options`) or an approval request in a person's
@@ -55,5 +66,5 @@ comment digest; `include: ["comments"]` for every comment. Resources `ka://ticke
 
 ## Prompts
 
-`ka/plan-epic` splits a goal into an epic and ordered child tickets; `ka/write-ticket` drafts one
-well-formed ticket.
+`ka/plan-initiative` splits a theme into an initiative, epics and tickets; `ka/plan-epic` splits a
+goal into an epic and ordered child tickets; `ka/write-ticket` drafts one well-formed ticket.

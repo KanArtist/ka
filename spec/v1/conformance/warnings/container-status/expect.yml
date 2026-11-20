@@ -1,0 +1,6 @@
+description: "An open initiative whose tickets are all closed, and a closed epic with an open ticket."
+stores:
+  - store
+expect:
+  - container_status store/projects/jk/tickets/JK-9GDPR/ticket.md
+  - container_status store/projects/jk/tickets/JK-4EPC1/ticket.md

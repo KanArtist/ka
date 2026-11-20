@@ -162,6 +162,56 @@ ka before 1.2.0 rejects a ticket with a slug, so turn slugs on for a store in th
 
 `ka check` warns (`slugs_unguarded`) when a store has slugs but no such `requires_ka`.
 
+## Initiatives and epics
+
+The hierarchy is project > initiative > epic > ticket (spec §4.5). Initiatives (long-running
+themes: "GDPR", "Windows support", "Release 1.2") and epics are optional **containers**: tickets of
+kind `initiative` or `epic`, in the default kinds, linked through `parent` like any sub-issue. An
+initiative holds epics and tickets; an epic holds tickets; a ticket may still hold sub-issues.
+Create them with `ka new --kind initiative` and `ka new --kind epic --parent <initiative>` (or
+`ka_create`).
+
+- **Rules.** `create` and `update` operations refuse an initiative with a parent, an epic whose
+  parent is not an initiative, and a kind change that would leave a child breaking those rules
+  (`hierarchy_invalid`, with the fix). They are checked when an operation creates a ticket or
+  changes its `parent` or `kind`, including on replay. `ka check` reports the same as
+  `hierarchy_invalid`.
+- **Not work.** `ka_next` never hands out a container, even an empty one, and `is:ready` never
+  matches one. An orchestrator may still `ka_claim` one to show it is running it. Container
+  statuses are set by hand; nothing moves them.
+- **Rollups.** `ka tree ID` (`ka_tree`, `GET /api/v1/tree`) shows the subtree under a ticket, or
+  with no ID every initiative and top-level epic of the project, one line per ticket: reference,
+  priority, status, claim holder, `BLOCKED`, title, and for containers a rollup over every work
+  ticket below (`3/8 done, 2 started, 1 blocked, 2 ready, 1 canceled`) plus direct child counts in
+  the JSON. `--depth N` limits the levels and `--hide-closed` leaves out closed tickets (the rollups
+  still count them); left-out children show as `… N more`. One walk computes every rollup.
+- **Scopes.** `initiative:ID` and `epic:ID` match every ticket below one (transitively; references
+  and former prefixes work), `is:initiative`, `is:epic` and `is:container` match the containers,
+  and `parent:ID` still means direct children. `ka next --within ID` (`ka_next within`, `POST
+  /next {"within"}`) only considers tickets below that initiative, epic or parent ticket.
+- **Hygiene.** `ka check` warns (`container_status`) about an open container whose work tickets
+  are all closed, and a closed one with open descendants.
+- **Labels to initiatives.** `ka initiative from-label LABEL [--project KEY] [--title T]
+  [--keep-label] [--dry-run]` (`ka_initiative_from_label`, `POST /api/v1/initiatives/from-label`)
+  creates the initiative, or reuses the project's initiative with that title (default: the label),
+  then gives every ticket of the project carrying the label (in any case, closed ones too) the
+  initiative as parent. A labelled ticket whose parent is an epic without a parent moves the epic
+  instead (once); tickets with any other parent are reported and left alone. The label is removed
+  from converted tickets unless `--keep-label`. It is one `create` and one `update` per ticket,
+  pushed once, so it replays like any other write, and running it again only picks up tickets
+  labelled since.
+
+The orchestration loop: `ka_tree` the initiative → pick an epic → workers call `ka_next
+within=<epic>` → when the epic's rollup is complete, the orchestrator closes it with
+`ka_transition`, and finally the initiative.
+
+ka before 1.3.0 rejects the container kinds (`unknown_kind`), so they are guarded like slugs: the
+engine refuses to create the first container (or change a ticket's kind to one) in a store whose
+`.ka/store.yml` does not set `requires_ka: 1.3.0` or newer (`containers_unguarded`, telling you to
+add it once every client runs 1.3.0), and `ka check` warns (`containers_unguarded`) about a store
+that has containers without it. There is no command that raises `requires_ka`; edit `store.yml`,
+commit and push. A project that removes the two kinds from its `kinds` has no containers.
+
 ## Version requirements
 
 A store's `requires_ka` (spec §5.1) names the oldest ka release that may use it. A ka older than
@@ -302,12 +352,14 @@ field; bare words search the title and description.
 project:jk,gyggly category:started -label:infra assignee:agent/* priority:P0,P1
 is:ready | is:open | is:closed | is:blocked | is:claimed | is:stale | is:question
 has:parent  blocked_by:JK-7QK3M  blocks:JK-7QK3M  field.estimate:M  sort:-updated
+initiative:JK-9GDPR  epic:JK-4EPC1  is:initiative | is:epic | is:container
 ```
 
 `ka_next` considers tickets that are in an `unstarted` status, unclaimed, not blocked (a
 `blocked: true` status, or an open ticket in `blocked_by`; references outside the workspace do
-not block) and assigned to nobody or to the caller. Tickets with open children are excluded: the
-work is in the children. Candidates are ordered by priority, then age, with the caller's own
+not block) and assigned to nobody or to the caller. Initiatives and epics are never candidates, and
+tickets with open children are excluded: the work is in the children. `within` limits the
+candidates to the tickets below one ticket. Candidates are ordered by priority, then age, with the caller's own
 assignments first. The chosen ticket moves to the first `started` status as it is claimed.
 
 ## MCP
@@ -320,12 +372,14 @@ Tools:
 
 - `ka_next`, `ka_search`, `ka_get`, `ka_create`, `ka_update`;
 - `ka_claim`, `ka_release`, `ka_transition`, `ka_comment`, `ka_check`;
-- `ka_ask` (with `wait`), `ka_inbox`, `ka_schema`, `ka_sync`, `ka_resolve_link`.
+- `ka_ask` (with `wait`), `ka_inbox`, `ka_schema`, `ka_sync`, `ka_resolve_link`;
+- `ka_tree`, `ka_initiative_from_label`.
 
 Input schemas list the workspace's real projects, statuses, kinds, closed labels and custom
 fields as enums. Results are compact text plus `structuredContent`; errors are tool results with
 `isError`, a code, and a fix. Ticket text from others is labeled as data. Resources are
-`ka://ticket/{id}` and `ka://board/{name}`; prompts are `ka/plan-epic` and `ka/write-ticket`.
+`ka://ticket/{id}` and `ka://board/{name}`; prompts are `ka/plan-initiative`, `ka/plan-epic` and
+`ka/write-ticket`.
 
 **Token budgets** (PRD §11.3) are regression tests (`internal/scenario/budget_test.go`). They
 count the arguments the model writes plus the text it reads, using a deliberately conservative
@@ -333,7 +387,9 @@ estimator: one token per 4 letters, per 3 digits, and per punctuation character.
 fixtures, `ka_next` costs about 510 tokens, `ka_comment` 65, `ka_transition` 60 and a 20-result
 `ka_search` about 1,070. `ka_next` fits its digest to 740 tokens: the description gets whatever
 room the rest leaves. Over every ready ticket of the migrated `jk` store, the maximum is 760
-(`KA_BUDGET_STORE=<store> go test ./internal/scenario -run RealStore`).
+(`KA_BUDGET_STORE=<store> go test ./internal/scenario -run RealStore`). A `ka_tree` of an
+initiative with three epics and 25 tickets costs about 890 tokens (budget 1,000); with `depth: 1`,
+about 270.
 
 ## Tests
 

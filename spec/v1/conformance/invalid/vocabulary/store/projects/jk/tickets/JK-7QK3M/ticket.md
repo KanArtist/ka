@@ -2,7 +2,7 @@
 id: JK-7QK3M
 title: A ticket
 status: doing
-kind: epic
+kind: saga
 labels:
   - infra
 fields:

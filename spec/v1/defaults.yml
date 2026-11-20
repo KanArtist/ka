@@ -31,6 +31,8 @@ kinds:
   - design
   - refactor
   - perf
+  - initiative
+  - epic
 labels:
   closed: false
 fields: {}

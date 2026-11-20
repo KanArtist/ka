@@ -17,7 +17,7 @@ import (
 
 // takesID lists commands whose first argument is a ticket ID.
 var takesID = map[string]bool{"show": true, "edit": true, "claim": true, "release": true, "move": true, "comment": true,
-	"check-item": true, "ask": true, "answer": true, "approve": true, "reject": true, "open": true}
+	"check-item": true, "ask": true, "answer": true, "approve": true, "reject": true, "open": true, "tree": true}
 
 func cmdComplete(ctx context.Context, x *IO, args []string) int {
 	cur := ""

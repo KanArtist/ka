@@ -25,7 +25,7 @@ Agents are the primary users; humans get a live window into what they are doing.
 | Store Spec v1: prose, JSON Schemas, built-in defaults, conformance corpus | [`spec/v1/`](spec/v1/) |
 | `kaspec`: parse, canonical format, config layering with locks, validation | [`pkg/kaspec/`](pkg/kaspec/) |
 | Engine: workspaces, index, queries, operations, sync with operation replay, merge driver | [`internal/engine/`](internal/engine/) |
-| `ka mcp`: 15 MCP tools with workspace-specific schemas | [`internal/mcpserver/`](internal/mcpserver/) |
+| `ka mcp`: 17 MCP tools with workspace-specific schemas | [`internal/mcpserver/`](internal/mcpserver/) |
 | The `ka` CLI, with prompts, completion, `ka watch`, hooks | [`internal/cli/`](internal/cli/) |
 | `ka daemon`: REST, OpenAPI 3.1, SSE, MCP over HTTP, presence, remote mode (tokens, proxies), webhooks, metrics | [`internal/api/`](internal/api/) |
 | Web UI (Angular, embedded): Activity, Board (drag and drop, saved boards), Table, ticket editing, Agents, Inbox, Docs, Sync & health, Settings | [`web/`](web/) |
@@ -108,9 +108,12 @@ human go through `ka_ask`.
 ```bash
 ka init --project jk                 # new store in the current git repo
 ka ls is:ready project:jk            # query: project:jk kind:bug -label:infra is:blocked words
-ka next [--claim]                    # the best ready ticket
+ka next [--claim] [--within ID]      # the best ready ticket (inside an initiative or epic)
 ka show JK-7QK3M [--comments]
 ka new -t "Fix the flaky cache test" --kind bug --priority P1 --accept "passes 100 runs"
+ka new -t "GDPR" --kind initiative   # containers: initiative > epic (--kind epic --parent ID) > ticket
+ka tree [ID]                         # an initiative or epic, its tickets and progress
+ka initiative from-label gdpr        # a label used as a theme becomes an initiative
 ka edit JK-7QK3M --set priority=P0 --add labels=cache   # no flags: $EDITOR
 ka move JK-7QK3M done -m "Fixed the race in the eviction thread."
 ka inbox / ka answer JK-7QK3M --choice 1 / ka approve JK-7QK3M

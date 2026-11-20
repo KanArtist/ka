@@ -45,10 +45,12 @@ var commands []command
 func init() {
 	commands = []command{
 		{"init", "[--project KEY [--prefix P]] [--name N] [--extends URL] [DIR]", "create a store (and git repo) and register the merge driver", cmdInit, false},
-		{"next", "[--claim] [QUERY...]", "show (or claim) the best ready ticket", cmdNext, false},
+		{"next", "[--claim] [--within ID] [QUERY...]", "show (or claim) the best ready ticket", cmdNext, false},
 		{"ls", "[--limit N] [--all] [--sort KEY] [QUERY...]", "list tickets matching a query", cmdLs, false},
 		{"show", "ID [--comments]", "show a ticket", cmdShow, false},
-		{"new", "-t TITLE [--kind K] [--priority P] [--label L]... [--accept TEXT]... [-m BODY] [--project KEY]", "create a ticket", cmdNew, false},
+		{"tree", "[ID] [--project KEY] [--depth N] [--hide-closed]", "initiatives and epics with their tickets and progress", cmdTree, false},
+		{"new", "-t TITLE [--kind K] [--parent ID] [--priority P] [--label L]... [--accept TEXT]... [-m BODY] [--project KEY]", "create a ticket (--kind initiative|epic for containers)", cmdNew, false},
+		{"initiative", "from-label LABEL [--project KEY] [--title T] [--keep-label] [--dry-run]", "turn a label into an initiative over its tickets", cmdInitiative, false},
 		{"edit", "ID [--set K=V]... [--add K=V]... [--remove K=V]...", "change fields (no flags: open $EDITOR)", cmdEdit, false},
 		{"claim", "ID [--steal]", "claim a ticket", cmdClaim, false},
 		{"release", "ID [--status S]", "release a claim", cmdRelease, false},
@@ -307,9 +309,10 @@ func isTTY(r io.Reader) bool {
 // ---- reading commands ------------------------------------------------------------
 
 func cmdNext(ctx context.Context, x *IO, args []string) int {
-	fl, c := newFlags("next", "[--claim] [QUERY...]", x)
+	fl, c := newFlags("next", "[--claim] [--within ID] [QUERY...]", x)
 	claim := fl.Bool("claim", false, "claim it")
 	project := fl.String("project", "", "limit to a project")
+	within := fl.String("within", "", "only tickets below this initiative, epic or parent ticket")
 	pos, err := parse(fl, args)
 	if err != nil {
 		return 2
@@ -318,7 +321,7 @@ func cmdNext(ctx context.Context, x *IO, args []string) int {
 	if err != nil {
 		return fail(x, c, err)
 	}
-	out, err := svc.Next(ctx, caller, engine.NextIn{Query: strings.Join(pos, " "), Project: *project, Peek: !*claim})
+	out, err := svc.Next(ctx, caller, engine.NextIn{Query: strings.Join(pos, " "), Project: *project, Peek: !*claim, Within: *within})
 	if err != nil {
 		return fail(x, c, err)
 	}

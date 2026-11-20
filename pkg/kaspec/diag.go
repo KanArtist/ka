@@ -74,6 +74,7 @@ var Codes = map[string]Severity{
 	"spec_unsupported":          SevError,
 	"ka_outdated":               SevError,
 	"slugs_unguarded":           SevWarning,
+	"containers_unguarded":      SevWarning,
 	"project_key_mismatch":      SevError,
 	"project_missing_file":      SevError,
 	"ticket_missing_file":       SevError,
@@ -88,11 +89,14 @@ var Codes = map[string]Severity{
 	"comment_filename":          SevError,
 	"comment_time_mismatch":     SevWarning,
 	// relations
-	"dangling_ref":    SevError,
-	"external_ref":    SevInfo,
-	"self_ref":        SevError,
-	"cycle":           SevError,
-	"answer_dangling": SevError,
+	"dangling_ref":      SevError,
+	"external_ref":      SevInfo,
+	"self_ref":          SevError,
+	"cycle":             SevError,
+	"answer_dangling":   SevError,
+	"hierarchy_invalid": SevError,
+	// hygiene
+	"container_status": SevWarning,
 	// operational
 	"stale_claim":       SevInfo,
 	"archived_project":  SevInfo,

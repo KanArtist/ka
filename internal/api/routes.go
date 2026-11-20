@@ -71,6 +71,7 @@ func unquote(tag string) string {
 func (s *Server) routes() {
 	s.workspaceRoutes()
 	s.ticketRoutes()
+	s.hierarchyRoutes()
 	s.questionRoutes()
 	s.adminRoutes()
 }

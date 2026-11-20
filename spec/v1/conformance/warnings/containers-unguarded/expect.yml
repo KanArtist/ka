@@ -1,0 +1,5 @@
+description: "A store has an epic but does not require a ka that knows the container kinds."
+stores:
+  - store
+expect:
+  - containers_unguarded store/.ka/store.yml

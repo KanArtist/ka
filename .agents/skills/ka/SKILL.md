@@ -59,6 +59,25 @@ still works after the slug changes.
 - `ka_search` (`ka ls <query>`) uses the filter language:
   `project:jk status:in_progress assignee:me label:ci "free text"`.
 
+## Initiatives and epics
+
+Work can be grouped: project > initiative > epic > ticket. An initiative
+(kind `initiative`, no parent) is a long-running theme such as "GDPR"; an epic
+(kind `epic`, parent an initiative or none) is a body of work; tickets point
+at either with `parent`. `ka_next` never hands out an initiative or epic.
+
+To run one ("implement the GDPR initiative"):
+
+1. `ka_tree` (`ka tree <ID>`) shows the initiative, its epics and tickets with
+   status, claims and a progress rollup. `ka_tree` without an ID lists them.
+2. Pick an epic; each worker calls `ka_next` with `within: <epic>`
+   (`ka next --within <ID> --claim`) and works the loop above.
+3. When an epic's rollup is all done, close it with `ka_transition` and a
+   summary; close the initiative last. Nothing closes them automatically.
+
+Plan new ones with the `ka/plan-initiative` and `ka/plan-epic` prompts;
+`ka_search` scopes with `initiative:<ID>` or `epic:<ID>`.
+
 ## Identity
 
 Your actor name is `agent/<you>`, set by `KA_ACTOR` (the MCP server is

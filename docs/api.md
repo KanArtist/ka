@@ -165,7 +165,9 @@ peer, principal, actor), and `--log-format json` writes JSON lines for a log pip
 | `POST /tickets/{id}/questions` | Ask (`wait_seconds` ≤ 300) | `ka_ask` |
 | `POST /tickets/{id}/answers` | Answer | `ka answer`, `ka approve` |
 | `GET /inbox` | Inbox | `ka_inbox` |
-| `POST /next` | Next | `ka_next` |
+| `POST /next` (`within` limits it to the tickets below one) | Next | `ka_next`, `ka next` |
+| `GET /tree?id=&project=&depth=&hide_closed=` | Tree | `ka_tree`, `ka tree` |
+| `POST /initiatives/from-label` | InitiativeFromLabel | `ka_initiative_from_label`, `ka initiative from-label` |
 | `GET /links/resolve?link=…` | ResolveLink | `ka_resolve_link` |
 | `GET /check`, `POST /fix` | Validate, Fix | `ka check`, `ka fix` |
 | `GET /events` (SSE) | SetEvents, WatchLocal | |

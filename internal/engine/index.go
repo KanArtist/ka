@@ -381,7 +381,11 @@ func (ix *Index) derive() {
 	ix.blocks = map[string][]string{}
 	for id, r := range ix.tickets {
 		if r.T.Parent != "" {
-			ix.children[r.T.Parent] = append(ix.children[r.T.Parent], id)
+			p := r.T.Parent
+			if _, ok := ix.tickets[p]; !ok {
+				p = ix.canon(p) // a former prefix finds the parent too
+			}
+			ix.children[p] = append(ix.children[p], id)
 		}
 		for _, b := range r.T.BlockedBy {
 			ix.blocks[b] = append(ix.blocks[b], id)
