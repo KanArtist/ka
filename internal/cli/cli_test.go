@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -623,6 +624,9 @@ func TestEditorCommand(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "my editors")
 	os.MkdirAll(dir, 0o755)
 	ed := filepath.Join(dir, "ed it")
+	if runtime.GOOS == "windows" {
+		ed += ".exe" // Windows finds a program by its extension, not a mode bit
+	}
 	os.WriteFile(ed, []byte("#!/bin/sh\n"), 0o755)
 	if cmd := editorCommand(ed, "f.md"); cmd.Path != ed || len(cmd.Args) != 2 || cmd.Args[1] != "f.md" {
 		t.Fatalf("path with spaces: %q %q", cmd.Path, cmd.Args)

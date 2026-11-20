@@ -26,7 +26,9 @@ jobs:
       - run: git --version
       - run: go vet ./...
       # -short trims the multi-clone simulator (S5); the full run is below.
-      - run: go test -race -short ./...
+      # The engine and scenario packages take over seven minutes each on the
+      # Windows runner; the default limit is ten.
+      - run: go test -race -short -timeout 25m ./...
       - name: Full simulator and scenarios
         if: runner.os == 'Linux'
         run: go test -count=1 ./internal/scenario/
