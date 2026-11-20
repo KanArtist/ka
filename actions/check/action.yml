@@ -8,7 +8,7 @@ inputs:
     description: "Store directories to check, space-separated (default: the repository root)."
     default: "."
   version:
-    description: "The ka release to use, such as v1.0.0, or \"latest\"."
+    description: "The ka release to use, such as v1.0.0, or \"latest\". The archive is checked against the release's checksums.txt, and its signature too when cosign is on PATH."
     default: latest
   format:
     description: "github (annotations on the pull request) or sarif (writes sarif-file for github/codeql-action/upload-sarif)."
@@ -36,22 +36,60 @@ runs:
         KA_VERSION: ${{ inputs.version }}
       run: |
         set -euo pipefail
+        repo=KanArtist/ka
         os=$(echo "$RUNNER_OS" | tr '[:upper:]' '[:lower:]'); [ "$os" = macos ] && os=darwin
         arch=$(echo "$RUNNER_ARCH" | tr '[:upper:]' '[:lower:]'); [ "$arch" = x64 ] && arch=amd64
         ext=tar.gz; [ "$os" = windows ] && ext=zip
-        if [ "$KA_VERSION" = latest ]; then base=https://github.com/KanArtist/ka/releases/latest/download
-        else base=https://github.com/KanArtist/ka/releases/download/$KA_VERSION; fi
-        dir="$RUNNER_TEMP/ka-bin"; mkdir -p "$dir"
-        if curl -fsSL "$base/ka_${os}_${arch}.$ext" -o "$RUNNER_TEMP/ka.$ext"; then
-          if [ "$ext" = zip ]; then unzip -q -o "$RUNNER_TEMP/ka.$ext" -d "$dir"; else tar -xzf "$RUNNER_TEMP/ka.$ext" -C "$dir"; fi
-        elif command -v go >/dev/null; then
-          echo "No ka release asset for $os/$arch at $base; building it with go install."
-          v=$KA_VERSION; [ "$v" = latest ] && v=main
-          GOBIN="$dir" go install "github.com/KanArtist/ka/cmd/ka@$v"
+        asset="ka_${os}_${arch}.$ext"
+        curl_() { curl --proto '=https' --tlsv1.2 "$@"; }
+        # Resolve "latest" to a tag once, so the archive, the checksums, the
+        # signature and any source build all come from the same release.
+        if [ "$KA_VERSION" = latest ]; then
+          loc=$(curl_ -fsS -o /dev/null -w '%{redirect_url}' "https://github.com/$repo/releases/latest") || loc=
+          tag=${loc##*/releases/tag/}
+          case "$tag" in v?*) ;; *) echo "::error::Could not find the latest release of $repo."; exit 1 ;; esac
         else
-          echo "::error::No ka release for $os/$arch, and Go is not installed to build it (add actions/setup-go before this step)."
+          tag=v${KA_VERSION#v}
+        fi
+        base=https://github.com/$repo/releases/download/$tag
+        dl="$RUNNER_TEMP/ka-download"; rm -rf "$dl"; mkdir -p "$dl"
+        dir="$RUNNER_TEMP/ka-bin"; mkdir -p "$dir"
+        code=$(curl_ -sSL --retry 3 -o "$dl/$asset" -w '%{http_code}' "$base/$asset") || code=000
+        if [ "$code" = 404 ]; then
+          # Only a release without this asset falls back to a source build, at
+          # the same tag; the Go checksum database vouches for the module.
+          if ! command -v go >/dev/null; then
+            echo "::error::No ka release asset $asset in $tag, and Go is not installed to build it (add actions/setup-go before this step)."
+            exit 1
+          fi
+          echo "No ka release asset $asset in $tag; building it with go install."
+          GOBIN="$dir" go install "github.com/$repo/cmd/ka@$tag"
+          echo "$dir" >> "$GITHUB_PATH"
+          exit 0
+        elif [ "$code" != 200 ]; then
+          echo "::error::Could not download $base/$asset (HTTP $code)."
           exit 1
         fi
+        curl_ -fsSL --retry 3 -o "$dl/checksums.txt" "$base/checksums.txt"
+        if command -v cosign >/dev/null; then
+          curl_ -fsSL --retry 3 -o "$dl/checksums.txt.sigstore.json" "$base/checksums.txt.sigstore.json"
+          # The same identity and issuer as install.sh, at this exact tag.
+          cosign verify-blob --bundle "$dl/checksums.txt.sigstore.json" \
+            --certificate-identity "https://github.com/$repo/.github/workflows/release.yml@refs/tags/$tag" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            "$dl/checksums.txt"
+          echo "Verified the signature of ka $tag."
+        else
+          echo "::notice::cosign is not installed, so the ka release signature was not verified (only its checksum). Add sigstore/cosign-installer before this step to verify it."
+        fi
+        want=$(awk -v f="$asset" '$2 == f { print $1 }' "$dl/checksums.txt")
+        if command -v sha256sum >/dev/null; then got=$(sha256sum "$dl/$asset" | cut -d' ' -f1)
+        else got=$(shasum -a 256 "$dl/$asset" | cut -d' ' -f1); fi
+        if [ -z "$want" ] || [ "$got" != "$want" ]; then
+          echo "::error::$asset does not match the checksum in $tag's checksums.txt."
+          exit 1
+        fi
+        if [ "$ext" = zip ]; then unzip -q -o "$dl/$asset" -d "$dir"; else tar -xzf "$dl/$asset" -C "$dir"; fi
         echo "$dir" >> "$GITHUB_PATH"
     - name: ka check
       id: check

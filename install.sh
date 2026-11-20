@@ -9,10 +9,13 @@
 #   KA_INSTALL_DIR  where to put the binary (default: /usr/local/bin as root,
 #                   otherwise ~/.local/bin)
 #   KA_FROM_SOURCE  1 to build with Go even when a release archive exists
+#   KA_REQUIRE_SIGNATURE
+#                   1 to fail unless cosign verifies the release signature
 #
 # The archive is checked against the release's checksums.txt. If cosign is
 # installed, checksums.txt is first verified against its Sigstore bundle, which
-# proves it was built by this repository's release workflow.
+# proves it was built by this repository's release workflow for that version's
+# tag. Without cosign the signature is not verified, and the script says so.
 #
 # With Go 1.27 or newer installed, ka is built from source when there is no
 # archive for this platform or version, or when asked. Run from a checkout of
@@ -23,7 +26,8 @@
 set -eu
 
 REPO=KanArtist/ka
-IDENTITY='^https://github\.com/KanArtist/ka/\.github/workflows/release\.yml@refs/tags/v'
+# The signing certificate must name this workflow at the tag being installed.
+IDENTITY_PREFIX=https://github.com/KanArtist/ka/.github/workflows/release.yml@refs/tags/v
 ISSUER=https://token.actions.githubusercontent.com
 
 say() { printf '%s\n' "$*" >&2; }
@@ -64,7 +68,9 @@ go_install() {
 }
 
 # A checkout of this repository: install what fits its ui/.
-here=$(cd "$(dirname "$0")" 2>/dev/null && pwd) || here=
+# Piped into sh, $0 is not a file and the current directory is not the script's.
+here=
+[ -f "$0" ] && { here=$(cd "$(dirname "$0")" 2>/dev/null && pwd) || here=; }
 if [ -n "$here" ] && [ -f "$here/embed.go" ] && [ -f "$here/ui/ka-ui.json" ] &&
 	grep -q "^module github.com/$REPO\$" "$here/go.mod" 2>/dev/null && [ -z "${KA_VERSION:-}" ]; then
 	if tag=$(git -C "$here" describe --tags --exact-match 2>/dev/null); then
@@ -108,11 +114,14 @@ if [ "${KA_FROM_SOURCE:-}" = 1 ]; then
 fi
 
 if command -v curl >/dev/null 2>&1; then
-	fetch() { curl -fsSL --retry 3 -o "$2" "$1"; }
-	redirect() { curl -fsS -o /dev/null -w '%{redirect_url}' "$1"; }
+	fetch() { curl -fsSL --proto '=https' --tlsv1.2 --retry 3 -o "$2" "$1"; }
+	redirect() { curl -fsS --proto '=https' --tlsv1.2 -o /dev/null -w '%{redirect_url}' "$1"; }
+	# status URL prints the HTTP status of URL itself, without following a redirect.
+	status() { curl -sS --proto '=https' --tlsv1.2 -o /dev/null -w '%{http_code}' "$1" || :; }
 elif command -v wget >/dev/null 2>&1; then
 	fetch() { wget -q -O "$2" "$1"; }
 	redirect() { wget -S --max-redirect=0 -O /dev/null "$1" 2>&1 | sed -n 's/^ *[Ll]ocation: *//p' | tr -d '\r' | head -n 1; }
+	status() { wget -S --max-redirect=0 -O /dev/null "$1" 2>&1 | awk '$1 ~ /^HTTP\// { c = $2 } END { print c }'; }
 else
 	die "needs curl or wget"
 fi
@@ -140,25 +149,40 @@ fi
 
 prepare_dir
 
+have_cosign=
+command -v cosign >/dev/null 2>&1 && have_cosign=1
+if [ -z "$have_cosign" ] && [ "${KA_REQUIRE_SIGNATURE:-}" = 1 ]; then
+	die "KA_REQUIRE_SIGNATURE=1 needs cosign to verify the release (https://docs.sigstore.dev/cosign/system_config/installation/)"
+fi
+
 tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT INT TERM
+trap 'rm -rf "$tmp"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 archive="ka_${os}_${arch}.tar.gz"
 say "Downloading ka $version ($archive)"
 if ! fetch "$base/$archive" "$tmp/$archive"; then
-	have_go || die "could not download $base/$archive"
+	# Build from source only when the release has no such archive, not on a
+	# network or server error.
+	[ "$(status "$base/$archive")" = 404 ] || die "could not download $base/$archive"
+	have_go || die "there is no release archive $archive for $version; install Go 1.27 or newer (https://go.dev/dl/) to build it"
 	say "No release archive $archive for $version; building it from source instead."
 	go_install "" "v$version"
 fi
 fetch "$base/checksums.txt" "$tmp/checksums.txt" || die "could not download checksums.txt"
 
-if command -v cosign >/dev/null 2>&1; then
+if [ -n "$have_cosign" ]; then
 	fetch "$base/checksums.txt.sigstore.json" "$tmp/checksums.txt.sigstore.json" ||
 		die "could not download the checksums signature"
 	cosign verify-blob --bundle "$tmp/checksums.txt.sigstore.json" \
-		--certificate-identity-regexp "$IDENTITY" --certificate-oidc-issuer "$ISSUER" \
-		"$tmp/checksums.txt" >/dev/null 2>&1 || die "checksums.txt failed signature verification"
+		--certificate-identity "$IDENTITY_PREFIX$version" --certificate-oidc-issuer "$ISSUER" \
+		"$tmp/checksums.txt" >/dev/null 2>&1 || die "checksums.txt failed signature verification for v$version"
 	say "Verified the release signature"
+else
+	say "Note: cosign is not installed, so the release signature was NOT verified; the checksum"
+	say "      only shows the archive matches checksums.txt from the same download site."
+	say "      Install cosign, or set KA_REQUIRE_SIGNATURE=1 to make this an error."
 fi
 
 want=$(awk -v f="$archive" '$2 == f { print $1 }' "$tmp/checksums.txt")

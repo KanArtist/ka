@@ -12,13 +12,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: KanArtist/ka/actions/check@main
+      - uses: KanArtist/ka/actions/check@v1.2.1 # or a full commit SHA
+        with:
+          version: v1.2.1
 ```
+
+Reference the action by a release tag, or better by that tag's full commit
+SHA, rather than `@main`: the action decides which binary runs in your CI.
+Setting `version` to the same release keeps the binary from moving either.
+
+The action downloads the release archive, checks it against the release's
+`checksums.txt`, and, when `cosign` is on `PATH` (add
+`sigstore/cosign-installer` before it), verifies that `checksums.txt` was
+signed by this repository's release workflow at that tag. Without cosign it
+says that the signature was not verified.
 
 For code scanning instead of annotations:
 
 ```yaml
-      - uses: KanArtist/ka/actions/check@main
+      - uses: KanArtist/ka/actions/check@v1.2.1
         id: ka
         with:
           format: sarif
@@ -33,7 +45,7 @@ Inputs:
 | Input | Default | Meaning |
 |---|---|---|
 | `path` | `.` | Store directories, space-separated. |
-| `version` | `latest` | A ka release tag. Before the first release, the action builds ka with `go install` (add `actions/setup-go`). |
+| `version` | `latest` | A ka release tag, or `latest` (resolved to a tag once). If that release has no archive for the runner's platform, the action builds the same tag with `go install` (add `actions/setup-go`); any other download failure fails the step. |
 | `format` | `github` | `github` annotations, or `sarif`. |
 | `sarif-file` | `ka-check.sarif` | Where the SARIF report goes. |
 | `skip-install` | `false` | Use the `ka` already on `PATH`. |
