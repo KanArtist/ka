@@ -12,9 +12,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: KanArtist/ka/actions/check@v1.2.1 # or a full commit SHA
+      - uses: KanArtist/ka/actions/check@v1.3.0 # or a full commit SHA
         with:
-          version: v1.2.1
+          version: v1.3.0
 ```
 
 Reference the action by a release tag, or better by that tag's full commit
@@ -30,7 +30,7 @@ says that the signature was not verified.
 For code scanning instead of annotations:
 
 ```yaml
-      - uses: KanArtist/ka/actions/check@v1.2.1
+      - uses: KanArtist/ka/actions/check@v1.3.0
         id: ka
         with:
           format: sarif
