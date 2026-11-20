@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kanartist.dev/spec/v1/schema/history.schema.json",
+  "title": "KanArtist history summary frontmatter, spec v1 §10.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "compacted_at",
+    "by",
+    "from",
+    "tree",
+    "commits"
+  ],
+  "properties": {
+    "compacted_at": {
+      "type": "string",
+      "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\dZ$"
+    },
+    "by": {
+      "type": "string",
+      "pattern": "^((agent|role)/)?[a-z0-9][a-z0-9._-]{0,63}$"
+    },
+    "on_behalf_of": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+    },
+    "from": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+    },
+    "tree": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+    },
+    "commits": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "first_commit": {
+      "type": "string",
+      "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\dZ$"
+    },
+    "last_commit": {
+      "type": "string",
+      "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\dZ$"
+    },
+    "actors": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "tickets_created": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "tickets_closed": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "previous": {
+      "type": "string",
+      "pattern": "^\\d{8}T\\d{6}Z-[0-9A-HJKMNP-TV-Z]{4}\\.md$"
+    }
+  }
+}

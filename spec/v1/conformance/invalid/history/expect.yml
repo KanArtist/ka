@@ -1,0 +1,8 @@
+description: "history/: a summary without from and with a non-integer commit count; files that are not summaries are stray."
+stores:
+  - store
+expect:
+  - missing_field store/history/20261107T120000Z-4F2A.md
+  - invalid_value store/history/20261107T120000Z-4F2A.md
+  - stray_file store/history/README.md
+  - stray_file store/history/notes

@@ -108,7 +108,7 @@ func checkSchemas(t *testing.T, ws *Workspace, caseDir string, stores []string) 
 	t.Helper()
 	c := jsonschema.NewCompiler()
 	schemas := map[string]*jsonschema.Schema{}
-	for _, name := range []string{"ticket", "comment", "store", "project", "config", "actors", "board"} {
+	for _, name := range []string{"ticket", "comment", "store", "project", "config", "actors", "board", "history"} {
 		path, _ := filepath.Abs(filepath.Join(specDir, "schema", name+".schema.json"))
 		f, err := os.Open(path)
 		if err != nil {
@@ -124,7 +124,7 @@ func checkSchemas(t *testing.T, ws *Workspace, caseDir string, stores []string) 
 			t.Fatal(err)
 		}
 	}
-	for _, name := range []string{"ticket", "comment", "store", "project", "config", "actors", "board"} {
+	for _, name := range []string{"ticket", "comment", "store", "project", "config", "actors", "board", "history"} {
 		s, err := c.Compile("https://kanartist.dev/spec/v1/schema/" + name + ".schema.json")
 		if err != nil {
 			t.Fatalf("compile %s schema: %v", name, err)
@@ -156,6 +156,8 @@ func checkSchemas(t *testing.T, ws *Workspace, caseDir string, stores []string) 
 				kind, doc = "ticket", true
 			case strings.Contains(rel, "/comments/"):
 				kind, doc = "comment", true
+			case strings.HasPrefix(rel, "history/"):
+				kind, doc = "history", true
 			default:
 				return nil
 			}

@@ -49,6 +49,7 @@ Contents:
 │   └── actors.yml         optional. Actor registry (§5.4)
 ├── .gitattributes         RECOMMENDED (§3.4)
 ├── boards/<name>.yml      optional. Saved views (§5.5)
+├── history/<yyyymmddThhmmssZ>-<XXXX>.md   optional. Summaries of compacted history (§10.1)
 └── projects/<key>/
     ├── project.yml        REQUIRED for each project (§5.2)
     ├── docs/              optional. Free-form project documents
@@ -65,7 +66,8 @@ Rules:
    archive directory, and tickets are never renamed or moved within a store.
 2. Inside a project directory only `project.yml`, `tickets/` and `docs/` are allowed. Inside a
    ticket directory only `ticket.md`, `comments/` and `files/` are allowed. Inside `comments/`
-   only comment files are allowed. Anything else is a `stray_file` warning.
+   only comment files are allowed. Inside `history/` only summary files (§10.1) are allowed.
+   Anything else is a `stray_file` warning.
 3. `docs/` content is not interpreted. Files elsewhere in the store (README, CI config, …) are
    ignored.
 4. Names MUST be portable: ASCII, no `:`, no names differing only by case, and paths short enough
@@ -581,6 +583,50 @@ This section is informative in version 1; `ka` follows it and the activity feed 
   to apply it again, including its timestamp (`at`) and any generated comment filename. A tool
   that replays an operation re-checks its preconditions against the new state first.
 
+### 10.1 Compacted history
+
+This section is normative: it is how clients recognize a store whose history was replaced.
+
+A store's history MAY be **compacted**: its branch is replaced by a single root commit whose tree
+is exactly the tree of the old tip, so the data is unchanged and only the history goes. Before
+that, a **summary file** recording what the dropped history held is committed and pushed
+normally, at `history/<yyyymmddThhmmssZ>-<XXXX>.md` (the compaction time in UTC and four random
+Crockford base32 characters, as in §7.1). Its names sort in compaction order. Summary files are
+never edited, renamed or removed, so every compaction's record survives later ones. The file is a
+document (§3.1): its body is an optional narrative; its frontmatter holds the facts:
+
+| Key | Type | Notes |
+|---|---|---|
+| `compacted_at` **R** | timestamp | When the compaction ran. |
+| `by` **R** | actor | Who ran it. |
+| `on_behalf_of` | human actor | |
+| `from` **R** | commit | The tip of the history being compacted (the summary commit's parent): a full hash. |
+| `tree` **R** | tree | That commit's tree. |
+| `commits` **R** | integer ≥ 0 | Commits in the dropped history. |
+| `first_commit`, `last_commit` | timestamp | Author dates of its oldest and newest commits. |
+| `actors` | mapping | Commits per actor (`Ka-Actor`, else the author). |
+| `tickets_created`, `tickets_closed` | integer ≥ 0 | `create` operations, and transitions with a resolution, in that history. |
+| `previous` | file name | The summary of the compaction before this one. |
+
+The summary commit carries the trailer `Ka-Compaction-Summary: history/<name>.md`, and raises
+`requires_ka` (§5.1) to at least `1.3.0`, so clients that predate compaction stop and ask for an
+upgrade. The new root commit's message ends with the trailers
+
+```
+Ka-Compacted-From: <the summary commit>
+Ka-Compacted-Tree: <its tree, which is the root's tree>
+Ka-Compaction-Summary: history/<name>.md
+```
+
+plus the usual `Ka-Actor`, `Ka-On-Behalf-Of`, `Ka-Session` and `Ka-Spec`. A client whose history
+shares no commit with its remote MUST NOT publish to the remote unless the remote's history is a
+compaction of the same store: its root commit has `Ka-Compacted-From`, its `.ka/store.yml` names
+the same store, and either the client has one of the recorded commits (the root's
+`Ka-Compacted-From`, or a summary's `from`) with the recorded tree, or nearly all of the tickets
+the client last saw upstream exist in the new tree (`ka` requires 95%). It then moves to the new
+history and re-applies its unpublished commits on top. Other branches, tags and forks are not
+part of a compaction.
+
 ## 11. Writing by hand
 
 An agent or human without `ka` can produce valid data:
@@ -623,4 +669,4 @@ Some additions within a version are new keys or values in existing files, which 
 reject (ticket slugs, §4.3, as `unknown_key`; the container kinds, §4.5, as `unknown_kind`). A store that uses such an addition sets `requires_ka`
 (§5.1) to the first `ka` release that supports it, so an older client stops with an explanation
 instead of failing on individual files. Raise `requires_ka` only once every client of the store has
-upgraded.
+upgraded. A history compaction (§10.1) raises it to `1.3.0` itself.

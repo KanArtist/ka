@@ -292,7 +292,9 @@ type Store struct {
 	Keys     []string // project keys, sorted
 	// Moved maps the key of a tombstoned project (moved_to_store) to the
 	// store it moved to. Tombstones are not in Projects or Keys.
-	Moved     map[string]string
+	Moved map[string]string
+	// History maps history/ file names to their summaries (spec §2).
+	History   map[string]*HistorySummary
 	Diags     []Diagnostic
 	ParentFor func(Parent) (*Store, error) // set by the workspace
 }
@@ -492,6 +494,7 @@ func LoadStore(fsys fs.FS, label string) *Store {
 			s.Boards[strings.TrimSuffix(e.Name(), ".yml")] = b
 		}
 	}
+	s.loadHistory(root)
 	for _, e := range s.listEntry("projects", entry(root, "projects"), s.add) {
 		rel := "projects/" + e.Name()
 		switch {
