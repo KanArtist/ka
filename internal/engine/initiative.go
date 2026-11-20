@@ -70,8 +70,6 @@ func (s *Service) InitiativeFromLabel(ctx context.Context, c Caller, in FromLabe
 	if title == "" {
 		title = label
 	}
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
 	s.ix.catchUp()
 
 	// Sync first, so an initiative another clone created for this label is
@@ -90,11 +88,22 @@ func (s *Service) InitiativeFromLabel(ctx context.Context, c Caller, in FromLabe
 		}
 	}
 
+	// Plan and write under the store's write mutex; push after.
+	hm, err := s.hold(ctx, pi.Store)
+	if err != nil {
+		return nil, err
+	}
+	defer hm.unlock()
+	s.ix.catchUp()
+	held := pi.Store
 	s.ix.mu.RLock()
 	pi, out, plan, err := s.planFromLabel(c, in, label, title)
 	s.ix.mu.RUnlock()
 	if err != nil || in.DryRun {
 		return out, err
+	}
+	if pi.Store != held {
+		return nil, Errf(CodeGitBusy, "retry", "project %s moved to another store meanwhile", pi.Key)
 	}
 
 	st := pi.Store
@@ -107,7 +116,7 @@ func (s *Service) InitiativeFromLabel(ctx context.Context, c Caller, in FromLabe
 		return out, nil
 	}
 	if plan.create != nil {
-		if _, err := s.do(ctx, st, plan.create, false); err != nil {
+		if _, err := s.doHeld(ctx, hm, st, plan.create, false); err != nil {
 			return fail(err)
 		}
 		wrote = true
@@ -120,7 +129,7 @@ func (s *Service) InitiativeFromLabel(ctx context.Context, c Caller, in FromLabe
 		}
 		o, err := s.updateOp(c, pi, u.in)
 		if err == nil {
-			_, err = s.do(ctx, st, o, false)
+			_, err = s.doHeld(ctx, hm, st, o, false)
 		}
 		if err != nil {
 			return fail(err)
@@ -131,6 +140,7 @@ func (s *Service) InitiativeFromLabel(ctx context.Context, c Caller, in FromLabe
 		out.Pushed, out.Local = true, true
 		return out, nil
 	}
+	hm.unlock()
 	res, err := s.push(ctx, st)
 	if res != nil {
 		out.Pushed, out.Local, out.PushPending = res.Pushed || !res.HasRemote, !res.HasRemote, res.PushPending

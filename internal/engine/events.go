@@ -96,10 +96,15 @@ func (s *Service) SetEvents(sink EventSink) {
 	defer s.ix.mu.Unlock()
 	s.events = sink
 	if sink == nil {
-		s.ix.emit = nil
+		s.ix.emit, s.ix.onCompacted = nil, nil
 		return
 	}
 	s.ix.emit = s.ticketEvents
+	s.ix.onCompacted = func(st *Store) {
+		// Another process compacted (or adopted a compaction into) the clone
+		// this process serves: activity and timelines changed everywhere.
+		s.publish(Event{Type: EvStoreCompacted, At: s.now(), Store: st.Name, Data: st.compactedEvent(false)})
+	}
 }
 
 func (s *Service) publish(evs ...Event) {
@@ -388,10 +393,13 @@ func (s *Service) WatchLocal(ctx context.Context, every time.Duration) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			// Skip while this process is writing: its own refresh attributes the change.
-			if s.writeMu.TryLock() {
-				s.ix.catchUp()
-				s.writeMu.Unlock()
+			// Skip a store while this process is writing to it: its own
+			// refresh attributes the change.
+			for _, st := range s.WS.Stores {
+				if unlock, ok := st.tryLockMu(); ok {
+					s.ix.catchUpStore(st)
+					unlock()
+				}
 			}
 		}
 	}

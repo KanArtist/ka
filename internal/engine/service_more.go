@@ -56,14 +56,12 @@ func (s *Service) Next(ctx context.Context, c Caller, in NextIn) (*NextOut, erro
 		}
 		query.terms = append(query.terms, term{key: "within", values: []string{r.ID}})
 	}
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
 	tried := map[string]bool{}
-	for attempt := 0; attempt < 8; attempt++ {
+	for attempt := 0; attempt < 8; {
 		s.ix.catchUp()
 		cands := s.candidates(c, query, tried, in.Peek)
 		if len(cands) == 0 {
-			if attempt == 0 {
+			if len(tried) == 0 {
 				return &NextOut{}, Errf(CodeNoCandidates, "nothing is ready: widen the filters, check ka_search is:blocked, or file work with ka_create", "no ready, unclaimed, unblocked ticket matches")
 			}
 			return &NextOut{}, Errf(CodeNoCandidates, "every candidate was claimed concurrently; retry shortly", "no ticket could be claimed")
@@ -75,7 +73,24 @@ func (s *Service) Next(ctx context.Context, c Caller, in NextIn) (*NextOut, erro
 			s.ix.mu.RUnlock()
 			return out, nil
 		}
-		co, err := s.claimLocked(ctx, c, r.ID, false)
+		// Claim it under its store's write mutex, once the ticket is seen
+		// to be still a candidate there: another agent in this process may
+		// have claimed it since. Concurrent Next calls in this process thus
+		// never pick the same ticket; across processes and clones the claim's
+		// replay decides (claim_lost).
+		id := r.ID
+		st, pi, h, err := s.holdTicket(ctx, &id)
+		if err != nil {
+			return nil, err
+		}
+		if !s.stillCandidate(c, query, id) {
+			h.unlock()
+			tried[id] = true
+			continue
+		}
+		attempt++
+		co, err := s.claimHeld(ctx, h, st, pi, c, id, false)
+		h.unlock()
 		if IsCode(err, CodeClaimLost) || IsCode(err, "ticket_closed") {
 			tried[r.ID] = true
 			continue
@@ -100,19 +115,10 @@ func (s *Service) candidates(c Caller, q *Query, skip map[string]bool, peek bool
 	v := s.view()
 	var out []*Rec
 	for _, r := range s.ix.tickets {
-		if skip[r.ID] || r.Invalid || r.Project.File.Archived || r.T.MovedTo != "" || (r.Store.ReadOnly && !peek) || isContainer(r) {
-			continue // containers are not work
-		}
-		if category(r.Project.Cfg, r.T.Status) != "unstarted" || r.T.Claim != nil || v.isBlocked(r) {
+		if skip[r.ID] {
 			continue
 		}
-		if r.T.Assignee != "" && r.T.Assignee != c.Actor {
-			continue
-		}
-		if s.hasOpenChildren(r.ID) {
-			continue // the work is in the children
-		}
-		if !q.match(v, r) {
+		if !s.isCandidate(v, c, q, r, peek) {
 			continue
 		}
 		out = append(out, r)
@@ -127,6 +133,32 @@ func (s *Service) candidates(c Caller, q *Query, skip map[string]bool, peek bool
 		return out[i].T.Assignee == c.Actor && out[j].T.Assignee != c.Actor
 	})
 	return out
+}
+
+// isCandidate reports whether r is ready work for c matching q (the index
+// read lock held).
+func (s *Service) isCandidate(v view, c Caller, q *Query, r *Rec, peek bool) bool {
+	if r.Invalid || r.Project.File.Archived || r.T.MovedTo != "" || (r.Store.ReadOnly && !peek) || isContainer(r) {
+		return false // containers are not work
+	}
+	if category(r.Project.Cfg, r.T.Status) != "unstarted" || r.T.Claim != nil || v.isBlocked(r) {
+		return false
+	}
+	if r.T.Assignee != "" && r.T.Assignee != c.Actor {
+		return false
+	}
+	if s.hasOpenChildren(r.ID) {
+		return false // the work is in the children
+	}
+	return q.match(v, r)
+}
+
+// stillCandidate checks a chosen ticket again on the current index.
+func (s *Service) stillCandidate(c Caller, q *Query, id string) bool {
+	s.ix.mu.RLock()
+	defer s.ix.mu.RUnlock()
+	r, ok := s.ix.tickets[id]
+	return ok && s.isCandidate(s.view(), c, q, r, false)
 }
 
 func (s *Service) hasOpenChildren(id string) bool {
@@ -222,7 +254,7 @@ type SyncOut struct {
 func (s *Service) Sync(ctx context.Context, force bool) *SyncOut {
 	out := &SyncOut{}
 	if force {
-		s.writeMu.Lock()
+		// Each store's sync takes its own locks, for its local part only.
 		for _, st := range s.WS.Stores {
 			res, err := st.Sync(ctx, s.hooks(st))
 			if err != nil {
@@ -246,7 +278,6 @@ func (s *Service) Sync(ctx context.Context, force bool) *SyncOut {
 				}
 			}
 		}
-		s.writeMu.Unlock()
 	}
 	for _, st := range s.WS.Stores {
 		out.Stores = append(out.Stores, st.State(ctx))
@@ -367,13 +398,11 @@ func (s *Service) TicketPath(id string) (string, *Store, error) {
 // so it replays like any other operation. A non-empty ifMatch requires the
 // file on disk to still have that blob SHA.
 func (s *Service) ReplaceTicket(ctx context.Context, c Caller, id string, data []byte, ifMatch string) (*WriteOut, error) {
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
-	s.ix.catchUp()
-	st, pi, err := s.storeOf(&id)
+	st, pi, h, err := s.holdTicket(ctx, &id)
 	if err != nil {
 		return nil, err
 	}
+	defer func() { h.unlock() }()
 	s.ix.mu.RLock()
 	r, err := s.rec(id)
 	var old kaspec.Ticket
@@ -402,13 +431,19 @@ func (s *Service) ReplaceTicket(ctx context.Context, c Caller, id string, data [
 		}
 	}
 	stamp(o, c, s.now())
-	res, err := s.do(ctx, st, o, true)
+	res, err := s.doHeld(ctx, h, st, o, true)
 	if err != nil {
 		return nil, err
 	}
 	if nt.Status != old.Status {
+		// The update's push released the mutex: take it again.
+		h.unlock()
+		if h, err = s.hold(ctx, st); err != nil {
+			return nil, err
+		}
+		s.ix.catchUp()
 		t := stamp(&Op{Op: "transition", ID: old.ID, Status: nt.Status}, c, s.now())
-		r2, err := s.do(ctx, st, t, true)
+		r2, err := s.doHeld(ctx, h, st, t, true)
 		if err != nil {
 			e := *AsError(err)
 			e.Message = "the other edits were saved, but the status was not changed: " + e.Message

@@ -46,8 +46,11 @@ func (s *Service) RequireKa(ctx context.Context, c Caller, store, version string
 	if err != nil {
 		return nil, err
 	}
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
+	hm, err := s.hold(ctx, st)
+	if err != nil {
+		return nil, err
+	}
+	defer hm.unlock()
 	unlock, err := st.lock(ctx)
 	if err != nil {
 		return nil, err
@@ -100,6 +103,7 @@ func (s *Service) RequireKa(ctx context.Context, c Caller, store, version string
 	unlock()
 	out.Changed, out.Commit = sha != "", short(sha)
 	s.ix.refresh(st, []string{rel})
+	hm.unlock() // push without the write mutex
 	s.publish(Event{Type: EvStoreChanged, At: s.now(), Store: st.Name, Actor: c.Actor, Data: map[string]string{"what": "store", "path": rel}})
 	res, err := s.pushStore(ctx, st)
 	if err != nil {

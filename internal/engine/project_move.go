@@ -45,13 +45,22 @@ const moveAttempts = 3
 // complete. If a push is rejected because the remote moved, the commits not
 // yet pushed are undone and the move is redone on top of upstream.
 func (s *Service) MoveProject(ctx context.Context, c Caller, key, to string, dryRun bool) (*MoveProjectOut, error) {
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
 	s.ix.catchUp()
 	src, dst, prefix, err := s.moveStores(key, to)
 	if err != nil {
 		return nil, err
 	}
+	// Fetch both before taking any lock; the first attempt integrates that.
+	var pre map[*Store]*fetchedUp
+	if !dryRun {
+		pre = s.prefetch(ctx, []*Store{src, dst})
+	}
+	hm, err := s.hold(ctx, src, dst)
+	if err != nil {
+		return nil, err
+	}
+	defer hm.unlock()
+	s.ix.catchUp()
 	rel := "projects/" + key
 	out := &MoveProjectOut{Project: key, From: src.Name, To: dst.Name, DryRun: dryRun}
 	if err := checkMoveTarget(dst, rel); err != nil {
@@ -75,9 +84,10 @@ func (s *Service) MoveProject(ctx context.Context, c Caller, key, to string, dry
 	copied := false             // an earlier attempt published the copy
 	for attempt := 1; ; attempt++ {
 		// Start from the latest of both stores, and check again on it.
-		if err := s.syncHeld(ctx, order); err != nil {
+		if err := s.syncHeld(ctx, order, pre); err != nil {
 			return nil, err
 		}
+		pre = nil // later attempts fetch again, under the locks
 		if attempt == 1 {
 			if src, dst, prefix, err = s.moveStores(key, to); err != nil {
 				return nil, err
@@ -314,8 +324,10 @@ func lockStores(ctx context.Context, stores []*Store) (unlock func(), err error)
 // syncHeld brings each store level with its remote (fetch, then replay local
 // commits on top) without pushing, with the stores' write locks held by the
 // caller. A multi-store rewrite starts from it, so nothing that already
-// reached a remote is missed. Under --no-push nothing is fetched.
-func (s *Service) syncHeld(ctx context.Context, stores []*Store) error {
+// reached a remote is missed. Under --no-push nothing is fetched. pre holds
+// fetches made before the locks were taken (prefetch), integrated instead of
+// fetching again; a store without one is fetched with the locks held.
+func (s *Service) syncHeld(ctx context.Context, stores []*Store, pre map[*Store]*fetchedUp) error {
 	if s.NoPush {
 		return nil
 	}
@@ -324,13 +336,32 @@ func (s *Service) syncHeld(ctx context.Context, stores []*Store) error {
 		if remote == "" {
 			continue
 		}
-		res, err := st.syncLocked(ctx, s.hooks(st), &Result{HasRemote: true}, remote, branch, false)
+		res, err := st.syncLocked(ctx, s.hooks(st), &Result{HasRemote: true}, remote, branch, pre[st])
 		if err != nil {
 			return err
 		}
 		s.syncEvents(st, res)
 	}
 	return nil
+}
+
+// prefetch fetches stores without any lock, for a multi-store rewrite to
+// integrate once it holds the locks (syncHeld). A failed fetch is not
+// recorded: the locked sync then fetches again and reports it.
+func (s *Service) prefetch(ctx context.Context, stores []*Store) map[*Store]*fetchedUp {
+	if s.NoPush {
+		return nil
+	}
+	pre := map[*Store]*fetchedUp{}
+	for _, st := range stores {
+		if remote, branch := st.upstream(ctx); remote != "" && !st.ReadOnly {
+			f := &fetchedUp{}
+			if f.prev, f.up, f.err = st.fetchUp(ctx, remote, branch); f.err == nil {
+				pre[st] = f
+			}
+		}
+	}
+	return pre
 }
 
 // pushChain pushes stores in order, each only once the one before it has

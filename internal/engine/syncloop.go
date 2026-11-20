@@ -160,10 +160,10 @@ func (s *Service) schedulePush(st *Store) {
 	d.pending[st] = p
 }
 
+// pushNow pushes a store's debounced commits. Sync takes the store's write
+// locks for its local part only; the network runs without them.
 func (s *Service) pushNow(ctx context.Context, st *Store) {
-	s.writeMu.Lock()
 	res, err := st.Sync(ctx, s.hooks(st))
-	s.writeMu.Unlock()
 	if err == nil {
 		s.syncEvents(st, res)
 	}
@@ -241,12 +241,12 @@ func (s *Service) FetchLoop(ctx context.Context) {
 				continue
 			}
 			// Most ticks find nothing new: fetch without the write locks
-			// and take them only when there is something to integrate or push.
+			// and take them only when there is something to integrate or
+			// push (and then only for the local part).
 			if st.fetchLevel(ctx, remote, branch) {
 				s.syncEvents(st, &Result{HasRemote: true, Pushed: true})
 				continue
 			}
-			s.writeMu.Lock()
 			var res *Result
 			var err error
 			if s.NoPush || st.PushMode == "manual" || st.ReadOnly || s.debouncePending(st) {
@@ -254,7 +254,6 @@ func (s *Service) FetchLoop(ctx context.Context) {
 			} else {
 				res, err = st.Sync(ctx, s.hooks(st))
 			}
-			s.writeMu.Unlock()
 			if err == nil {
 				s.syncEvents(st, res)
 			}

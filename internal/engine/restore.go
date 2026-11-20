@@ -44,12 +44,11 @@ func (s *Service) RestorePreserved(ctx context.Context, c Caller, id, comment st
 	if o.ID != id {
 		return nil, Errf(CodeInvalid, "", "the preserved operation is for %s, not %s", o.ID, id)
 	}
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
-	st, _, err := s.storeOf(&id)
+	st, _, h, err := s.holdTicket(ctx, &id)
 	if err != nil {
 		return nil, err
 	}
+	defer h.unlock()
 	now := s.now()
 	stamp(o, c, now)
 	if o.Comment != nil {
@@ -60,7 +59,7 @@ func (s *Service) RestorePreserved(ctx context.Context, c Caller, id, comment st
 			o.Comment.Created = now
 		}
 	}
-	res, err := s.do(ctx, st, o, true)
+	res, err := s.doHeld(ctx, h, st, o, true)
 	if err != nil {
 		return nil, err
 	}

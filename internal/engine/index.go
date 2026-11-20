@@ -63,6 +63,9 @@ type Index struct {
 	// emit, when set, receives the tickets each refresh changed (with the
 	// write lock held), who caused it if known, and stores fully rebuilt.
 	emit func(changes []recChange, actor string, rebuilt []*Store)
+	// onCompacted, when set, hears of a store whose clone another process
+	// compacted (catchUpStore); called without the lock.
+	onCompacted func(*Store)
 }
 
 // headStamp remembers the HEAD the index reflects, and the reflog's size and
@@ -99,44 +102,56 @@ func (ix *Index) stamp(s *Store, prev *headStamp) *headStamp {
 // looked, including commits made by other processes sharing a clone.
 func (ix *Index) catchUp() {
 	for _, s := range ix.stores {
-		ix.mu.RLock()
-		prev := ix.heads[s]
-		ix.mu.RUnlock()
-		cur := ix.stamp(s, prev)
-		// Skip HEAD moves that are this process's own commits and syncs,
-		// whose paths were reloaded as they were made.
-		if prev != nil && (cur.head == prev.head || s.ownedSince(prev.head, cur.head)) {
-			ix.mu.Lock()
-			ix.heads[s] = cur
-			ix.mu.Unlock()
-			continue
-		}
-		var paths []string
-		if prev != nil && prev.head != "" && cur.head != "" {
-			changed, err := s.git.ChangedPaths(context.Background(), prev.head, cur.head)
-			if err == nil {
-				for _, p := range changed {
-					if sp, ok := s.storePath(p); ok {
-						paths = append(paths, sp)
-					}
-				}
-			} else {
-				paths = nil
-			}
-			if err == nil && len(paths) == 0 {
-				paths = []string{}
-			}
-		}
-		if paths == nil || len(paths) > 0 {
-			actor := ""
-			if ix.emit != nil && prev != nil && prev.head != "" && cur.head != "" {
-				actor = ix.commitsActor(s, prev.head, cur.head)
-			}
-			ix.refreshBy(s, paths, actor)
-		}
+		ix.catchUpStore(s)
+	}
+}
+
+// catchUpStore is catchUp for one store. When HEAD moved to a history that
+// shares no commit with the one before and starts at a compaction root,
+// another process compacted the clone (or adopted a compaction); after the
+// reload, onCompacted reports it once.
+func (ix *Index) catchUpStore(s *Store) {
+	ix.mu.RLock()
+	prev := ix.heads[s]
+	ix.mu.RUnlock()
+	cur := ix.stamp(s, prev)
+	// Skip HEAD moves that are this process's own commits and syncs,
+	// whose paths were reloaded as they were made.
+	if prev != nil && (cur.head == prev.head || s.ownedSince(prev.head, cur.head)) {
 		ix.mu.Lock()
 		ix.heads[s] = cur
 		ix.mu.Unlock()
+		return
+	}
+	var paths []string
+	compacted := false
+	if prev != nil && prev.head != "" && cur.head != "" {
+		compacted = s.jumpedToCompaction(context.Background(), prev.head, cur.head)
+		changed, err := s.git.ChangedPaths(context.Background(), prev.head, cur.head)
+		if err == nil && !compacted {
+			for _, p := range changed {
+				if sp, ok := s.storePath(p); ok {
+					paths = append(paths, sp)
+				}
+			}
+			if len(paths) == 0 {
+				paths = []string{}
+			}
+		}
+	}
+	if paths == nil || len(paths) > 0 {
+		actor := ""
+		if ix.emit != nil && prev != nil && prev.head != "" && cur.head != "" && !compacted {
+			actor = ix.commitsActor(s, prev.head, cur.head)
+		}
+		ix.refreshBy(s, paths, actor)
+	}
+	ix.mu.Lock()
+	ix.heads[s] = cur
+	onCompacted := ix.onCompacted
+	ix.mu.Unlock()
+	if compacted && onCompacted != nil {
+		onCompacted(s)
 	}
 }
 
@@ -172,6 +187,13 @@ func (ix *Index) resolver(from *kaspec.Store, p kaspec.Parent) (fs.FS, string, s
 		return os.DirFS(st.Root), st.Root, st.Name, nil
 	}
 	return nil, "", "", fmt.Errorf("no local copy of %s (add it to the workspace)", p.URL)
+}
+
+// FindParent locates the workspace store an extends entry names, as the
+// index's config resolver does (for callers that resolve config without
+// building the index, such as shell completion).
+func FindParent(stores []*Store, base string, p kaspec.Parent) *Store {
+	return findParent(stores, base, p)
 }
 
 // findParent locates the workspace store an extends entry names.

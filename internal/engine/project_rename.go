@@ -54,8 +54,6 @@ type renamePlan struct {
 // the commits not yet pushed are undone and the rename is redone on top of
 // upstream, so tickets that arrived meanwhile are renamed too.
 func (s *Service) RenameProject(ctx context.Context, c Caller, key, newKey, newPrefix string, keepFormer, dryRun bool) (*RenameProjectOut, error) {
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
 	s.ix.catchUp()
 	p, err := s.planRename(key, newKey, newPrefix, keepFormer)
 	if err != nil {
@@ -72,6 +70,21 @@ func (s *Service) RenameProject(ctx context.Context, c Caller, key, newKey, newP
 		}
 	}
 	sort.Slice(stores, func(i, j int) bool { return stores[i].Name < stores[j].Name })
+	// Fetch every store before taking any lock; the first attempt
+	// integrates that. Then every writable store's write mutex, in name order.
+	var pre map[*Store]*fetchedUp
+	if !dryRun {
+		pre = s.prefetch(ctx, stores)
+	}
+	hm, err := s.hold(ctx, stores...)
+	if err != nil {
+		return nil, err
+	}
+	defer hm.unlock()
+	s.ix.catchUp()
+	if p, err = s.planRename(key, newKey, newPrefix, keepFormer); err != nil {
+		return nil, err
+	}
 	if dryRun {
 		ids, files, err := renameChanges(p, stores, nil)
 		if err != nil {
@@ -95,9 +108,10 @@ func (s *Service) RenameProject(ctx context.Context, c Caller, key, newKey, newP
 		}
 	}
 	for attempt := 1; ; attempt++ {
-		if err := s.syncHeld(ctx, order); err != nil {
+		if err := s.syncHeld(ctx, order, pre); err != nil {
 			return nil, err
 		}
+		pre = nil // later attempts fetch again, under the locks
 		if attempt == 1 {
 			// Check again on the latest state (B16).
 			if p, err = s.planRename(key, newKey, newPrefix, keepFormer); err != nil {

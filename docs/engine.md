@@ -87,9 +87,9 @@ by a relative path (`../org`) is read from that checkout.
 ## Moving a project between stores
 
 `ka project move KEY --to STORE [--dry-run]` re-homes a project (to split or combine stores,
-PRD §9.2). Both stores must be writable members of the workspace. It takes both stores' write
-locks, syncs both under them (fetch and replay, no push), checks the move again against what the
-sync brought, and only then reads the project, so the copy is complete. Then:
+PRD §9.2). Both stores must be writable members of the workspace. It fetches both, takes both
+stores' write locks, brings both level under them (replay, no push), checks the move again against
+what the sync brought, and only then reads the project, so the copy is complete. Then:
 
 1. copies `projects/KEY/` into the target and commits (`Ka-Moved-From:` trailer);
 2. replaces the project in the source with a tombstone `project.yml` (`moved_to_store:` the
@@ -250,12 +250,14 @@ only reports) and `ka_history`. REST: `POST /stores/{name}/compact`, `GET /store
 `--summary`/`--summary-file` or the `summary` argument (an agent can draft it from the activity
 feed).
 
-All under the store's write lock:
+It syncs the store as `ka sync` does, then takes the store's write locks and keeps them to the end
+(see [Locking](#locking)):
 
 1. **Sync.** It refuses unless the clone is level with upstream (nothing unpushed, nothing to
    fetch), is writable, has a remote, is on a branch, has no merge or rebase in progress and no
-   uncommitted changes to tracked files. A store that is a subdirectory of a larger repository is
-   refused: its whole repository's history would go.
+   uncommitted changes to tracked files. A write that landed between the sync and the locks is
+   pushed once under them; if that fails, the compaction is refused. A store that is a
+   subdirectory of a larger repository is refused: its whole repository's history would go.
 2. **Summary.** It writes `history/<UTC time>-<XXXX>.md` (facts in the frontmatter: `from`, the
    tip's `tree`, commit count, date range, commits per actor, tickets created and closed, the
    `previous` summary; the narrative as the body), raises `requires_ka` to 1.3.0 when it is lower,
@@ -298,7 +300,11 @@ preserved conflicts). A clone ka manages also expires its reflogs and prunes at 
 checkout keeps its reflogs, which are its owner's safety net for every branch, so the old objects
 stay until git expires them, and `ka sync` says how to drop them now. The index reloads fully, `ka sync` reports it, and `store.compacted` reaches the UI.
 Read-only (`extends`) clones adopt the same way without a replay. The daemon's unlocked fetch and
-`ka_ask`'s polling hand a compacted remote to the locked sync, which adopts it.
+`ka_ask`'s polling hand a compacted remote to the sync, which adopts it under the write locks.
+When another process compacts (or adopts a compaction into) the clone a daemon or `ka mcp` serves,
+for example `ka compact` run in a terminal against the daemon's clone, the long-running process
+notices when it next catches up (HEAD now starts at a compaction root and shares no commit with
+what it knew), reloads fully and publishes `store.compacted` once (`adopted: false`).
 
 Clients older than 1.3.0 that know `requires_ka` (1.2.x) stop with `ka_outdated` instead of
 "shares no history"; older ones say the remote shares no history. After a compaction, the activity
@@ -310,7 +316,7 @@ old link, or a preserved-conflict comment) is simply not found.
 
 All tickets, comments, projects, configs and actors are loaded into memory, in parallel. The
 migrated `jk` store (3,648 tickets) loads in about 0.1 s, so the CLI simply builds it on every
-invocation. Long-running processes (`ka mcp`) update it incrementally. After each write the
+invocation. Long-running processes (`ka mcp`, the daemon) update it incrementally. After each write the
 changed paths are reloaded. Before each call, a stat of `.git/logs/HEAD` detects commits made by
 other processes sharing the clone; the diff since the last known HEAD is then reloaded. A change
 to config, a project file or a board rebuilds everything.
@@ -320,8 +326,8 @@ to config, a project file or a board rebuilds everything.
 Every write is one typed operation: `create`, `update`, `claim`, `release`, `transition`,
 `comment` or `check`. Applying one:
 
-1. takes the clone's write lock (`gofrs/flock`: `flock` on Unix, `LockFileEx` on Windows, on
-   `.git/ka.lock`);
+1. takes the store's write locks ([Locking](#locking)): the process's mutex for that store, then
+   the clone's file lock;
 2. reads the ticket from disk and checks preconditions: it exists and was not moved; a claim
    requires the ticket to be unclaimed, claimed by the same actor, or stale with `steal` (see
    [Claims and sessions](#claims-and-sessions)); a release cannot move a ticket to a closed
@@ -330,7 +336,7 @@ Every write is one typed operation: `create`, `update`, `claim`, `release`, `tra
    declared fields, existing references). Errors carry a code and a fix, and suggest the nearest
    valid value (`unknown_status: "doing" is not a status (fix: did you mean in_progress?)`);
 4. writes canonical bytes, commits once with a feed-style subject and trailers (`Ka-Op`,
-   `Ka-Actor`, `Ka-On-Behalf-Of`, `Ka-Session`, `Ka-Spec`), and pushes.
+   `Ka-Actor`, `Ka-On-Behalf-Of`, `Ka-Session`, `Ka-Spec`), releases the locks, and pushes.
 
 Batches (`ka_create`, `ka_update`) make one commit per ticket and push once. Claims always push
 synchronously, even when the store is set to `push: manual`. A claim that cannot be pushed
@@ -340,7 +346,7 @@ reports the tickets it unblocked. Progress comments are throttled per agent and 
 (`comments.progress_min_interval`; `progress_throttled` says when to retry).
 
 Changes that are not operations (saved boards, `ka fix`, project move and rename) take the same
-write lock, refuse while the store is read-only, needs a newer ka, or has a merge, rebase or
+write locks, refuse while the store is read-only, needs a newer ka, or has a merge, rebase or
 cherry-pick in progress, and commit only the paths they wrote, with the same `Ka-Actor`,
 `Ka-On-Behalf-Of`, `Ka-Session` and `Ka-Spec` trailers. Whatever else is staged or untracked in an
 attached checkout stays out of ka's commits.
@@ -398,7 +404,61 @@ the store's repository was renamed and its old name reused; replaying would publ
 there. Fix the remote (`ka store set-url`, or `git remote set-url` in an attached checkout).
 
 The push is retried up to 8 times, with jittered exponential backoff. If every attempt fails, the
-commits stay local and the result says why.
+commits stay local and the result says why. The push, the fetch after a rejection and the backoff
+run without the write locks; only the replay takes them ([Locking](#locking)).
+
+### Locking
+
+Each store has two write locks, always taken in this order:
+
+1. **The store's mutex**, in the process. It serializes the process's writes to that store, from
+   reading the index to the local commit, so each write sees the one before it (and two agents in
+   one daemon never pick the same ticket in `ka_next`: the candidate is checked again under the
+   mutex before it is claimed). Writes to different stores never wait for each other. An operation
+   that spans stores (a batch `ka_create`/`ka_update`, `ka initiative from-label`, `ka fix`,
+   project move and rename) takes the mutexes of all of them first, in store-name order, so two
+   such operations cannot deadlock.
+2. **The clone's file lock** (`gofrs/flock`: `flock` on Unix, `LockFileEx` on Windows, on
+   `.git/ka.lock`), shared with every other ka process using the clone. A multi-store operation
+   takes these in store-name order too, after all the mutexes.
+
+There is no lock across the whole service: what needs one already has its own (the index's
+read-write lock, the debouncer's, the event hub's).
+
+Both locks cover local git work only: applying an operation, committing, replaying, moving the
+branch. Network I/O runs without them:
+
+- **Fetch** moves only the remote-tracking ref, so it runs first, unlocked. The integration then
+  takes the locks and reads that ref once; what the ref held before the fetch is kept for adopting
+  a compaction (and the ref's reflog covers a fetch someone else made in between). Two unlocked
+  fetches that race to update the ref are retried, not reported as a network failure.
+- **Push.** A write commits, releases both locks and pushes *its own commit* (not HEAD, which may
+  meanwhile hold another writer's newer commit, or be half-way through another writer's replay).
+  Another write to the same store goes ahead meanwhile and pushes its own commit, which carries the
+  first. A push the remote rejects because it already has the commit (a later one on top landed
+  first) counts as pushed. After a successful push the tracking ref only ever moves forward, to
+  exactly the pushed commit. On a real rejection the writer fetches, takes the locks, replays,
+  releases them, sleeps its backoff and pushes again.
+- **Commits in flight.** Until its push is settled, another writer (in the same process, or another
+  process on the clone) may replay the commit while integrating upstream. The pushing writer marks
+  its commit in `.git/ka-inflight/` before releasing the file lock. A replay that meets a marked
+  commit does not preserve its failure as a conflict comment; once the whole replay has succeeded,
+  it records the outcome there (the replayed commit, or the error) and keeps its backup ref. The
+  writer reads that when it next takes the locks: it pushes the replayed commit, or reports the
+  error (a claim another agent won is `claim_lost`). If the branch was rewritten without a record,
+  the write reports `push_error` and is not confirmed. A mark left by a process that died is
+  ignored after 15 minutes.
+
+So `ka_next` and `ka_claim` still report `confirmed: true` only once the claim's commit (or its
+replay, which checked the claim again) is on the remote. A replay remains all or nothing.
+
+Three rare, explicit operations keep the locks across their pushes: **compaction** (from the
+summary commit to the force push's outcome, and its `git gc`: the lease and the new root must not
+interleave with any write), and **project move and rename** (their pushes are chained across
+stores and a lost race undoes their unpushed commits from a journal, which needs the stores
+unchanged). They fetch before taking the locks; a retry after a lost race fetches under them.
+`LockTimeout` (2 minutes) bounds the wait for either lock; with network I/O outside the locks, only
+those operations (or a stuck process) hold one that long, and the error says so.
 
 **Push modes and fetching** (PRD §10.1). A store pushes `immediate`ly by default. `manual` commits
 locally only. `debounce:2s` batches bursts: each write commits at once, and the push follows once

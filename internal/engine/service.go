@@ -25,10 +25,11 @@ type Caller struct {
 
 // Service is the operation and query layer shared by the CLI, MCP and REST.
 type Service struct {
-	WS       *Workspace
-	ix       *Index
-	writeMu  sync.Mutex
-	ops      OpStats
+	WS  *Workspace
+	ix  *Index
+	ops OpStats
+	// There is no service-wide write lock: each store has its own write
+	// mutex (Store.lockMu), taken through hold. See docs/engine.md "Locking".
 	Now      func() time.Time
 	NoPush   bool          // commit locally only (ka --no-push)
 	PollStep time.Duration // ka_ask wait polling interval
@@ -507,7 +508,88 @@ func (s *Service) hooksBy(st *Store, actor string) hooks {
 	}
 }
 
-func (s *Service) do(ctx context.Context, st *Store, o *Op, push bool) (res *Result, err error) {
+// held is a set of stores' in-process write mutexes, taken by hold.
+type held struct{ unlocks []func() }
+
+// unlock releases them all; it may be called more than once. A nil held
+// holds nothing.
+func (h *held) unlock() {
+	if h == nil {
+		return
+	}
+	for i := len(h.unlocks) - 1; i >= 0; i-- {
+		h.unlocks[i]()
+	}
+	h.unlocks = nil
+}
+
+// hold takes the in-process write mutexes of stores (duplicates and nils
+// ignored) in store-name order, so two operations that span stores cannot
+// deadlock. It takes no file lock: those come after, also in name order
+// (lockStores), or one at a time inside each store's commit.
+func (s *Service) hold(ctx context.Context, stores ...*Store) (*held, error) {
+	var sorted []*Store
+	for _, st := range stores {
+		if st != nil && !slices.Contains(sorted, st) {
+			sorted = append(sorted, st)
+		}
+	}
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Name < sorted[j].Name })
+	h := &held{}
+	for _, st := range sorted {
+		u, err := st.lockMu(ctx)
+		if err != nil {
+			h.unlock()
+			return nil, err
+		}
+		h.unlocks = append(h.unlocks, u)
+	}
+	return h, nil
+}
+
+// holdTicket takes the write mutex of the store of ticket id and catches the
+// index up, so what the caller reads from the index next is current for
+// that store and stays so until it commits. id is normalized in place.
+func (s *Service) holdTicket(ctx context.Context, id *string) (*Store, *ProjectInfo, *held, error) {
+	s.ix.catchUp()
+	for attempt := 0; ; attempt++ {
+		want := *id
+		st, _, err := s.storeOf(&want)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		h, err := s.hold(ctx, st)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		s.ix.catchUp()
+		st2, pi, err := s.storeOf(id)
+		if err == nil && st2 == st {
+			return st, pi, h, nil
+		}
+		h.unlock()
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if attempt == 2 {
+			// The project keeps moving between stores.
+			return nil, nil, nil, Errf(CodeGitBusy, "retry", "the project of %s moved to another store meanwhile", *id)
+		}
+	}
+}
+
+// do applies, commits and pushes one operation, for callers that hold no
+// write mutex of st (tests).
+func (s *Service) do(ctx context.Context, st *Store, o *Op, push bool) (*Result, error) {
+	return s.doHeld(ctx, nil, st, o, push)
+}
+
+// doHeld commits o in st, whose write mutex the caller holds in h, and pushes
+// it as push and the store's push mode say. A push made now runs after h is
+// released, so other writes to the store (and every write to other stores)
+// go ahead while it talks to the remote; the caller must not rely on h past
+// this call when push is set. A deferred or skipped push leaves h held.
+func (s *Service) doHeld(ctx context.Context, h *held, st *Store, o *Op, push bool) (res *Result, err error) {
 	start := time.Now()
 	defer func() { s.ops.record(o.Op, err, time.Since(start)) }()
 	deb := push && s.debounced(st) && o.Op != "claim"
@@ -516,7 +598,12 @@ func (s *Service) do(ctx context.Context, st *Store, o *Op, push bool) (res *Res
 		// Claims always push synchronously (PRD §10.1), even in manual mode.
 		pushNow = push && !s.NoPush
 	}
-	res, err = st.Do(ctx, s.hooksBy(st, o.Actor), o, pushNow)
+	hk := s.hooksBy(st, o.Actor)
+	res, err = st.commitLocal(ctx, hk, o, pushNow)
+	if err == nil && pushNow && res.HasRemote && res.Commit != "" {
+		h.unlock()
+		err = st.publish(ctx, hk, res, res.Commit)
+	}
 	if err == nil && deb && res.HasRemote && res.Commit != "" {
 		res.PushPending = true
 		s.schedulePush(st)
@@ -780,8 +867,21 @@ func (s *Service) canonIDs(l []string) []string {
 // Create files one or many tickets. Each ticket is its own commit; the batch
 // is pushed once at the end.
 func (s *Service) Create(ctx context.Context, c Caller, ins []CreateIn) (*CreateOut, error) {
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
+	// Lock the stores the batch writes to, all at once and in name order.
+	s.ix.catchUp()
+	var stores []*Store
+	s.ix.mu.RLock()
+	for _, in := range ins {
+		if pi, err := s.resolveProject(in.Project); err == nil {
+			stores = append(stores, pi.Store)
+		}
+	}
+	s.ix.mu.RUnlock()
+	h, err := s.hold(ctx, stores...)
+	if err != nil {
+		return nil, err
+	}
+	defer h.unlock()
 	s.ix.catchUp()
 	out := &CreateOut{Created: []Ref{}}
 	touched := map[*Store]bool{}
@@ -790,6 +890,9 @@ func (s *Service) Create(ctx context.Context, c Caller, ins []CreateIn) (*Create
 		s.ix.mu.RLock()
 		pi, err := s.resolveProject(in.Project)
 		var o *Op
+		if err == nil && !slices.Contains(stores, pi.Store) {
+			err = Errf(CodeGitBusy, "retry", "project %s moved to another store meanwhile", pi.Key)
+		}
 		if err == nil {
 			o, err = s.createOp(c, pi, in)
 		}
@@ -798,13 +901,15 @@ func (s *Service) Create(ctx context.Context, c Caller, ins []CreateIn) (*Create
 			firstErr = withIndex(err, i, len(ins))
 			break
 		}
-		if _, err := s.do(ctx, pi.Store, o, false); err != nil {
+		if _, err := s.doHeld(ctx, h, pi.Store, o, false); err != nil {
 			firstErr = withIndex(err, i, len(ins))
 			break
 		}
 		touched[pi.Store] = true
 		out.Created = append(out.Created, Ref{ID: o.ID, Ref: kaspec.Ref(o.ID, kaspec.DisplaySlug(o.New)), Title: o.New.Title, Status: o.New.Status})
 	}
+	// Publish without the write mutexes.
+	h.unlock()
 	out.Pushed, out.Local = true, true
 	for st := range touched {
 		res, err := s.push(ctx, st)
@@ -926,8 +1031,20 @@ type UpdateIn struct {
 
 // Update patches one or many tickets (one commit each, one push per store).
 func (s *Service) Update(ctx context.Context, c Caller, ins []UpdateIn) ([]*WriteOut, error) {
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
+	// Lock the stores the batch writes to, all at once and in name order.
+	s.ix.catchUp()
+	var stores []*Store
+	for _, in := range ins {
+		id := in.ID
+		if st, _, err := s.storeOf(&id); err == nil {
+			stores = append(stores, st)
+		}
+	}
+	h, err := s.hold(ctx, stores...)
+	if err != nil {
+		return nil, err
+	}
+	defer h.unlock()
 	s.ix.catchUp()
 	var outs []*WriteOut
 	var outStore []*Store // the store of each result
@@ -935,6 +1052,9 @@ func (s *Service) Update(ctx context.Context, c Caller, ins []UpdateIn) ([]*Writ
 	var firstErr error
 	for i, in := range ins {
 		st, pi, err := s.storeOf(&in.ID)
+		if err == nil && !slices.Contains(stores, st) {
+			err = Errf(CodeGitBusy, "retry", "the project of %s moved to another store meanwhile", in.ID)
+		}
 		var o *Op
 		if err == nil {
 			s.ix.mu.RLock()
@@ -943,7 +1063,7 @@ func (s *Service) Update(ctx context.Context, c Caller, ins []UpdateIn) ([]*Writ
 		}
 		if err == nil {
 			var res *Result
-			res, err = s.do(ctx, st, o, false)
+			res, err = s.doHeld(ctx, h, st, o, false)
 			if err == nil {
 				touched[st] = true
 				outs = append(outs, s.writeOut(o.ID, res))
@@ -955,6 +1075,8 @@ func (s *Service) Update(ctx context.Context, c Caller, ins []UpdateIn) ([]*Writ
 			break
 		}
 	}
+	// Publish without the write mutexes.
+	h.unlock()
 	for st := range touched {
 		res, err := s.push(ctx, st)
 		if err != nil && firstErr == nil {
@@ -1070,17 +1192,17 @@ type ClaimOut struct {
 
 // Claim claims a ticket for the caller and pushes synchronously.
 func (s *Service) Claim(ctx context.Context, c Caller, id string, steal bool) (*ClaimOut, error) {
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
-	s.ix.catchUp()
-	return s.claimLocked(ctx, c, id, steal)
-}
-
-func (s *Service) claimLocked(ctx context.Context, c Caller, id string, steal bool) (*ClaimOut, error) {
-	st, pi, err := s.storeOf(&id)
+	st, pi, h, err := s.holdTicket(ctx, &id)
 	if err != nil {
 		return nil, err
 	}
+	defer h.unlock()
+	return s.claimHeld(ctx, h, st, pi, c, id, steal)
+}
+
+// claimHeld claims id in st, whose write mutex the caller holds in h (with
+// the index caught up); the push runs after h is released.
+func (s *Service) claimHeld(ctx context.Context, h *held, st *Store, pi *ProjectInfo, c Caller, id string, steal bool) (*ClaimOut, error) {
 	s.ix.mu.RLock()
 	cur, takeover := "", ""
 	if r, ok := s.ix.tickets[s.ix.canon(id)]; ok {
@@ -1091,7 +1213,7 @@ func (s *Service) claimLocked(ctx context.Context, c Caller, id string, steal bo
 	}
 	s.ix.mu.RUnlock()
 	o := stamp(&Op{Op: "claim", ID: kaspec.RefID(id), Steal: steal, Status: startStatus(pi.Cfg, cur), Takeover: takeover}, c, s.now())
-	res, err := s.do(ctx, st, o, true)
+	res, err := s.doHeld(ctx, h, st, o, true)
 	if err != nil {
 		return nil, err
 	}
@@ -1106,13 +1228,11 @@ func (s *Service) claimLocked(ctx context.Context, c Caller, id string, steal bo
 
 // Release gives up a claim, optionally moving the ticket.
 func (s *Service) Release(ctx context.Context, c Caller, id, status string, force bool) (*WriteOut, error) {
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
-	s.ix.catchUp()
-	st, pi, err := s.storeOf(&id)
+	st, pi, h, err := s.holdTicket(ctx, &id)
 	if err != nil {
 		return nil, err
 	}
+	defer h.unlock()
 	if status == "" {
 		s.ix.mu.RLock()
 		if r, ok := s.ix.tickets[s.ix.canon(id)]; ok && category(pi.Cfg, r.T.Status) == "started" {
@@ -1125,7 +1245,7 @@ func (s *Service) Release(ctx context.Context, c Caller, id, status string, forc
 		return nil, releaseCloses(kaspec.RefID(id), status)
 	}
 	o := stamp(&Op{Op: "release", ID: kaspec.RefID(id), Status: status, Steal: force}, c, s.now())
-	res, err := s.do(ctx, st, o, true)
+	res, err := s.doHeld(ctx, h, st, o, true)
 	if err != nil {
 		return nil, err
 	}
@@ -1145,13 +1265,11 @@ type TransitionIn struct {
 // Transition changes status. Closing requires a resolution and summary,
 // recorded as a resolution comment in the same commit.
 func (s *Service) Transition(ctx context.Context, c Caller, in TransitionIn) (*WriteOut, error) {
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
-	s.ix.catchUp()
-	st, pi, err := s.storeOf(&in.ID)
+	st, pi, h, err := s.holdTicket(ctx, &in.ID)
 	if err != nil {
 		return nil, err
 	}
+	defer h.unlock()
 	stt, ok := pi.Cfg.StatusByName(in.Status)
 	if !ok {
 		return nil, unknownStatus(pi.Cfg, in.Status)
@@ -1180,7 +1298,7 @@ func (s *Service) Transition(ctx context.Context, c Caller, in TransitionIn) (*W
 		o.CommentName = kaspec.CommentFilename(now, kaspec.RandomBase32(4))
 		o.Comment = &kaspec.Comment{Type: "note", Author: c.Actor, OnBehalfOf: c.OnBehalfOf, Session: c.Session, Created: now, Body: strings.TrimSpace(in.Summary)}
 	}
-	res, err := s.do(ctx, st, o, true)
+	res, err := s.doHeld(ctx, h, st, o, true)
 	if err != nil {
 		return nil, err
 	}
@@ -1223,13 +1341,11 @@ func (s *Service) Comment(ctx context.Context, c Caller, in CommentIn) (*WriteOu
 	if strings.TrimSpace(in.Body) == "" {
 		return nil, Errf(CodeInvalid, "", "body is required")
 	}
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
-	s.ix.catchUp()
-	st, pi, err := s.storeOf(&in.ID)
+	st, pi, h, err := s.holdTicket(ctx, &in.ID)
 	if err != nil {
 		return nil, err
 	}
+	defer h.unlock()
 	now := s.now()
 	if typ == "progress" && pi.Cfg.ProgressMinInterval > 0 {
 		s.ix.mu.RLock()
@@ -1253,7 +1369,7 @@ func (s *Service) Comment(ctx context.Context, c Caller, in CommentIn) (*WriteOu
 	o.CommentName = kaspec.CommentFilename(now, kaspec.RandomBase32(4))
 	o.Comment = &kaspec.Comment{Type: typ, Author: c.Actor, OnBehalfOf: c.OnBehalfOf, Session: c.Session, Created: now,
 		Supersedes: in.Supersedes, Retracts: in.Retracts, Body: strings.TrimSpace(in.Body)}
-	res, err := s.do(ctx, st, o, true)
+	res, err := s.doHeld(ctx, h, st, o, true)
 	if err != nil {
 		return nil, err
 	}
@@ -1274,14 +1390,13 @@ func (s *Service) CheckItems(ctx context.Context, c Caller, in CheckIn) (*WriteO
 	if len(in.Items) == 0 {
 		return nil, "", Errf(CodeInvalid, "pass items: [{index: 0, done: true}] or [{text: \"...\", done: true}]", "no items")
 	}
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
-	st, _, err := s.storeOf(&in.ID)
+	st, _, h, err := s.holdTicket(ctx, &in.ID)
 	if err != nil {
 		return nil, "", err
 	}
+	defer h.unlock()
 	o := stamp(&Op{Op: "check", ID: kaspec.RefID(in.ID), Check: in.Items}, c, s.now())
-	res, err := s.do(ctx, st, o, true)
+	res, err := s.doHeld(ctx, h, st, o, true)
 	if err != nil {
 		return nil, "", err
 	}
@@ -1325,11 +1440,8 @@ func (s *Service) Ask(ctx context.Context, c Caller, in AskIn) (*AskOut, error) 
 	if to == "" && strings.HasPrefix(c.Actor, "agent/") {
 		to = c.OnBehalfOf
 	}
-	s.writeMu.Lock()
-	s.ix.catchUp()
-	st, _, err := s.storeOf(&in.ID)
+	st, _, h, err := s.holdTicket(ctx, &in.ID)
 	if err != nil {
-		s.writeMu.Unlock()
 		return nil, err
 	}
 	now := s.now()
@@ -1337,8 +1449,8 @@ func (s *Service) Ask(ctx context.Context, c Caller, in AskIn) (*AskOut, error) 
 	o.CommentName = kaspec.CommentFilename(now, kaspec.RandomBase32(4))
 	o.Comment = &kaspec.Comment{Type: "question", Author: c.Actor, OnBehalfOf: c.OnBehalfOf, Session: c.Session, Created: now,
 		To: to, Options: opts, Body: strings.TrimSpace(in.Question)}
-	res, err := s.do(ctx, st, o, true)
-	s.writeMu.Unlock()
+	res, err := s.doHeld(ctx, h, st, o, true)
+	h.unlock() // never held while waiting for the answer
 	if err != nil {
 		return nil, err
 	}
@@ -1388,13 +1500,11 @@ func (s *Service) waitAnswer(ctx context.Context, st *Store, id, question string
 		// Only answers are needed: fetch without the write locks, and
 		// integrate only when something arrived. Never push here.
 		if remote, branch := st.upstream(ctx); remote != "" && !s.NoPush && !st.fetchLevel(ctx, remote, branch) {
-			s.writeMu.Lock()
 			// A failure is recorded for the Sync & health view; the
 			// next poll tries again.
 			if res, err := st.FetchOnly(ctx, s.hooks(st)); err == nil {
 				s.syncEvents(st, res)
 			}
-			s.writeMu.Unlock()
 		}
 		// Answers may also arrive through another local process.
 		s.ix.mu.RLock()
@@ -1420,13 +1530,11 @@ type AnswerIn struct {
 
 // Answer records an answer or approval.
 func (s *Service) Answer(ctx context.Context, c Caller, in AnswerIn) (*WriteOut, error) {
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
-	s.ix.catchUp()
-	st, _, err := s.storeOf(&in.ID)
+	st, _, h, err := s.holdTicket(ctx, &in.ID)
 	if err != nil {
 		return nil, err
 	}
+	defer h.unlock()
 	s.ix.mu.RLock()
 	r, err := s.rec(in.ID)
 	var q *kaspec.CommentEntry
@@ -1491,7 +1599,7 @@ func (s *Service) Answer(ctx context.Context, c Caller, in AnswerIn) (*WriteOut,
 		}
 	}
 	o.Comment = cm
-	res, err := s.do(ctx, st, o, true)
+	res, err := s.doHeld(ctx, h, st, o, true)
 	if err != nil {
 		return nil, err
 	}

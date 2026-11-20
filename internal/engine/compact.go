@@ -106,8 +106,6 @@ func (s *Service) Compact(ctx context.Context, c Caller, in CompactIn) (*Compact
 		return nil, Errf(CodeInvalid, "run a dry run first, then confirm with the store name (ka compact --store "+in.Store+" --yes; ka_compact confirm: \""+in.Store+"\")",
 			"compacting %s rewrites its shared history and cannot be undone on the remote; it needs explicit confirmation", in.Store)
 	}
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
 	st, err := s.writableStore(in.Store)
 	if err != nil {
 		return nil, err
@@ -127,6 +125,25 @@ func (s *Service) Compact(ctx context.Context, c Caller, in CompactIn) (*Compact
 	if localBranch == "" {
 		return nil, Errf(CodeGit, "check out the store's branch", "store %s is not on a branch", st.Name)
 	}
+	h := s.hooksBy(st, c.Actor)
+
+	// 1. Level with upstream, and nothing uncommitted. A normal sync first,
+	// without the locks (it publishes whatever is pending); then, with both
+	// locks held from here to the force push's outcome, the clone must still
+	// be level with what that sync saw. A write that lands in between is
+	// pushed under the locks once, or the compaction is refused.
+	res, err := st.Sync(ctx, h)
+	if res != nil {
+		s.syncEvents(st, res)
+	}
+	if err != nil {
+		return nil, err
+	}
+	hm, err := s.hold(ctx, st)
+	if err != nil {
+		return nil, err
+	}
+	defer hm.unlock()
 	unlock, err := st.lock(ctx)
 	if err != nil {
 		return nil, err
@@ -135,18 +152,17 @@ func (s *Service) Compact(ctx context.Context, c Caller, in CompactIn) (*Compact
 	if err := st.guard(); err != nil {
 		return nil, err
 	}
-	h := s.hooksBy(st, c.Actor)
-
-	// 1. Level with upstream, and nothing uncommitted.
-	res, err := st.syncLocked(ctx, h, &Result{HasRemote: true}, remote, branch, true)
-	if res != nil {
-		s.syncEvents(st, res)
-	}
-	if err != nil {
-		return nil, err
-	}
 	head := st.git.Head(ctx)
-	if up := st.remoteHead(ctx, remote, branch); head == "" || head != up || !res.Pushed {
+	up := st.remoteHead(ctx, remote, branch)
+	if head != "" && head != up && res.PushError == "" && st.isAncestor(ctx, up, head) {
+		// Committed since the sync: push it now (no retries: if the remote
+		// moved too, compact again later).
+		if _, err := st.net(ctx, "push", "-q", remote, head+":refs/heads/"+branch); err == nil {
+			st.advanceTracking(ctx, remote, branch, head)
+			up = head
+		}
+	}
+	if head == "" || head != up || !res.Pushed {
 		why := "it has commits that are not pushed"
 		if res.PushError != "" {
 			why = res.PushError
@@ -528,13 +544,31 @@ func (s *Store) rootCommit(ctx context.Context) string {
 }
 
 // adoptedEvent describes a compaction this clone adopted.
-func (s *Store) adoptedEvent() CompactedEvent {
+func (s *Store) adoptedEvent() CompactedEvent { return s.compactedEvent(true) }
+
+// compactedEvent describes the compaction HEAD's history starts with.
+func (s *Store) compactedEvent(adopted bool) CompactedEvent {
 	ctx := context.Background()
-	e := CompactedEvent{Root: s.rootCommit(ctx), Adopted: true}
+	e := CompactedEvent{Root: s.rootCommit(ctx), Adopted: adopted}
 	if c, err := s.git.CommitInfo(ctx, e.Root); err == nil && e.Root != "" {
 		e.From, e.Summary = c.Trailers[TrailerCompactedFrom], c.Trailers[TrailerCompactionSummary]
 	}
 	return e
+}
+
+// jumpedToCompaction reports whether HEAD moved from prev to cur by a
+// compaction: cur shares no commit with prev (which may be gone already)
+// and its history starts at a compaction root.
+func (s *Store) jumpedToCompaction(ctx context.Context, prev, cur string) bool {
+	if mb, _ := s.git.Run(ctx, "merge-base", prev, cur); mb != "" {
+		return false
+	}
+	roots := splitNonEmpty(must1(s.git.Run(ctx, "rev-list", "--max-parents=0", cur)))
+	if len(roots) != 1 {
+		return false
+	}
+	c, err := s.git.CommitInfo(ctx, roots[0])
+	return err == nil && c.Trailers[TrailerCompactedFrom] != ""
 }
 
 // compactionBase decides whether up, a history that shares no commit with
@@ -689,11 +723,12 @@ func (s *Store) adoptLocked(ctx context.Context, h hooks, res *integrateResult, 
 		if err := s.replay(ctx, h, res, local, mine); err != nil {
 			return nil, s.abortReplay(ctx, h, head, backup, err)
 		}
+		s.recordFlights(res.flights)
 	} else if mine != "" {
 		res.MineSHA = s.git.Head(ctx)
 	}
 	keep := backup
-	if len(res.Preserved) == 0 && len(res.Unpreserved) == 0 && !res.conflicted {
+	if !res.keepsBackup() {
 		keep = ""
 	}
 	res.Warnings = append(res.Warnings, s.dropOldHistory(ctx, keep, head, s.Managed)...)

@@ -52,6 +52,12 @@ type Store struct {
 	// (ownFrom to ownTo), so catchUp need not diff and re-parse them.
 	ownMu          sync.Mutex
 	ownFrom, ownTo string
+
+	// wmu is the store's in-process write mutex (a one-slot semaphore, so
+	// waiting for it honors a context): see lockMu and docs/engine.md
+	// "Locking".
+	wmuOnce sync.Once
+	wmu     chan struct{}
 }
 
 // own records that this process moved HEAD from before to after and has
@@ -69,15 +75,18 @@ func (s *Store) own(before, after string) {
 }
 
 // ownedSince reports whether every HEAD move from prev to cur was this
-// process's own, and starts a new chain at cur.
+// process's own, and starts a new chain at cur. The caller brings the index
+// to cur either way (reloading the diff when this reports false), so the
+// chain restarts at cur even then: otherwise a catch-up that ran between a
+// commit and its own() would leave every later check failing.
 func (s *Store) ownedSince(prev, cur string) bool {
 	s.ownMu.Lock()
 	defer s.ownMu.Unlock()
-	if prev == "" || s.ownFrom != prev || s.ownTo != cur {
-		return false
+	ok := prev != "" && s.ownFrom == prev && s.ownTo == cur
+	if s.ownTo == cur {
+		s.ownFrom = cur
 	}
-	s.ownFrom = cur
-	return true
+	return ok
 }
 
 // note records the outcome of a fetch or push.
@@ -203,11 +212,82 @@ func (s *Store) storePath(repoRel string) (string, bool) {
 	return strings.CutPrefix(repoRel, s.sub+"/")
 }
 
-// lock takes the per-clone write lock (flock on Unix, LockFileEx on Windows).
-// LockTimeout bounds how long a write waits for another process's write to
-// the same clone (which may include push retries over a slow network).
+// Locking (docs/engine.md "Locking"). A store has two write locks, always
+// taken in this order:
+//
+//  1. wmu, the in-process write mutex (lockMu): it serializes this
+//     process's writes to the store, from reading the index to the local
+//     commit, so a write sees the one before it. Writes to other stores never
+//     wait for it. Operations that span stores take the mutexes of all of
+//     them in store-name order (Service.hold) before any file lock.
+//  2. the clone's file lock (lock): flock on Unix, LockFileEx on Windows, on
+//     .git/ka.lock, shared with other ka processes using the clone. It is
+//     held for local git work only: commits, replays, resets. Fetches and
+//     pushes run without either lock, except in compaction and project
+//     move and rename, which hold both across their pushes.
+//
+// LockTimeout bounds how long a write waits for either lock.
 var LockTimeout = 2 * time.Minute
 
+// onceFunc makes an unlock function safe to call more than once.
+func onceFunc(f func()) func() {
+	var o sync.Once
+	return func() { o.Do(f) }
+}
+
+func (s *Store) mutex() chan struct{} {
+	s.wmuOnce.Do(func() { s.wmu = make(chan struct{}, 1) })
+	return s.wmu
+}
+
+// lockMu takes the store's in-process write mutex.
+func (s *Store) lockMu(ctx context.Context) (func(), error) {
+	m := s.mutex()
+	unlock := onceFunc(func() { <-m })
+	select {
+	case m <- struct{}{}:
+		return unlock, nil
+	default:
+	}
+	timer := time.NewTimer(LockTimeout)
+	defer timer.Stop()
+	select {
+	case m <- struct{}{}:
+		return unlock, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-timer.C:
+		return nil, Errf(CodeGitBusy, "another write to this store has been running in this process for "+LockTimeout.String()+"; retry", "timed out waiting for the write lock on %s", s.Name)
+	}
+}
+
+// tryLockMu takes the in-process write mutex if it is free.
+func (s *Store) tryLockMu() (func(), bool) {
+	m := s.mutex()
+	select {
+	case m <- struct{}{}:
+		return onceFunc(func() { <-m }), true
+	default:
+		return nil, false
+	}
+}
+
+// lockAll takes both write locks, the in-process mutex first.
+func (s *Store) lockAll(ctx context.Context) (func(), error) {
+	um, err := s.lockMu(ctx)
+	if err != nil {
+		return nil, err
+	}
+	uf, err := s.lock(ctx)
+	if err != nil {
+		um()
+		return nil, err
+	}
+	return onceFunc(func() { uf(); um() }), nil
+}
+
+// lock takes the clone's file lock (flock on Unix, LockFileEx on Windows),
+// which other ka processes sharing the clone respect.
 func (s *Store) lock(ctx context.Context) (func(), error) {
 	fl := flock.New(filepath.Join(s.gitDir, "ka.lock"))
 	// A blocking lock waits in the OS's queue, so a waiter cannot be starved
@@ -221,7 +301,7 @@ func (s *Store) lock(ctx context.Context) (func(), error) {
 		if err != nil {
 			return nil, Errf(CodeGitBusy, "check permissions on the .git directory", "could not lock %s: %v", s.Name, err)
 		}
-		return func() { fl.Unlock() }, nil
+		return onceFunc(func() { fl.Unlock() }), nil
 	case <-ctx.Done():
 		go func() {
 			if <-got == nil {
@@ -235,7 +315,7 @@ func (s *Store) lock(ctx context.Context) (func(), error) {
 				fl.Unlock()
 			}
 		}()
-		return nil, Errf(CodeGitBusy, "another ka process has been writing to this store for "+LockTimeout.String()+"; retry", "timed out waiting for the write lock on %s", s.Name)
+		return nil, Errf(CodeGitBusy, "another ka process has held this store's write lock for "+LockTimeout.String()+" (a compaction, project move or rename, or a stuck process); retry", "timed out waiting for the write lock on %s", s.Name)
 	}
 }
 
@@ -250,8 +330,8 @@ func (s *Store) busyErr(p string) error {
 	return Errf(CodeGitBusy, "finish or abort it (git "+p+" --abort), then retry", "a git %s is in progress in %s", p, s.git.Dir)
 }
 
-// Network timeouts. A stalled connection would otherwise hold the write
-// lock (and the service's write mutex) until TCP gives up.
+// Network timeouts. A stalled connection would otherwise hang a write until
+// TCP gives up (and, in the paths that push under the locks, hold them).
 var (
 	NetTimeout   = 3 * time.Minute  // one fetch or push
 	CloneTimeout = 30 * time.Minute // a first clone
@@ -264,9 +344,174 @@ func (s *Store) net(ctx context.Context, args ...string) (string, error) {
 	return s.git.Run(ctx, args...)
 }
 
+// fetch updates the remote-tracking ref. Fetches run without the write
+// locks, so two of them (writers in this process, the fetch loop, other
+// processes on the clone) can race to update the ref; git then fails the
+// loser on the ref's lock or old value. That is not a network failure: the
+// fetch is retried a few times.
 func (s *Store) fetch(ctx context.Context, remote, branch string) error {
-	_, err := s.net(ctx, "fetch", "-q", remote, "+refs/heads/"+branch+":refs/remotes/"+remote+"/"+branch)
+	var err error
+	for attempt := 0; attempt < 5; attempt++ {
+		if attempt > 0 {
+			time.Sleep(time.Duration(10+rand.IntN(40*attempt)) * time.Millisecond)
+		}
+		_, err = s.net(ctx, "fetch", "-q", remote, "+refs/heads/"+branch+":refs/remotes/"+remote+"/"+branch)
+		if err == nil || ctx.Err() != nil || !refContention(err) {
+			return err
+		}
+	}
 	return err
+}
+
+// refContention reports a git failure caused by another git process
+// updating the same ref at that moment.
+func refContention(err error) bool {
+	m := err.Error()
+	return strings.Contains(m, "incorrect old value") || strings.Contains(m, "cannot lock ref") ||
+		strings.Contains(m, ".lock': File exists") || strings.Contains(m, "failed to update ref")
+}
+
+// fetchUp fetches, without needing either write lock: a fetch moves only the
+// remote-tracking ref. prev is that ref before the fetch (what this clone
+// last knew of upstream, for adopting a compaction), up after it.
+func (s *Store) fetchUp(ctx context.Context, remote, branch string) (prev, up string, err error) {
+	prev = s.remoteHead(ctx, remote, branch)
+	if err := s.fetch(ctx, remote, branch); err != nil {
+		return prev, "", Errf(CodeGit, "check the network and credentials, then run ka sync", "fetch failed: %s", firstLine(err.Error()))
+	}
+	return prev, s.remoteHead(ctx, remote, branch), nil
+}
+
+// isAncestor reports whether commit a is b or an ancestor of it.
+func (s *Store) isAncestor(ctx context.Context, a, b string) bool {
+	return a != "" && b != "" && s.git.OK(ctx, "merge-base", "--is-ancestor", a, b)
+}
+
+// advanceTracking records a successful push of sha in the remote-tracking
+// ref, only forward: a concurrent fetch or push may already have moved it
+// past sha, and it never names more than was pushed.
+func (s *Store) advanceTracking(ctx context.Context, remote, branch, sha string) {
+	ref := "refs/remotes/" + remote + "/" + branch
+	cur := s.remoteHead(ctx, remote, branch)
+	switch {
+	case cur == sha:
+	case cur == "":
+		s.git.Run(ctx, "update-ref", ref, sha, "")
+	case s.isAncestor(ctx, cur, sha):
+		s.git.Run(ctx, "update-ref", ref, sha, cur) // only if nobody moved it meanwhile
+	}
+}
+
+// ---- commits in flight ---------------------------------------------------------
+//
+// A write commits under the locks and pushes after releasing them. Until its
+// push is settled, another writer (in this process or another one sharing
+// the clone) may replay that commit on top of upstream. The pushing writer
+// must then learn what became of its operation: replayed as a new commit, or
+// refused (a claim someone else won). Markers in .git/ka-inflight/ carry
+// that: the writer creates <sha> (empty) before releasing the file lock; a
+// replay that meets a marked commit does not preserve its failure as a
+// comment (the writer reports it to its caller) and, once the whole replay
+// has succeeded, writes the outcome into the marker ("ok <new sha>", or
+// "err" and the error as JSON) and marks the new commit.
+
+// inflightStale is when a marker no one refreshed is taken to be left by a
+// process that died; its commit is then replayed like any other. A live
+// writer refreshes its marker on every push attempt, and one attempt (push,
+// fetch, lock wait) is bounded by two NetTimeouts and a LockTimeout, so this
+// is comfortably above that and no longer: while a dead writer's marker
+// lives, a failed replay of its commit is recorded only in the marker and
+// the backup ref, not as a comment.
+const inflightStale = 15 * time.Minute
+
+func (s *Store) inflightPath(sha string) string {
+	return filepath.Join(s.gitDir, "ka-inflight", sha)
+}
+
+// markInflight marks sha as being pushed by this process (or refreshes the
+// mark), and drops stale marks. Called with the file lock held.
+func (s *Store) markInflight(sha string) {
+	dir := filepath.Join(s.gitDir, "ka-inflight")
+	if ents, err := os.ReadDir(dir); err == nil {
+		for _, e := range ents {
+			if fi, err := e.Info(); err == nil && time.Since(fi.ModTime()) > inflightStale {
+				os.Remove(filepath.Join(dir, e.Name()))
+			}
+		}
+	}
+	if os.MkdirAll(dir, 0o755) == nil {
+		os.WriteFile(s.inflightPath(sha), nil, 0o644)
+	}
+}
+
+func (s *Store) touchInflight(sha string) {
+	now := time.Now()
+	os.Chtimes(s.inflightPath(sha), now, now)
+}
+
+func (s *Store) clearInflight(sha string) { os.Remove(s.inflightPath(sha)) }
+
+// inflight reports whether a live writer is pushing sha.
+func (s *Store) inflight(sha string) bool {
+	fi, err := os.Stat(s.inflightPath(sha))
+	return err == nil && fi.Size() == 0 && time.Since(fi.ModTime()) < inflightStale
+}
+
+// flight is what a replay did with a commit another writer is pushing.
+type flight struct {
+	old, new string // new: the replayed commit, when it applied
+	err      error  // when it did not
+}
+
+// recordFlights tells the writers of replayed in-flight commits what became
+// of them. Called with the file lock held, after the replay succeeded.
+func (s *Store) recordFlights(fs []flight) {
+	for _, f := range fs {
+		data := "ok " + f.new + "\n"
+		if f.err != nil {
+			b, _ := json.Marshal(AsError(f.err))
+			data = "err\n" + string(b) + "\n"
+		} else if f.new != f.old {
+			s.markInflight(f.new)
+		}
+		if f.new != f.old || f.err != nil {
+			os.WriteFile(s.inflightPath(f.old), []byte(data), 0o644)
+		}
+	}
+}
+
+// follow finds what became of sha, a commit this process is pushing: sha
+// itself while HEAD contains it, else the commit a replay by another writer
+// turned it into, or the error that replay met. "" with no error means the
+// branch was rewritten without a record (by hand, say): the push of sha
+// cannot be confirmed. Called with the file lock held; follow drops the
+// marks of commits it moves past.
+func (s *Store) follow(ctx context.Context, sha string) (string, error) {
+	for range 32 {
+		if s.isAncestor(ctx, sha, "HEAD") {
+			return sha, nil
+		}
+		data, err := os.ReadFile(s.inflightPath(sha))
+		if err != nil {
+			return "", nil
+		}
+		line, rest, _ := strings.Cut(string(data), "\n")
+		switch {
+		case strings.HasPrefix(line, "ok "):
+			s.clearInflight(sha)
+			sha = strings.TrimSpace(strings.TrimPrefix(line, "ok "))
+		case line == "err":
+			s.clearInflight(sha)
+			var e Error
+			if json.Unmarshal([]byte(strings.TrimSpace(rest)), &e) != nil || e.Code == "" {
+				return "", Errf(CodeGit, "", "the operation could not be replayed by another ka process")
+			}
+			return "", &e
+		default:
+			return "", nil
+		}
+	}
+	return "", nil
 }
 
 // commitOp writes an operation's changes and commits them with trailers.
@@ -517,12 +762,12 @@ type hooks struct {
 	reloaded func([]string)  // store-relative paths changed in the working tree; nil means everything
 }
 
-// Do applies and commits one operation, then pushes it when the store has a
-// remote and push is requested. If the remote moved, local commits are
-// replayed on top of it, which re-checks this operation's preconditions; an
-// operation that no longer applies (for example a claim someone else won)
-// returns its error and leaves no commit behind.
-func (s *Store) Do(ctx context.Context, h hooks, o *Op, push bool) (*Result, error) {
+// commitLocal applies and commits one operation and reloads its paths, with
+// the clone's file lock held for just that local work. The caller holds the
+// store's in-process mutex (or is a test that needs none). With pushing, the
+// commit is marked in flight (see markInflight) before the file lock goes,
+// and the caller must then publish it.
+func (s *Store) commitLocal(ctx context.Context, h hooks, o *Op, pushing bool) (*Result, error) {
 	if s.ReadOnly {
 		return nil, Errf(CodeReadOnly, "this store is only reachable through extends; add it to your workspace to write to it", "store %s is read-only here", s.Name)
 	}
@@ -541,7 +786,7 @@ func (s *Store) Do(ctx context.Context, h hooks, o *Op, push bool) (*Result, err
 	if err != nil {
 		return nil, err
 	}
-	remote, branch := s.upstream(ctx)
+	remote, _ := s.upstream(ctx)
 	res := &Result{HasRemote: remote != ""}
 	if len(changes) == 0 {
 		return res, nil
@@ -556,25 +801,50 @@ func (s *Store) Do(ctx context.Context, h hooks, o *Op, push bool) (*Result, err
 		paths[i] = c.Path
 	}
 	h.reloaded(paths)
-	if !push || remote == "" {
-		return res, nil
+	if pushing && remote != "" {
+		s.markInflight(sha)
 	}
-	return res, s.pushLocked(ctx, h, res, sha, remote, branch)
+	return res, nil
 }
 
-// pushLocked pushes, integrating upstream changes on rejection with bounded,
-// jittered retries (PRD §10.1). mine is the commit of the caller's
-// operation (empty for a plain sync); if its replay fails, the error is
-// returned. A push that cannot reach the remote (offline, auth, a failed
-// fetch after a rejection, retries exhausted) is not an error: the commits
-// stay local and res.PushError says why. It records the outcome for the
-// Sync & health view.
-func (s *Store) pushLocked(ctx context.Context, h hooks, res *Result, mine, remote, branch string) (err error) {
+// publish pushes mine, the commit of the caller's operation, which
+// commitLocal marked in flight. The caller holds neither write lock.
+func (s *Store) publish(ctx context.Context, h hooks, res *Result, mine string) error {
+	remote, branch := s.upstream(ctx)
 	if remote == "" {
+		s.clearInflight(mine)
 		return nil
 	}
+	return s.pushLoop(ctx, h, res, mine, true, remote, branch)
+}
+
+// pushLoop pushes target, integrating upstream changes on rejection with
+// bounded, jittered retries (PRD §10.1). The push, the fetch after a
+// rejection and the backoff run without the write locks; only the
+// integration takes them.
+//
+// It pushes target, the exact commit, never HEAD: HEAD may have moved since
+// (another writer committed on top, which that writer pushes; or another
+// writer is replaying, and HEAD is half-way), and a commit this writer made
+// always has a complete history behind it. A push of target that succeeds
+// means target is on the remote; a push that the remote rejects because it
+// already has target (a later commit on top was pushed first) is detected
+// after the fetch.
+//
+// With op, target is the caller's operation: if another writer replays it
+// meanwhile, follow finds the replayed commit (or the error), and if its
+// replay fails here, the error is returned. Without op (a sync), each
+// integration pushes the new HEAD.
+//
+// A push that cannot reach the remote (offline, auth, a failed fetch after a
+// rejection, retries exhausted) is not an error: the commits stay local and
+// res.PushError says why. It records the outcome for the Sync & health view.
+func (s *Store) pushLoop(ctx context.Context, h hooks, res *Result, target string, op bool, remote, branch string) (err error) {
 	fetched, lostOp := false, false
 	defer func() {
+		if op {
+			s.clearInflight(target)
+		}
 		switch {
 		case lostOp:
 			// The caller's operation no longer applies: not a network failure.
@@ -591,59 +861,116 @@ func (s *Store) pushLocked(ctx context.Context, h hooks, res *Result, mine, remo
 	var lastErr error
 	for attempt := 0; attempt < 8; attempt++ {
 		if attempt > 0 {
-			if s.git.Head(ctx) == s.remoteHead(ctx, remote, branch) {
-				res.Pushed = true
-				return nil
-			}
-		}
-		_, err := s.net(ctx, "push", "-q", remote, "HEAD:refs/heads/"+branch)
-		if err == nil {
-			res.Pushed = true
-			s.git.Run(ctx, "update-ref", "refs/remotes/"+remote+"/"+branch, "HEAD")
-			return nil
-		}
-		lastErr = err
-		if !gitx.IsNonFastForward(err) {
-			// Offline or auth failure: the commit stays local and unconfirmed.
-			res.PushError = firstLine(err.Error())
-			return nil
-		}
-		ir, err := s.integrateLocked(ctx, h, remote, branch, mine)
-		if ir != nil && ir.FetchErr != nil {
-			// Rejected, and then the fetch failed: as good as offline. The
-			// commit exists, so this is not the operation's failure.
-			res.PushError = firstLine(AsError(ir.FetchErr).Message)
-			return nil
-		}
-		fetched = fetched || err == nil
-		if ir != nil {
-			res.absorb(ir)
-			if mine != "" {
-				if ir.MineErr != nil {
-					res.Commit = ""
-					lostOp = true
-					return ir.MineErr
-				}
-				res.Commit = ir.MineSHA
-				mine = ir.MineSHA
-			}
-		}
-		if IsCode(err, CodeKaOutdated) {
-			// The remote now needs a newer ka: keep the commit local,
-			// like an offline push, and say why.
-			res.PushError = AsError(err).Message + "; " + AsError(err).Fix
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		if attempt < 7 {
 			s.sleep(backoff + time.Duration(rand.Int64N(int64(backoff))))
 			backoff *= 2
+			if op {
+				s.touchInflight(target)
+			}
 		}
+		_, perr := s.net(ctx, "push", "-q", remote, target+":refs/heads/"+branch)
+		if perr == nil {
+			res.Pushed = true
+			s.advanceTracking(ctx, remote, branch, target)
+			return nil
+		}
+		lastErr = perr
+		if !gitx.IsNonFastForward(perr) {
+			// Offline or auth failure: the commit stays local and unconfirmed.
+			res.PushError = firstLine(perr.Error())
+			return nil
+		}
+		prev, up, ferr := s.fetchUp(ctx, remote, branch)
+		if ferr != nil {
+			// Rejected, and then the fetch failed: as good as offline. The
+			// commit exists, so this is not the operation's failure.
+			res.PushError = firstLine(AsError(ferr).Message)
+			return nil
+		}
+		fetched = true
+		if s.isAncestor(ctx, target, up) {
+			// Already published, by a push of a later commit on top of it.
+			res.Pushed = true
+			return nil
+		}
+		unlock, lerr := s.lockAll(ctx)
+		if lerr != nil {
+			res.PushError = "not pushed: " + firstLine(AsError(lerr).Message)
+			return nil
+		}
+		next, ir, lost, ierr := s.reintegrate(ctx, h, remote, branch, prev, target, op)
+		unlock()
+		if ir != nil {
+			res.absorb(ir)
+		}
+		if lost != nil {
+			// The operation no longer applies after the replay (here, or in
+			// another writer's replay of it).
+			res.Commit = ""
+			lostOp = true
+			return lost
+		}
+		switch {
+		case IsCode(ierr, CodeKaOutdated):
+			// The remote now needs a newer ka: keep the commit local,
+			// like an offline push, and say why.
+			res.PushError = AsError(ierr).Message + "; " + AsError(ierr).Fix
+			return nil
+		case ierr != nil:
+			return ierr
+		case next == "":
+			res.PushError = "not pushed: the store's branch was rewritten by another process meanwhile; run ka sync"
+			return nil
+		}
+		if op {
+			res.Commit = next
+			if next != target {
+				s.clearInflight(target)
+			}
+		}
+		target = next
 	}
 	res.PushError = "push rejected 8 times: " + firstLine(lastErr.Error())
 	return nil
+}
+
+// reintegrate is pushLoop's step after a rejected push and a fetch, with
+// both write locks held: it brings the fetched upstream under the local
+// commits and returns the commit to push next ("" when the branch was
+// rewritten without a record of target). With op, target is first followed
+// through any replay another writer did meanwhile, and lost is the
+// operation's error when a replay (here or there) refused it. The in-flight
+// mark moves along with the commit to push.
+func (s *Store) reintegrate(ctx context.Context, h hooks, remote, branch, prev, target string, op bool) (next string, ir *integrateResult, lost, err error) {
+	mine := ""
+	if op {
+		t, ferr := s.follow(ctx, target)
+		if ferr != nil || t == "" {
+			return "", nil, ferr, nil
+		}
+		mine = t
+		if t != target {
+			s.markInflight(t)
+		}
+	}
+	ir, err = s.integrateFetched(ctx, h, remote, branch, prev, mine)
+	if !op {
+		if err != nil {
+			return "", ir, nil, err
+		}
+		return s.git.Head(ctx), ir, nil, nil
+	}
+	switch {
+	case err != nil:
+		s.clearInflight(mine)
+		return "", ir, nil, err
+	case ir.MineErr != nil:
+		s.clearInflight(mine)
+		return "", ir, ir.MineErr, nil
+	case ir.MineSHA != mine:
+		s.clearInflight(mine)
+		s.markInflight(ir.MineSHA)
+	}
+	return ir.MineSHA, ir, nil, nil
 }
 
 func firstLine(s string) string {
@@ -664,36 +991,43 @@ type integrateResult struct {
 	MineErr   error
 	Moved     bool // HEAD changed to include upstream commits
 	IDMap     map[string]string
-	FetchErr  error // the fetch failed; nothing else was done
 	// Unpreserved describes local changes that lost and could not be
 	// recorded as a comment; the pre-replay branch stays in refs/ka/backup.
 	Unpreserved []string
 	Compacted   bool     // a compacted upstream history was adopted
 	Warnings    []string // cleanup after adopting it that did not finish
 	conflicted  bool     // a hand edit was cherry-picked with conflicts
+	// flights are replayed commits that other writers are pushing (see
+	// markInflight); recorded once the whole replay has succeeded.
+	flights []flight
+}
+
+// keepsBackup reports whether the pre-replay branch holds something the
+// replay did not carry over as it was.
+func (r *integrateResult) keepsBackup() bool {
+	if len(r.Preserved) > 0 || len(r.Unpreserved) > 0 || r.conflicted {
+		return true
+	}
+	return slices.ContainsFunc(r.flights, func(f flight) bool { return f.err != nil })
 }
 
 // keepBackups is how many refs/ka/backup/* refs a clone keeps.
 const keepBackups = 20
 
-// integrateLocked fetches and brings upstream commits under local ones.
-// Local commits made by ka are replayed as operations; others are
-// cherry-picked with the semantic merge driver, and anything that loses is
-// preserved as a system comment (PRD §10.4). A replay is all or nothing: if
-// any step fails, the branch goes back to where it was.
-func (s *Store) integrateLocked(ctx context.Context, h hooks, remote, branch, mine string) (*integrateResult, error) {
-	// What this clone knew of upstream, in case the fetch brings a
-	// compacted history (adoptLocked).
-	prev := s.remoteHead(ctx, remote, branch)
-	if err := s.fetch(ctx, remote, branch); err != nil {
-		ferr := Errf(CodeGit, "check the network and credentials, then run ka sync", "fetch failed: %s", firstLine(err.Error()))
-		return &integrateResult{MineSHA: mine, FetchErr: ferr}, ferr
-	}
-	// From here on the work is local. Finish it even if the caller goes
-	// away: a replay stopped halfway would drop local commits.
+// integrateFetched brings fetched upstream commits under local ones, with
+// both write locks held; the fetch itself ran before, without them (fetchUp).
+// prev is the tracking ref before that fetch, in case it brought a compacted
+// history (adoptLocked). Local commits made by ka are replayed as
+// operations; others are cherry-picked with the semantic merge driver, and
+// anything that loses is preserved as a system comment (PRD §10.4). A replay
+// is all or nothing: if any step fails, the branch goes back to where it was.
+func (s *Store) integrateFetched(ctx context.Context, h hooks, remote, branch, prev, mine string) (*integrateResult, error) {
+	// The work is local. Finish it even if the caller goes away: a replay
+	// stopped halfway would drop local commits.
 	ctx = context.WithoutCancel(ctx)
-	// Use the fetched commit, not the ref, throughout: a concurrent fetch
-	// (another process, or the fetch loop) may move the ref meanwhile.
+	// Read the tracking ref once, now, and use that commit throughout: a
+	// concurrent fetch (another process, or the fetch loop) may move the ref
+	// meanwhile. It is at least as new as the caller's own fetch.
 	upSHA := s.remoteHead(ctx, remote, branch)
 	head := s.git.Head(ctx)
 	res := &integrateResult{MineSHA: mine}
@@ -754,12 +1088,63 @@ func (s *Store) integrateLocked(ctx context.Context, h hooks, remote, branch, mi
 	if err := s.replay(ctx, h, res, local, mine); err != nil {
 		return nil, s.abortReplay(ctx, h, head, backup, err)
 	}
-	if len(res.Preserved) == 0 && len(res.Unpreserved) == 0 && !res.conflicted {
+	s.recordFlights(res.flights)
+	if !res.keepsBackup() {
 		// Everything was replayed as it was: the backup holds nothing more.
 		s.git.Run(ctx, "update-ref", "-d", backup)
 	}
 	s.pruneBackups(ctx)
 	return res, nil
+}
+
+// syncLocked fetches and integrates with both write locks held by the
+// caller, without pushing: compaction and project move and rename, which
+// keep the locks across their network steps. pre, when set, is a fetch the
+// caller already made without the locks; it is integrated instead of
+// fetching again. res.Pushed reports whether the clone is level.
+func (s *Store) syncLocked(ctx context.Context, h hooks, res *Result, remote, branch string, pre *fetchedUp) (*Result, error) {
+	var f fetchedUp
+	if pre != nil {
+		f = *pre
+	} else {
+		f.prev, f.up, f.err = s.fetchUp(ctx, remote, branch)
+	}
+	if f.err != nil {
+		s.note(false, false, f.err)
+		return res, f.err
+	}
+	_, err := s.integrateHeld(ctx, h, res, remote, branch, f.prev)
+	return res, err
+}
+
+// fetchedUp is the outcome of a fetch made before taking the locks.
+type fetchedUp struct {
+	prev, up string
+	err      error
+}
+
+// integrateHeld is a sync's local part, with both write locks held: it
+// integrates what was fetched (prev: the tracking ref before the fetch),
+// turns values the merge driver preserved into comments, and returns the
+// commit to push ("" when the clone is level with upstream).
+func (s *Store) integrateHeld(ctx context.Context, h hooks, res *Result, remote, branch, prev string) (string, error) {
+	if p := s.inProgress(); p != "" {
+		return "", s.busyErr(p)
+	}
+	ir, err := s.integrateFetched(ctx, h, remote, branch, prev, "")
+	if err != nil {
+		s.note(false, false, err)
+		return "", err
+	}
+	s.note(true, false, nil)
+	res.absorb(ir)
+	res.Preserved = append(res.Preserved, s.flushPreserved(ctx, h)...)
+	head := s.git.Head(ctx)
+	if head == s.remoteHead(ctx, remote, branch) {
+		res.Pushed = true
+		return "", nil
+	}
+	return head, nil
 }
 
 // replay re-applies local commits on top of the current HEAD.
@@ -786,11 +1171,17 @@ func (s *Store) replay(ctx context.Context, h hooks, res *integrateResult, local
 			idMap[old] = o.ID
 			changes, subject, err = apply(h.env(), o)
 		}
+		// Another writer is pushing this commit: it reports the outcome to
+		// its caller, so a failure is not preserved here.
+		flying := c.SHA != mine && s.inflight(c.SHA)
 		if err != nil {
-			if c.SHA == mine {
+			switch {
+			case c.SHA == mine:
 				res.MineErr = err
 				res.MineSHA = ""
-			} else {
+			case flying:
+				res.flights = append(res.flights, flight{old: c.SHA, err: err})
+			default:
 				failed = append(failed, failedOp{o, c, err})
 			}
 			continue
@@ -798,6 +1189,8 @@ func (s *Store) replay(ctx context.Context, h hooks, res *integrateResult, local
 		if len(changes) == 0 {
 			if c.SHA == mine {
 				res.MineSHA = s.git.Head(ctx)
+			} else if flying {
+				res.flights = append(res.flights, flight{old: c.SHA, new: s.git.Head(ctx)})
 			}
 			continue
 		}
@@ -813,6 +1206,8 @@ func (s *Store) replay(ctx context.Context, h hooks, res *integrateResult, local
 		res.Replayed++
 		if c.SHA == mine {
 			res.MineSHA = sha
+		} else if flying {
+			res.flights = append(res.flights, flight{old: c.SHA, new: sha})
 		}
 	}
 	for _, f := range failed {
@@ -1114,33 +1509,30 @@ func (s *Store) sync(ctx context.Context, h hooks, push bool) (*Result, error) {
 		res.Pushed = err == nil && s.git.Head(ctx) == s.remoteHead(ctx, remote, branch)
 		return res, err
 	}
-	unlock, err := s.lock(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer unlock()
-	return s.syncLocked(ctx, h, res, remote, branch, push)
-}
-
-// syncLocked is sync for a writable store with a remote, with the write lock
-// held by the caller.
-func (s *Store) syncLocked(ctx context.Context, h hooks, res *Result, remote, branch string, push bool) (*Result, error) {
-	if p := s.inProgress(); p != "" {
-		return nil, s.busyErr(p)
-	}
-	ir, err := s.integrateLocked(ctx, h, remote, branch, "")
+	// The fetch needs neither lock; the integration takes both, and the
+	// push runs without them again. The caller holds neither.
+	prev, _, err := s.fetchUp(ctx, remote, branch)
 	if err != nil {
 		s.note(false, false, err)
 		return res, err
 	}
-	s.note(true, false, nil)
-	res.absorb(ir)
-	res.Preserved = append(res.Preserved, s.flushPreserved(ctx, h)...)
-	if level := s.git.Head(ctx) == s.remoteHead(ctx, remote, branch); !push || level {
-		res.Pushed = level
+	unlock, err := s.lockAll(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if p := s.inProgress(); p != "" {
+		unlock()
+		return nil, s.busyErr(p)
+	}
+	target, err := s.integrateHeld(ctx, h, res, remote, branch, prev)
+	unlock()
+	if err != nil {
+		return res, err
+	}
+	if !push || target == "" {
 		return res, nil
 	}
-	return res, s.pushLocked(ctx, h, res, "", remote, branch)
+	return res, s.pushLoop(ctx, h, res, target, false, remote, branch)
 }
 
 // integrateReadOnly fast-forwards a store this workspace only reads.
@@ -1162,7 +1554,7 @@ func (s *Store) integrateReadOnly(ctx context.Context, h hooks, remote, branch s
 	if _, err := s.git.Run(ctx, "merge", "-q", "--ff-only", up); err != nil {
 		if mb, _ := s.git.Run(ctx, "merge-base", "HEAD", up); mb == "" && before != "" {
 			// A compacted history: adopt it as a writable clone does.
-			unlock, err := s.lock(ctx)
+			unlock, err := s.lockAll(ctx)
 			if err != nil {
 				return false, err
 			}

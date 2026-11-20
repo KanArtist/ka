@@ -47,8 +47,19 @@ type FixOptions struct {
 
 // FixWith is Fix with options.
 func (s *Service) FixWith(ctx context.Context, c Caller, o FixOptions) (*FixOut, error) {
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
+	// Every writable store, locked in name order for the local work; the
+	// pushes run after.
+	var writable []*Store
+	for _, st := range s.WS.Stores {
+		if !st.ReadOnly {
+			writable = append(writable, st)
+		}
+	}
+	hm, err := s.hold(ctx, writable...)
+	if err != nil {
+		return nil, err
+	}
+	defer hm.unlock()
 	s.ix.catchUp()
 	out := &FixOut{}
 	aliases := s.aliasMap()
@@ -80,6 +91,7 @@ func (s *Service) FixWith(ctx context.Context, c Caller, o FixOptions) (*FixOut,
 		return out, nil
 	}
 	s.ix.refresh(nil, nil)
+	hm.unlock()
 	for _, st := range touched {
 		if _, err := s.push(ctx, st); err != nil {
 			return out, Errf(CodeGit, "the fixes are committed locally; ka sync retries the push", "push %s: %v", st.Name, err)

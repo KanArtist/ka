@@ -123,8 +123,11 @@ func (s *Service) writableStore(name string) (*Store, error) {
 // ticket operations (boards), commits it with the actor's trailers, reloads
 // the index and pushes per the store's push mode.
 func (s *Service) commitFile(ctx context.Context, c Caller, st *Store, rel string, data []byte, subject string) error {
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
+	hm, err := s.hold(ctx, st)
+	if err != nil {
+		return err
+	}
+	defer hm.unlock()
 	unlock, err := st.lock(ctx)
 	if err != nil {
 		return err
@@ -164,6 +167,7 @@ func (s *Service) commitFile(ctx context.Context, c Caller, st *Store, rel strin
 		return nil // nothing changed
 	}
 	s.ix.refresh(st, []string{rel})
+	hm.unlock() // push without the write mutex
 	s.publish(Event{Type: EvStoreChanged, At: s.now(), Store: st.Name, Actor: c.Actor, Data: map[string]string{"what": "boards", "path": rel}})
 	if _, err := s.pushStore(ctx, st); err != nil {
 		return Errf(CodeGit, "the change is committed locally; ka sync retries the push", "push %s: %v", st.Name, err)
