@@ -745,6 +745,132 @@
         ],
         "type": "object"
       },
+      "CompactOut": {
+        "additionalProperties": false,
+        "properties": {
+          "actors": {
+            "additionalProperties": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "description": "Commits per actor.",
+            "type": "object"
+          },
+          "backup_refs": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "branch": {
+            "type": "string"
+          },
+          "commits": {
+            "description": "Commits in the history being dropped.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "dry_run": {
+            "type": "boolean"
+          },
+          "first_commit": {
+            "type": "string"
+          },
+          "from": {
+            "description": "The tip of the history being compacted (after the summary commit, on a real run).",
+            "type": "string"
+          },
+          "last_commit": {
+            "type": "string"
+          },
+          "previous": {
+            "description": "The previous summary file, if the store was compacted before.",
+            "type": "string"
+          },
+          "raises_requires_ka": {
+            "description": "The summary commit raises requires_ka to requires_ka.",
+            "type": "boolean"
+          },
+          "remote": {
+            "type": "string"
+          },
+          "requires_ka": {
+            "description": "requires_ka after the compaction.",
+            "type": "string"
+          },
+          "requires_ka_was": {
+            "description": "requires_ka before, when the compaction raises it (empty: none).",
+            "type": "string"
+          },
+          "root": {
+            "description": "The new root commit.",
+            "type": "string"
+          },
+          "size_after": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "size_before": {
+            "description": "Approximate size of the clone's object store, in bytes.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "store": {
+            "type": "string"
+          },
+          "summary_file": {
+            "description": "Store-relative path of the summary file (a dry run shows a sample name).",
+            "type": "string"
+          },
+          "tickets_closed": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "tickets_created": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "tree": {
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "store",
+          "remote",
+          "branch",
+          "from",
+          "commits",
+          "size_before",
+          "summary_file",
+          "requires_ka"
+        ],
+        "type": "object"
+      },
+      "CompactStoreRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm": {
+            "description": "The store's name: required to compact for real.",
+            "type": "string"
+          },
+          "dry_run": {
+            "description": "Report what would happen; change nothing.",
+            "type": "boolean"
+          },
+          "summary": {
+            "description": "The narrative of the summary file (Markdown).",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "ConfigEntry": {
         "additionalProperties": false,
         "properties": {
@@ -1437,6 +1563,230 @@
         },
         "type": "object"
       },
+      "FromLabelIn": {
+        "additionalProperties": false,
+        "properties": {
+          "dry_run": {
+            "description": "Report what would change without writing.",
+            "type": "boolean"
+          },
+          "keep_label": {
+            "description": "Leave the label on the converted tickets (default: remove it).",
+            "type": "boolean"
+          },
+          "label": {
+            "description": "The label to turn into an initiative.",
+            "type": "string"
+          },
+          "project": {
+            "description": "The project to convert, which also holds the initiative (default: the workspace's).",
+            "type": "string"
+          },
+          "title": {
+            "description": "The initiative's title (default: the label). An initiative with this title in the project is reused.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label"
+        ],
+        "type": "object"
+      },
+      "FromLabelOut": {
+        "additionalProperties": false,
+        "properties": {
+          "created": {
+            "description": "A new initiative was (or would be) created; false when one with the title existed.",
+            "type": "boolean"
+          },
+          "dry_run": {
+            "type": "boolean"
+          },
+          "error": {
+            "$ref": "#/components/schemas/Error",
+            "description": "The first failure; earlier changes were still made."
+          },
+          "initiative": {
+            "$ref": "#/components/schemas/Ref",
+            "description": "The initiative (no id in a dry run that would create it)."
+          },
+          "label": {
+            "type": "string"
+          },
+          "local_only": {
+            "type": "boolean"
+          },
+          "push_pending": {
+            "type": "boolean"
+          },
+          "pushed": {
+            "type": "boolean"
+          },
+          "tickets": {
+            "items": {
+              "$ref": "#/components/schemas/FromLabelTicket"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "initiative",
+          "created",
+          "label",
+          "tickets",
+          "pushed"
+        ],
+        "type": "object"
+      },
+      "FromLabelTicket": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "description": "parented: its parent is now the initiative; via_epic: its epic is under the initiative; already: it was under it; skipped: left alone (see reason); epic: an epic put under the initiative for its labelled tickets.",
+            "enum": [
+              "parented",
+              "via_epic",
+              "already",
+              "skipped",
+              "epic"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "label_removed": {
+            "type": "boolean"
+          },
+          "reason": {
+            "description": "For skipped: why.",
+            "type": "string"
+          },
+          "ref": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "via": {
+            "description": "For via_epic: the epic.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ref",
+          "title",
+          "action"
+        ],
+        "type": "object"
+      },
+      "HistoryEntry": {
+        "additionalProperties": false,
+        "properties": {
+          "actors": {
+            "additionalProperties": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "description": "Commits per actor in the compacted history.",
+            "type": "object"
+          },
+          "body": {
+            "type": "string"
+          },
+          "by": {
+            "type": "string"
+          },
+          "commits": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "compacted_at": {
+            "type": "string"
+          },
+          "first_commit": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "last_commit": {
+            "type": "string"
+          },
+          "name": {
+            "description": "The file name in history/.",
+            "type": "string"
+          },
+          "on_behalf_of": {
+            "type": "string"
+          },
+          "path": {
+            "description": "Store-relative path.",
+            "type": "string"
+          },
+          "previous": {
+            "description": "The summary file of the compaction before this one.",
+            "type": "string"
+          },
+          "store": {
+            "type": "string"
+          },
+          "tickets_closed": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "tickets_created": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "tree": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "store",
+          "name",
+          "path",
+          "compacted_at",
+          "by",
+          "from",
+          "tree",
+          "commits"
+        ],
+        "type": "object"
+      },
+      "HistoryOut": {
+        "additionalProperties": false,
+        "properties": {
+          "compacted": {
+            "type": "boolean"
+          },
+          "root": {
+            "type": "string"
+          },
+          "summaries": {
+            "items": {
+              "$ref": "#/components/schemas/HistoryEntry"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "summaries",
+          "compacted"
+        ],
+        "type": "object"
+      },
       "InboxItem": {
         "additionalProperties": false,
         "properties": {
@@ -1593,6 +1943,10 @@
             "type": "string"
           },
           "query": {
+            "type": "string"
+          },
+          "within": {
+            "description": "Only tickets below this initiative, epic or parent ticket (at any depth).",
             "type": "string"
           }
         },
@@ -1926,6 +2280,59 @@
         },
         "type": "object"
       },
+      "RequireKaRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "description": "The oldest ka release that may use the store, such as 1.3.0.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "type": "object"
+      },
+      "RequireOut": {
+        "additionalProperties": false,
+        "properties": {
+          "changed": {
+            "description": "false when the store already required this version or newer.",
+            "type": "boolean"
+          },
+          "commit": {
+            "type": "string"
+          },
+          "from": {
+            "description": "requires_ka before (empty: none).",
+            "type": "string"
+          },
+          "local_only": {
+            "type": "boolean"
+          },
+          "push_error": {
+            "type": "string"
+          },
+          "pushed": {
+            "type": "boolean"
+          },
+          "store": {
+            "type": "string"
+          },
+          "to": {
+            "description": "requires_ka now.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "store",
+          "to",
+          "changed",
+          "pushed"
+        ],
+        "type": "object"
+      },
       "RestorePreservedRequest": {
         "additionalProperties": false,
         "properties": {
@@ -1937,6 +2344,62 @@
         },
         "required": [
           "comment"
+        ],
+        "type": "object"
+      },
+      "Rollup": {
+        "additionalProperties": false,
+        "properties": {
+          "blocked": {
+            "description": "Open and blocked (a blocked status or an open blocker).",
+            "format": "int64",
+            "type": "integer"
+          },
+          "canceled": {
+            "description": "In a canceled status.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "children": {
+            "description": "Direct children of any kind.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "children_open": {
+            "description": "Direct children that are open.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "done": {
+            "description": "Of those, in a completed status.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "in_progress": {
+            "description": "In a started status and not blocked.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "ready": {
+            "description": "Claimable now (is:ready).",
+            "format": "int64",
+            "type": "integer"
+          },
+          "total": {
+            "description": "Work tickets under the container, at any depth.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "done",
+          "canceled",
+          "in_progress",
+          "blocked",
+          "ready",
+          "children",
+          "children_open"
         ],
         "type": "object"
       },
@@ -2353,6 +2816,15 @@
       "SyncOut": {
         "additionalProperties": false,
         "properties": {
+          "compacted": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "conflicts": {
             "items": {
               "$ref": "#/components/schemas/InboxItem"
@@ -2396,6 +2868,15 @@
             ]
           },
           "unpreserved": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "warnings": {
             "items": {
               "type": "string"
             },
@@ -2519,6 +3000,88 @@
         },
         "required": [
           "status"
+        ],
+        "type": "object"
+      },
+      "TreeNode": {
+        "additionalProperties": false,
+        "properties": {
+          "blocked": {
+            "type": "boolean"
+          },
+          "category": {
+            "description": "The status category: triage, backlog, unstarted, started, completed or canceled.",
+            "type": "string"
+          },
+          "children": {
+            "items": {
+              "$ref": "#/components/schemas/TreeNode"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "claimed_by": {
+            "description": "Who holds the claim.",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "more": {
+            "description": "Direct children not shown (depth limit or hide_closed).",
+            "format": "int64",
+            "type": "integer"
+          },
+          "priority": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "ref": {
+            "type": "string"
+          },
+          "rollup": {
+            "$ref": "#/components/schemas/Rollup",
+            "description": "Containers only: counts over every work ticket below."
+          },
+          "status": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ref",
+          "title",
+          "status",
+          "project"
+        ],
+        "type": "object"
+      },
+      "TreeOut": {
+        "additionalProperties": false,
+        "properties": {
+          "nodes": {
+            "description": "The ticket asked for, or every initiative and top-level epic.",
+            "items": {
+              "$ref": "#/components/schemas/TreeNode"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "nodes"
         ],
         "type": "object"
       },
@@ -3309,7 +3872,7 @@
                 }
               }
             },
-            "description": "An event stream. Event types: [ticket.created ticket.updated ticket.moved ticket.removed comment.created claim.changed question.opened question.answered sync.state sync.conflict_preserved store.changed presence.changed reset]"
+            "description": "An event stream. Event types: [ticket.created ticket.updated ticket.moved ticket.removed comment.created claim.changed question.opened question.answered sync.state sync.conflict_preserved store.changed store.compacted presence.changed reset]"
           },
           "default": {
             "content": {
@@ -3532,6 +4095,67 @@
         "summary": "Answers to the caller's questions and open questions for the caller (ka_inbox)",
         "tags": [
           "questions"
+        ]
+      }
+    },
+    "/api/v1/initiatives/from-label": {
+      "post": {
+        "operationId": "initiativeFromLabel",
+        "parameters": [
+          {
+            "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
+            "in": "header",
+            "name": "X-Ka-Actor",
+            "schema": {
+              "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A session ID, recorded in the Ka-Session trailer.",
+            "in": "header",
+            "name": "X-Ka-Session",
+            "schema": {
+              "description": "A session ID, recorded in the Ka-Session trailer.",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FromLabelIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FromLabelOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Turn a label into an initiative over the tickets carrying it (ka initiative from-label)",
+        "tags": [
+          "tickets"
         ]
       }
     },
@@ -4213,6 +4837,245 @@
           }
         },
         "summary": "Stores with their sync state",
+        "tags": [
+          "workspace"
+        ]
+      }
+    },
+    "/api/v1/stores/{name}/compact": {
+      "post": {
+        "description": "Publishes a summary in history/, then replaces the store's branch with one root commit (a force push with a lease). Without dry_run it requires confirm equal to the store name, and in remote mode only the daemon's local token may run it.",
+        "operationId": "compactStore",
+        "parameters": [
+          {
+            "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
+            "in": "header",
+            "name": "X-Ka-Actor",
+            "schema": {
+              "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A session ID, recorded in the Ka-Session trailer.",
+            "in": "header",
+            "name": "X-Ka-Session",
+            "schema": {
+              "description": "A session ID, recorded in the Ka-Session trailer.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The store's workspace name.",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "description": "The store's workspace name.",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompactStoreRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompactOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Compact a store's history into one commit (ka compact)",
+        "tags": [
+          "sync"
+        ]
+      }
+    },
+    "/api/v1/stores/{name}/history": {
+      "get": {
+        "operationId": "listHistory",
+        "parameters": [
+          {
+            "description": "The store's workspace name.",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "description": "The store's workspace name.",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "A store's history summaries: what each compaction dropped (ka history)",
+        "tags": [
+          "sync"
+        ]
+      }
+    },
+    "/api/v1/stores/{name}/history/{file}": {
+      "get": {
+        "operationId": "getHistorySummary",
+        "parameters": [
+          {
+            "description": "The store's workspace name.",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "description": "The store's workspace name.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The summary's file name, such as 20261107T120000Z-4F2A.md.",
+            "in": "path",
+            "name": "file",
+            "required": true,
+            "schema": {
+              "description": "The summary's file name, such as 20261107T120000Z-4F2A.md.",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryEntry"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "One history summary with its narrative",
+        "tags": [
+          "sync"
+        ]
+      }
+    },
+    "/api/v1/stores/{name}/require": {
+      "post": {
+        "operationId": "requireKa",
+        "parameters": [
+          {
+            "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
+            "in": "header",
+            "name": "X-Ka-Actor",
+            "schema": {
+              "description": "Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/\u003cname\u003e and are recorded as acting on behalf of that person.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A session ID, recorded in the Ka-Session trailer.",
+            "in": "header",
+            "name": "X-Ka-Session",
+            "schema": {
+              "description": "A session ID, recorded in the Ka-Session trailer.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The store's workspace name.",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "description": "The store's workspace name.",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequireKaRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequireOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Raise a store's requires_ka; never lowers it (ka store require)",
         "tags": [
           "workspace"
         ]
@@ -5500,6 +6363,81 @@
           }
         },
         "summary": "Change status; closing requires a summary (ka_transition)",
+        "tags": [
+          "tickets"
+        ]
+      }
+    },
+    "/api/v1/tree": {
+      "get": {
+        "operationId": "getTree",
+        "parameters": [
+          {
+            "description": "An initiative, epic or any parent ticket (ID or reference).",
+            "explode": false,
+            "in": "query",
+            "name": "id",
+            "schema": {
+              "description": "An initiative, epic or any parent ticket (ID or reference).",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Without id: the project (default: the workspace's; else every project).",
+            "explode": false,
+            "in": "query",
+            "name": "project",
+            "schema": {
+              "description": "Without id: the project (default: the workspace's; else every project).",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Levels of children to show below each top node; 0 means all.",
+            "explode": false,
+            "in": "query",
+            "name": "depth",
+            "schema": {
+              "description": "Levels of children to show below each top node; 0 means all.",
+              "format": "int64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Leave out closed tickets (rollups still count them).",
+            "explode": false,
+            "in": "query",
+            "name": "hide_closed",
+            "schema": {
+              "description": "Leave out closed tickets (rollups still count them).",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TreeOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "An initiative or epic with every ticket below it and progress rollups; without id, the project's initiatives and top-level epics (ka_tree)",
         "tags": [
           "tickets"
         ]

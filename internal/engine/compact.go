@@ -7,7 +7,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -279,7 +278,7 @@ func (s *Service) Compact(ctx context.Context, c Caller, in CompactIn) (*Compact
 	st.note(true, true, nil)
 
 	// 5. Drop the old history from this clone.
-	out.Warnings = st.dropOldHistory(ctx, "", from)
+	out.Warnings = st.dropOldHistory(ctx, "", from, true)
 	out.SizeAfter = st.objectBytes(ctx)
 	s.publish(Event{Type: EvStoreCompacted, At: s.now(), Store: st.Name, Actor: c.Actor,
 		Data: CompactedEvent{From: from, Root: root, Summary: out.SummaryFile}})
@@ -430,29 +429,6 @@ func (s *Store) pendingSummary(ctx context.Context, head, narrative string) stri
 	return file
 }
 
-var requiresLine = regexp.MustCompile(`(?m)^requires_ka:.*$`)
-
-// setRequiresKa sets requires_ka in store.yml text, keeping everything else.
-func setRequiresKa(data []byte, v string) []byte {
-	s := string(kaspec.NormalizeEncoding(data))
-	if requiresLine.MatchString(s) {
-		return []byte(requiresLine.ReplaceAllString(s, "requires_ka: "+v))
-	}
-	lines := strings.SplitAfter(s, "\n")
-	for i, l := range lines {
-		if strings.HasPrefix(l, "name:") {
-			if !strings.HasSuffix(l, "\n") {
-				lines[i] += "\n"
-			}
-			return []byte(strings.Join(lines[:i+1], "") + "requires_ka: " + v + "\n" + strings.Join(lines[i+1:], ""))
-		}
-	}
-	if s != "" && !strings.HasSuffix(s, "\n") {
-		s += "\n"
-	}
-	return []byte(s + "requires_ka: " + v + "\n")
-}
-
 // objectBytes approximates the size of the clone's object store.
 func (s *Store) objectBytes(ctx context.Context) int64 {
 	out, err := s.git.Run(ctx, "count-objects", "-v")
@@ -471,9 +447,11 @@ func (s *Store) objectBytes(ctx context.Context) int64 {
 }
 
 // dropOldHistory removes what pins the history a compaction replaced (ka's
-// backup refs except keep, ORIG_HEAD, the reflogs) and prunes it. Failures
-// are warnings: the new history is already in place.
-func (s *Store) dropOldHistory(ctx context.Context, keep, oldTip string) []string {
+// backup refs except keep, ORIG_HEAD) and, with prune, expires the reflogs
+// and prunes it. Without prune (adopting in a checkout ka does not own) the
+// objects stay until git expires them. Failures are warnings: the new
+// history is already in place.
+func (s *Store) dropOldHistory(ctx context.Context, keep, oldTip string, prune bool) []string {
 	var warnings []string
 	if out, err := s.git.Run(ctx, "for-each-ref", "--format=%(refname)", "refs/ka/"); err == nil {
 		var stdin strings.Builder
@@ -492,6 +470,11 @@ func (s *Store) dropOldHistory(ctx context.Context, keep, oldTip string) []strin
 		if out, err := s.git.Run(ctx, "for-each-ref", "--format=%(refname)", "--contains", oldTip); err == nil && out != "" {
 			warnings = append(warnings, "these refs still reach the old history, so it stays on disk: "+strings.Join(splitNonEmpty(out), ", ")+" (delete them, then run git gc --prune=now)")
 		}
+	}
+	if !prune {
+		// Someone's own checkout: its reflogs are their safety net, for
+		// every branch. Leave the old history to git's normal expiry.
+		return append(warnings, "the old history is no longer referenced; git removes it when its reflog entries expire, or now with: git reflog expire --expire=now --all && git gc --prune=now")
 	}
 	if _, err := s.git.Run(ctx, "reflog", "expire", "--expire=now", "--expire-unreachable=now", "--all"); err != nil {
 		warnings = append(warnings, "git reflog expire failed: "+firstLine(err.Error()))
@@ -713,7 +696,7 @@ func (s *Store) adoptLocked(ctx context.Context, h hooks, res *integrateResult, 
 	if len(res.Preserved) == 0 && len(res.Unpreserved) == 0 && !res.conflicted {
 		keep = ""
 	}
-	res.Warnings = append(res.Warnings, s.dropOldHistory(ctx, keep, head)...)
+	res.Warnings = append(res.Warnings, s.dropOldHistory(ctx, keep, head, s.Managed)...)
 	return res, nil
 }
 

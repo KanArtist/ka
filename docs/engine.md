@@ -293,8 +293,10 @@ mismatch, or "only N of the M tickets"). Adopting is recovery in place: a backup
 HEAD, the branch moves (`reset --keep`, so uncommitted edits that would be overwritten stop it with
 "commit or stash local edits"), and commits that were never published (after the matched commit)
 are replayed as in any sync, all or nothing; a compaction's own summary commit is skipped, being in
-the new tree already. Then the same cleanup runs (the backup ref is kept when the replay preserved
-conflicts), the index reloads fully, `ka sync` reports it, and `store.compacted` reaches the UI.
+the new tree already. Then ka's refs to the old history go (the backup ref is kept when the replay
+preserved conflicts). A clone ka manages also expires its reflogs and prunes at once; an attached
+checkout keeps its reflogs, which are its owner's safety net for every branch, so the old objects
+stay until git expires them, and `ka sync` says how to drop them now. The index reloads fully, `ka sync` reports it, and `store.compacted` reaches the UI.
 Read-only (`extends`) clones adopt the same way without a replay. The daemon's unlocked fetch and
 `ka_ask`'s polling hand a compacted remote to the locked sync, which adopts it.
 

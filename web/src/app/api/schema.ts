@@ -233,6 +233,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/initiatives/from-label": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Turn a label into an initiative over the tickets carrying it (ka initiative from-label) */
+        post: operations["initiativeFromLabel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/links/resolve": {
         parameters: {
             query?: never;
@@ -431,6 +448,77 @@ export interface paths {
         get: operations["listStores"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/stores/{name}/compact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Compact a store's history into one commit (ka compact)
+         * @description Publishes a summary in history/, then replaces the store's branch with one root commit (a force push with a lease). Without dry_run it requires confirm equal to the store name, and in remote mode only the daemon's local token may run it.
+         */
+        post: operations["compactStore"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/stores/{name}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A store's history summaries: what each compaction dropped (ka history) */
+        get: operations["listHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/stores/{name}/history/{file}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One history summary with its narrative */
+        get: operations["getHistorySummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/stores/{name}/require": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Raise a store's requires_ka; never lowers it (ka store require) */
+        post: operations["requireKa"];
         delete?: never;
         options?: never;
         head?: never;
@@ -670,6 +758,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tree": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** An initiative or epic with every ticket below it and progress rollups; without id, the project's initiatives and top-level epics (ka_tree) */
+        get: operations["getTree"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspace": {
         parameters: {
             query?: never;
@@ -882,6 +987,60 @@ export interface components {
             };
             truncated?: boolean;
         };
+        CompactOut: {
+            /** @description Commits per actor. */
+            actors?: {
+                [key: string]: number;
+            };
+            /** Format: int64 */
+            backup_refs?: number;
+            branch: string;
+            /**
+             * Format: int64
+             * @description Commits in the history being dropped.
+             */
+            commits: number;
+            dry_run?: boolean;
+            first_commit?: string;
+            /** @description The tip of the history being compacted (after the summary commit, on a real run). */
+            from: string;
+            last_commit?: string;
+            /** @description The previous summary file, if the store was compacted before. */
+            previous?: string;
+            /** @description The summary commit raises requires_ka to requires_ka. */
+            raises_requires_ka?: boolean;
+            remote: string;
+            /** @description requires_ka after the compaction. */
+            requires_ka: string;
+            /** @description requires_ka before, when the compaction raises it (empty: none). */
+            requires_ka_was?: string;
+            /** @description The new root commit. */
+            root?: string;
+            /** Format: int64 */
+            size_after?: number;
+            /**
+             * Format: int64
+             * @description Approximate size of the clone's object store, in bytes.
+             */
+            size_before: number;
+            store: string;
+            /** @description Store-relative path of the summary file (a dry run shows a sample name). */
+            summary_file: string;
+            /** Format: int64 */
+            tickets_closed?: number;
+            /** Format: int64 */
+            tickets_created?: number;
+            tree?: string;
+            warnings?: string[] | null;
+        };
+        CompactStoreRequest: {
+            /** @description The store's name: required to compact for real. */
+            confirm?: string;
+            /** @description Report what would happen; change nothing. */
+            dry_run?: boolean;
+            /** @description The narrative of the summary file (Markdown). */
+            summary?: string;
+        };
         ConfigEntry: {
             /** @description data (validation; resolved through extends) or runtime (this ka instance; the user wins). */
             class: string;
@@ -1066,6 +1225,80 @@ export interface components {
             /** @description Also give tickets without a slug one derived from the title (projects with slugs: true). */
             slugs?: boolean;
         };
+        FromLabelIn: {
+            /** @description Report what would change without writing. */
+            dry_run?: boolean;
+            /** @description Leave the label on the converted tickets (default: remove it). */
+            keep_label?: boolean;
+            /** @description The label to turn into an initiative. */
+            label: string;
+            /** @description The project to convert, which also holds the initiative (default: the workspace's). */
+            project?: string;
+            /** @description The initiative's title (default: the label). An initiative with this title in the project is reused. */
+            title?: string;
+        };
+        FromLabelOut: {
+            /** @description A new initiative was (or would be) created; false when one with the title existed. */
+            created: boolean;
+            dry_run?: boolean;
+            /** @description The first failure; earlier changes were still made. */
+            error?: components["schemas"]["Error"];
+            /** @description The initiative (no id in a dry run that would create it). */
+            initiative: components["schemas"]["Ref"];
+            label: string;
+            local_only?: boolean;
+            push_pending?: boolean;
+            pushed: boolean;
+            tickets: components["schemas"]["FromLabelTicket"][] | null;
+        };
+        FromLabelTicket: {
+            /**
+             * @description parented: its parent is now the initiative; via_epic: its epic is under the initiative; already: it was under it; skipped: left alone (see reason); epic: an epic put under the initiative for its labelled tickets.
+             * @enum {string}
+             */
+            action: "parented" | "via_epic" | "already" | "skipped" | "epic";
+            id: string;
+            kind?: string;
+            label_removed?: boolean;
+            /** @description For skipped: why. */
+            reason?: string;
+            ref: string;
+            title: string;
+            /** @description For via_epic: the epic. */
+            via?: string;
+        };
+        HistoryEntry: {
+            /** @description Commits per actor in the compacted history. */
+            actors?: {
+                [key: string]: number;
+            };
+            body?: string;
+            by: string;
+            /** Format: int64 */
+            commits: number;
+            compacted_at: string;
+            first_commit?: string;
+            from: string;
+            last_commit?: string;
+            /** @description The file name in history/. */
+            name: string;
+            on_behalf_of?: string;
+            /** @description Store-relative path. */
+            path: string;
+            /** @description The summary file of the compaction before this one. */
+            previous?: string;
+            store: string;
+            /** Format: int64 */
+            tickets_closed?: number;
+            /** Format: int64 */
+            tickets_created?: number;
+            tree: string;
+        };
+        HistoryOut: {
+            compacted: boolean;
+            root?: string;
+            summaries: components["schemas"]["HistoryEntry"][] | null;
+        };
         InboxItem: {
             comment: components["schemas"]["CommentOut"];
             id: string;
@@ -1108,6 +1341,8 @@ export interface components {
             peek?: boolean;
             project?: string;
             query?: string;
+            /** @description Only tickets below this initiative, epic or parent ticket (at any depth). */
+            within?: string;
         };
         NextOut: {
             claimed: boolean;
@@ -1213,9 +1448,68 @@ export interface components {
             /** @description The new ID prefix (default: the new key upper-cased, when the key changes). */
             prefix?: string;
         };
+        RequireKaRequest: {
+            /** @description The oldest ka release that may use the store, such as 1.3.0. */
+            version: string;
+        };
+        RequireOut: {
+            /** @description false when the store already required this version or newer. */
+            changed: boolean;
+            commit?: string;
+            /** @description requires_ka before (empty: none). */
+            from?: string;
+            local_only?: boolean;
+            push_error?: string;
+            pushed: boolean;
+            store: string;
+            /** @description requires_ka now. */
+            to: string;
+        };
         RestorePreservedRequest: {
             /** @description The system comment's filename that preserved the operation. */
             comment: string;
+        };
+        Rollup: {
+            /**
+             * Format: int64
+             * @description Open and blocked (a blocked status or an open blocker).
+             */
+            blocked: number;
+            /**
+             * Format: int64
+             * @description In a canceled status.
+             */
+            canceled: number;
+            /**
+             * Format: int64
+             * @description Direct children of any kind.
+             */
+            children: number;
+            /**
+             * Format: int64
+             * @description Direct children that are open.
+             */
+            children_open: number;
+            /**
+             * Format: int64
+             * @description Of those, in a completed status.
+             */
+            done: number;
+            /**
+             * Format: int64
+             * @description In a started status and not blocked.
+             */
+            in_progress: number;
+            /**
+             * Format: int64
+             * @description Claimable now (is:ready).
+             */
+            ready: number;
+            /**
+             * Format: int64
+             * @description Work tickets under the container, at any depth.
+             */
+            total: number;
         };
         SchemaOut: {
             agents?: string[] | null;
@@ -1327,6 +1621,7 @@ export interface components {
             updated?: string;
         };
         SyncOut: {
+            compacted?: string[] | null;
             conflicts?: components["schemas"]["InboxItem"][] | null;
             errors?: components["schemas"]["Error"][] | null;
             preserved?: string[] | null;
@@ -1335,6 +1630,7 @@ export interface components {
             };
             stores: components["schemas"]["SyncState"][] | null;
             unpreserved?: string[] | null;
+            warnings?: string[] | null;
         };
         SyncRequest: {
             force?: boolean;
@@ -1373,6 +1669,32 @@ export interface components {
             status: string;
             /** @description Required when closing; committed as a resolution comment. */
             summary?: string;
+        };
+        TreeNode: {
+            blocked?: boolean;
+            /** @description The status category: triage, backlog, unstarted, started, completed or canceled. */
+            category?: string;
+            children?: components["schemas"]["TreeNode"][] | null;
+            /** @description Who holds the claim. */
+            claimed_by?: string;
+            id: string;
+            kind?: string;
+            /**
+             * Format: int64
+             * @description Direct children not shown (depth limit or hide_closed).
+             */
+            more?: number;
+            priority?: string;
+            project: string;
+            ref: string;
+            /** @description Containers only: counts over every work ticket below. */
+            rollup?: components["schemas"]["Rollup"];
+            status: string;
+            title: string;
+        };
+        TreeOut: {
+            /** @description The ticket asked for, or every initiative and top-level epic. */
+            nodes: components["schemas"]["TreeNode"][] | null;
         };
         UpdateIn: {
             add?: {
@@ -1803,7 +2125,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description An event stream. Event types: [ticket.created ticket.updated ticket.moved ticket.removed comment.created claim.changed question.opened question.answered sync.state sync.conflict_preserved store.changed presence.changed reset] */
+            /** @description An event stream. Event types: [ticket.created ticket.updated ticket.moved ticket.removed comment.created claim.changed question.opened question.answered sync.state sync.conflict_preserved store.changed store.compacted presence.changed reset] */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1953,6 +2275,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InboxOut"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    initiativeFromLabel: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/<name> and are recorded as acting on behalf of that person. */
+                "X-Ka-Actor"?: string;
+                /** @description A session ID, recorded in the Ka-Session trailer. */
+                "X-Ka-Session"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FromLabelIn"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FromLabelOut"];
                 };
             };
             /** @description Error */
@@ -2375,6 +2735,154 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StoreList"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    compactStore: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/<name> and are recorded as acting on behalf of that person. */
+                "X-Ka-Actor"?: string;
+                /** @description A session ID, recorded in the Ka-Session trailer. */
+                "X-Ka-Session"?: string;
+            };
+            path: {
+                /** @description The store's workspace name. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompactStoreRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompactOut"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listHistory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The store's workspace name. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryOut"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getHistorySummary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The store's workspace name. */
+                name: string;
+                /** @description The summary's file name, such as 20261107T120000Z-4F2A.md. */
+                file: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryEntry"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    requireKa: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Act as this actor; default: the daemon's human (remote mode: the token's actor). Agents use agent/<name> and are recorded as acting on behalf of that person. */
+                "X-Ka-Actor"?: string;
+                /** @description A session ID, recorded in the Ka-Session trailer. */
+                "X-Ka-Session"?: string;
+            };
+            path: {
+                /** @description The store's workspace name. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequireKaRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RequireOut"];
                 };
             };
             /** @description Error */
@@ -3106,6 +3614,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WriteOut"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getTree: {
+        parameters: {
+            query?: {
+                /** @description An initiative, epic or any parent ticket (ID or reference). */
+                id?: string;
+                /** @description Without id: the project (default: the workspace's; else every project). */
+                project?: string;
+                /** @description Levels of children to show below each top node; 0 means all. */
+                depth?: number;
+                /** @description Leave out closed tickets (rollups still count them). */
+                hide_closed?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TreeOut"];
                 };
             };
             /** @description Error */

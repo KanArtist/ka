@@ -81,6 +81,9 @@ func TestCompactLevelCloneAdopts(t *testing.T) {
 	syncOK(t, b)
 	oldHead := testkit.Git(t, bdir, "rev-parse", "HEAD")
 
+	// A clone ka manages drops the old history at once; an attached
+	// checkout keeps it until git expires it (engine: TestCompactThenAdopt).
+	b.WS.Stores[0].Managed = true
 	out := compact(t, a, "The cache work.")
 	if out.Commits != 3 || out.Root != remoteMain(t, r) {
 		t.Fatalf("compact: %+v", out)

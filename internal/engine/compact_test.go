@@ -249,8 +249,14 @@ func TestCompactThenAdopt(t *testing.T) {
 	if run(t, bdir, "rev-parse", "HEAD") != out.Root {
 		t.Fatal("b did not adopt the new root")
 	}
-	if exec.Command("git", "-C", bdir, "cat-file", "-e", oldHead+"^{commit}").Run() == nil {
-		t.Fatal("old history still in b")
+	// b is an attached checkout (not a clone ka manages): adopting must not
+	// expire its reflogs or prune, so the old history stays until git's
+	// own expiry, with nothing of ka's pointing at it.
+	if exec.Command("git", "-C", bdir, "cat-file", "-e", oldHead+"^{commit}").Run() != nil {
+		t.Fatal("adopting pruned an attached checkout")
+	}
+	if refs := run(t, bdir, "for-each-ref", "--contains", oldHead); refs != "" {
+		t.Fatalf("refs still hold the old history in b: %s", refs)
 	}
 	if st := run(t, bdir, "status", "--porcelain"); st != "" {
 		t.Fatalf("b status: %q", st)

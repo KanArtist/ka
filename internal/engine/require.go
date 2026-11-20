@@ -78,19 +78,7 @@ func (s *Service) RequireKa(ctx context.Context, c Caller, store, version string
 		out.Pushed = true
 		return out, nil
 	}
-	text := string(data)
-	switch line := "requires_ka: " + version; {
-	case requireLine.MatchString(text):
-		text = requireLine.ReplaceAllLiteralString(text, line)
-	case extendsLine.MatchString(text):
-		i := extendsLine.FindStringIndex(text)[0]
-		text = text[:i] + line + "\n" + text[i:]
-	default:
-		if text != "" && !strings.HasSuffix(text, "\n") {
-			text += "\n"
-		}
-		text += line + "\n"
-	}
+	text := string(setRequiresKa(data, version))
 	if sf, ds := kaspec.ParseStoreFile(rel, []byte(text)); sf == nil || sf.RequiresKa != version || kaspec.HasErrors(ds, false) {
 		unlock()
 		return nil, Errf(CodeInvalid, "fix .ka/store.yml (ka check), or add `requires_ka: "+version+"` by hand", "could not set requires_ka in %s's store.yml", st.Name)
@@ -145,4 +133,24 @@ func (s *Service) requireStore(name string) (*Store, error) {
 // requireHint tells a person how to raise requires_ka to version.
 func requireHint(version string) string {
 	return "once every client of the store runs ka " + version + " or newer, run `ka store require " + version + "` (it sets requires_ka in .ka/store.yml, commits and pushes)"
+}
+
+// setRequiresKa sets requires_ka in store.yml text, keeping everything else
+// (comments, order): it replaces the line, or adds one before extends, or at
+// the end.
+func setRequiresKa(data []byte, version string) []byte {
+	text := string(data)
+	switch line := "requires_ka: " + version; {
+	case requireLine.MatchString(text):
+		text = requireLine.ReplaceAllLiteralString(text, line)
+	case extendsLine.MatchString(text):
+		i := extendsLine.FindStringIndex(text)[0]
+		text = text[:i] + line + "\n" + text[i:]
+	default:
+		if text != "" && !strings.HasSuffix(text, "\n") {
+			text += "\n"
+		}
+		text += line + "\n"
+	}
+	return []byte(text)
 }
