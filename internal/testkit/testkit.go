@@ -23,6 +23,11 @@ func GitEnv(t testing.TB) string {
 	t.Setenv("KA_CONFIG_DIR", filepath.Join(home, "ka-config"))
 	t.Setenv("KA_DATA_DIR", filepath.Join(home, "ka-data"))
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	// A test's scratch repositories live under the temp directory. If that
+	// is itself inside a repository (TMPDIR pointed into a checkout), git
+	// must not walk up into it: `ka init` would join it and the test's
+	// commits would land there.
+	t.Setenv("GIT_CEILING_DIRECTORIES", os.TempDir())
 	t.Setenv("GIT_AUTHOR_NAME", "Test User")
 	t.Setenv("GIT_AUTHOR_EMAIL", "tester@example.com")
 	t.Setenv("GIT_COMMITTER_NAME", "Test User")
