@@ -7,6 +7,8 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
 	"path"
@@ -92,20 +94,13 @@ func isUIPath(p string) bool {
 func (s *Server) serveUI(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.Header().Set("Allow", "GET, HEAD")
-		writeProblem(w, newProblem(codeForbidden, "", "method not allowed"))
+		writeProblem(w, newProblem(codeMethodNotAllowed, "", "method not allowed"))
 		return
 	}
 	uiFS := s.uiFS()
 	name := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")
 	if name != "" && name != "index.html" {
-		if data, err := fs.ReadFile(uiFS, name); err == nil {
-			h := w.Header()
-			if isHashed(name) {
-				h.Set("Cache-Control", "public, max-age=31536000, immutable")
-			} else {
-				h.Set("Cache-Control", "no-cache")
-			}
-			http.ServeContent(w, r, name, s.started, bytes.NewReader(data))
+		if serveAsset(w, r, uiFS, name) {
 			return
 		}
 		if path.Ext(name) != "" {
@@ -126,6 +121,67 @@ func (s *Server) serveUI(w http.ResponseWriter, r *http.Request) {
 		"img-src 'self' data:; font-src 'self'; connect-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'")
 	h.Set("X-Frame-Options", "DENY")
 	w.Write(bytes.ReplaceAll(index, []byte(nonceMarker), []byte(nonce)))
+}
+
+// serveAsset serves a static file, if fsys has it, with conditional
+// requests answered from its metadata before its content is read.
+func serveAsset(w http.ResponseWriter, r *http.Request, fsys fs.FS, name string) bool {
+	f, err := fsys.Open(name)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil || st.IsDir() {
+		return false
+	}
+	h := w.Header()
+	if isHashed(name) {
+		h.Set("Cache-Control", "public, max-age=31536000, immutable")
+	} else {
+		h.Set("Cache-Control", "no-cache")
+	}
+	if tag := assetTag(fsys, name, st); tag != "" {
+		h.Set("ETag", tag)
+	}
+	content, ok := f.(io.ReadSeeker)
+	if !ok {
+		data, err := io.ReadAll(f)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return true
+		}
+		content = bytes.NewReader(data)
+	}
+	// A directory's files carry their modification time (Last-Modified);
+	// embedded ones have none, and rely on the ETag.
+	http.ServeContent(w, r, name, st.ModTime(), content)
+	return true
+}
+
+// embeddedTags caches the embedded UI's ETags, which never change.
+var embeddedTags sync.Map
+
+// assetTag is a file's ETag: its size and modification time, or, for the
+// embedded UI, which has no times, a hash of its content computed once.
+func assetTag(fsys fs.FS, name string, st fs.FileInfo) string {
+	if !st.ModTime().IsZero() {
+		return fmt.Sprintf(`"%x-%x"`, st.Size(), st.ModTime().UnixNano())
+	}
+	if fsys != EmbeddedUI {
+		return ""
+	}
+	if t, ok := embeddedTags.Load(name); ok {
+		return t.(string)
+	}
+	data, err := fs.ReadFile(fsys, name)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(data)
+	t := `"` + hex.EncodeToString(sum[:8]) + `"`
+	embeddedTags.Store(name, t)
+	return t
 }
 
 // isHashed reports whether a file name carries a content hash

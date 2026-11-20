@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -9,8 +10,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/KanArtist/ka/internal/engine"
 	"github.com/KanArtist/ka/internal/testkit"
@@ -173,6 +176,11 @@ func TestGitHubWebhook(t *testing.T) {
 	if rec.Code != 202 || !strings.Contains(rec.Body.String(), `"fetching":["`+svc.WS.Stores[0].Name+`"]`) {
 		t.Fatalf("push: %d %s", rec.Code, rec.Body)
 	}
+	// Oversized bodies are refused before the signature is checked.
+	big := append(append([]byte(`{"zen":"`), bytes.Repeat([]byte("x"), maxWebhookBody)...), `"}`...)
+	if rec := hook("push", big, sign(big)); rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversized: %d %s", rec.Code, rec.Body)
+	}
 	ping := []byte(`{"zen":"hi"}`)
 	if rec := hook("ping", ping, sign(ping)); rec.Code != 202 {
 		t.Fatalf("ping: %d", rec.Code)
@@ -212,4 +220,88 @@ func TestMetrics(t *testing.T) {
 	if t.Failed() {
 		t.Logf("metrics:\n%s", body)
 	}
+}
+
+// Metrics labels come from the route table, whatever path or method a client
+// sends, and requests refused before routing share one route.
+func TestMetricsLabelsAreBounded(t *testing.T) {
+	c := start(t)
+	for i := range 5 {
+		c.do("GET", "/api/v1/nope-"+strconv.Itoa(i), nil)
+		c.do("GET", "/api/v1/random-"+strconv.Itoa(i), nil, "Authorization", "")
+		c.do("BREW"+strconv.Itoa(i), "/api/v1/workspace", nil)
+	}
+	c.do("GET", "/api/v1/boards/some-board-name", nil) // a 404 from a matched route
+	body := string(c.do("GET", "/metrics", nil).raw)
+	for _, want := range []string{
+		`ka_http_requests_total{method="GET",route="other",code="404"} 5`,
+		`ka_http_requests_total{method="GET",route="rejected",code="401"} 5`,
+		`route="/api/v1/boards/{name}"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("metrics lack %q", want)
+		}
+	}
+	for _, bad := range []string{"nope-", "random-", "BREW", "some-board-name"} {
+		if strings.Contains(body, bad) {
+			t.Errorf("metrics carry a client-chosen label %q", bad)
+		}
+	}
+	if t.Failed() {
+		t.Logf("metrics:\n%s", body)
+	}
+}
+
+// A trusted proxy without --public-url would accept any Host, so a
+// DNS-rebinding page could send the proxy's user header: refuse to start.
+func TestTrustedProxyNeedsPublicURL(t *testing.T) {
+	cidrs, _ := ParseCIDRs([]string{"127.0.0.1"})
+	ts := NewTokenStore(filepath.Join(t.TempDir(), "none.json"))
+	if err := (&Remote{Tokens: ts, TrustedProxies: cidrs}).Validate(); err == nil {
+		t.Fatal("a trusted proxy without hosts was accepted")
+	}
+	if err := (&Remote{Tokens: ts, TrustedProxies: cidrs, Hosts: []string{"ka.example.com"}}).Validate(); err != nil {
+		t.Fatal(err)
+	}
+	ln, err := Listen("127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = New(nil, Options{Token: testToken, Remote: &Remote{Tokens: ts, TrustedProxies: cidrs}}).Serve(context.Background(), ln)
+	if err == nil || !strings.Contains(err.Error(), "--public-url") {
+		t.Fatalf("Serve: %v", err)
+	}
+}
+
+// Only the local token stops a daemon; API tokens and proxied users get 403.
+func TestShutdownNeedsLocalToken(t *testing.T) {
+	testkit.GitEnv(t)
+	svc := testkit.Service(t, testkit.NewRemote(t, nil).Clone())
+	ts := NewTokenStore(filepath.Join(t.TempDir(), "tokens.json"))
+	tok, _, err := ts.Create("bob", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stopped := make(chan struct{}, 1)
+	h := New(svc, Options{Token: testToken, Version: "test", Shutdown: func() { stopped <- struct{}{} },
+		Remote: &Remote{Tokens: ts, Hosts: []string{"ka.example.com"}}}).Handler()
+	stop := func(token string) int {
+		req := httptest.NewRequest("POST", "http://ka.example.com/api/v1/daemon/shutdown", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	if code := stop(tok); code != 403 {
+		t.Fatalf("API token: %d", code)
+	}
+	select {
+	case <-stopped:
+		t.Fatal("an API token stopped the daemon")
+	case <-time.After(50 * time.Millisecond):
+	}
+	if code := stop(testToken); code != 202 {
+		t.Fatalf("local token: %d", code)
+	}
+	<-stopped
 }

@@ -533,3 +533,13 @@ func TestListenRefusesNonLoopback(t *testing.T) {
 }
 
 func isWindows() bool { return runtime.GOOS == "windows" }
+
+// X-Ka-Session is cleaned for the commit trailer, as MCP session IDs are.
+func TestSessionHeaderSanitized(t *testing.T) {
+	c := start(t)
+	c.ok("POST", "/api/v1/tickets", map[string]any{"title": "Session"}, "X-Ka-Session", "s 1/x;y")
+	log := testkit.Git(t, c.svc.WS.Stores[0].Root, "log", "-1", "--format=%B")
+	if !strings.Contains(log, "Ka-Session: s1xy\n") {
+		t.Fatalf("session trailer:\n%s", log)
+	}
+}

@@ -467,3 +467,32 @@ func TestActivityHistory(t *testing.T) {
 		t.Fatalf("paging: %s", r.raw)
 	}
 }
+
+// Stopping the daemon ends event streams at once instead of waiting out the
+// shutdown grace period.
+func TestShutdownEndsStreams(t *testing.T) {
+	testkit.GitEnv(t)
+	svc := testkit.Service(t, testkit.NewRemote(t, nil).Clone())
+	ctx, cancel := context.WithCancel(context.Background())
+	srv := New(svc, Options{Token: testToken, Version: "test"})
+	ln, err := Listen("127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() { srv.Serve(ctx, ln); close(done) }()
+	c := &client{t: t, base: "http://" + ln.Addr().String(), srv: srv, svc: svc}
+	s := c.subscribe("")
+	start := time.Now()
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Serve still waiting for the event stream")
+	}
+	if d := time.Since(start); d > 2*time.Second {
+		t.Fatalf("shutdown took %v", d)
+	}
+	for range s.msgs { // the stream ended
+	}
+}

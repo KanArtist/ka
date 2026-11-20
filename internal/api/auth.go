@@ -48,6 +48,18 @@ func (r *Remote) Configured() bool {
 	return r != nil && (r.Tokens.Count() > 0 || len(r.TrustedProxies) > 0)
 }
 
+// Validate rejects configurations that are unsafe to serve. A trusted
+// proxy needs the public host names: with any Host accepted, a DNS-rebinding
+// page is same-origin to itself and, from an address in a trusted range,
+// could send the proxy's user header and act as anyone. Serve calls it.
+func (r *Remote) Validate() error {
+	if r != nil && len(r.TrustedProxies) > 0 && len(r.Hosts) == 0 {
+		return engine.Errf(engine.CodeInvalid, "pass --public-url with the address people use to reach the proxy, such as https://ka.example.com",
+			"refusing --trusted-proxy without --public-url: the daemon would accept any Host, which lets a DNS-rebinding page act as a proxied user")
+	}
+	return nil
+}
+
 // Token is one API token, as stored (hashed).
 type Token struct {
 	ID      string `json:"id"`

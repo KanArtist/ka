@@ -5,9 +5,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/KanArtist/ka/internal/engine"
 )
@@ -18,14 +21,30 @@ import (
 // with the configured secret instead.
 const GitHubHookPath = "/api/v1/hooks/github"
 
+// Limits for webhook bodies, which are read before they are authenticated.
+const (
+	maxWebhookBody     = 2 << 20
+	webhookReadTimeout = 10 * time.Second
+)
+
 func (s *Server) githubHook(w http.ResponseWriter, r *http.Request) {
 	secret := s.opts.WebhookSecret
 	if secret == "" {
 		writeProblem(w, newProblem(codeForbidden, "start the daemon with --webhook-secret-file (or $KA_WEBHOOK_SECRET) and use the same secret in GitHub", "GitHub webhooks are not configured"))
 		return
 	}
-	body, err := io.ReadAll(io.LimitReader(r.Body, 25<<20))
+	// The body is read before the signature can be checked, so it is small
+	// and must arrive promptly. (Not supported by every ResponseWriter, as in
+	// tests; the limit still applies.)
+	http.NewResponseController(w).SetReadDeadline(time.Now().Add(webhookReadTimeout))
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxWebhookBody))
 	if err != nil {
+		if mbe := (*http.MaxBytesError)(nil); errors.As(err, &mbe) {
+			p := newProblem(engine.CodeInvalid, "", fmt.Sprintf("the payload is larger than %d MiB; the store is fetched on the next interval instead", maxWebhookBody>>20))
+			p.Status, p.Title = http.StatusRequestEntityTooLarge, http.StatusText(http.StatusRequestEntityTooLarge)
+			writeProblem(w, p)
+			return
+		}
 		writeProblem(w, newProblem(engine.CodeInvalid, "", "reading the body: "+err.Error()))
 		return
 	}

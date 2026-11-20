@@ -56,6 +56,8 @@ func statusFor(code string) int {
 		return http.StatusBadGateway
 	case codePreconditionRequired:
 		return http.StatusPreconditionRequired
+	case codeMethodNotAllowed:
+		return http.StatusMethodNotAllowed
 	case "internal":
 		return http.StatusInternalServerError
 	}
@@ -76,6 +78,8 @@ func codeFor(status int) string {
 		return engine.CodeConflict
 	case http.StatusPreconditionRequired:
 		return codePreconditionRequired
+	case http.StatusMethodNotAllowed:
+		return codeMethodNotAllowed
 	case http.StatusInternalServerError:
 		return "internal"
 	}
@@ -90,6 +94,7 @@ const (
 	codeUnauthorized         = "unauthorized"
 	codeForbidden            = "forbidden"
 	codePreconditionRequired = "if_match_required"
+	codeMethodNotAllowed     = "method_not_allowed"
 )
 
 func init() {

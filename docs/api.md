@@ -69,7 +69,9 @@ ka daemon --listen 0.0.0.0:7711 --public-url https://ka.example.com
 - **Trusted proxy.** Behind oauth2-proxy, Cloudflare Access or similar, pass `--trusted-proxy
   CIDR` (repeatable) and, if needed, `--proxy-user-header` (default `X-Forwarded-User`). Requests
   from those addresses act as the user in that header; an email maps to a handle through the actor
-  registry. The header is ignored from any other address.
+  registry. The header is ignored from any other address. `--trusted-proxy` requires
+  `--public-url`; without it the daemon refuses to start, because accepting any `Host` would let a
+  DNS-rebinding page act as a proxied user.
 - **Host and Origin.** With `--public-url`, only its host is accepted; browser requests must come
   from the same origin. Without it, any `Host` is accepted, and `Origin` must still match it.
 - **Browser sign-in.** `https://ka.example.com/auth?token=ka_…` sets the cookie (with `Secure`
@@ -77,11 +79,13 @@ ka daemon --listen 0.0.0.0:7711 --public-url https://ka.example.com
 - The principal travels to handlers and the MCP server in `X-Ka-Principal`, which the daemon sets
   itself and strips from every incoming request.
 - The local runtime token still works on the machine itself (`ka open`, the `ka mcp` bridge).
+  Only it can stop the daemon (`POST /daemon/shutdown`); API tokens and proxied users get 403.
 - **GitHub webhooks.** Start the daemon with `--webhook-secret-file FILE` (or
   `$KA_WEBHOOK_SECRET`) and add a webhook in the store repository's settings: payload URL
   `https://ka.example.com/api/v1/hooks/github`, content type `application/json`, the same
   secret, push events. Pushes are verified by `X-Hub-Signature-256` (no API token needed) and
   fetch the matching stores within a second instead of waiting for the next fetch interval.
+  Payloads over 2 MiB are refused (413), and the body must arrive within 10 seconds.
 - Write authority is "anyone authenticated can write, with the daemon's git credentials"; forge
   branch protection still applies.
 
@@ -92,7 +96,7 @@ ka daemon --listen 0.0.0.0:7711 --public-url https://ka.example.com
 
 | Metric | Meaning |
 |---|---|
-| `ka_http_requests_total{method,route,code}` | Requests; IDs and hashes in routes are folded to `{id}`, `{sha}`. |
+| `ka_http_requests_total{method,route,code}` | Requests. `route` is the matched route (`/api/v1/tickets/{id}`), `ui`, `rejected` (refused by the Host, Origin or token checks) or `other` (no route); `method` is a standard method or `OTHER`. |
 | `ka_http_request_duration_seconds{method,route}` | Latency histogram (the event stream is excluded). |
 | `ka_operations_total{op,result}`, `ka_operation_seconds_total{op}` | Ticket operations and their outcome (`ok` or an error code such as `claim_lost`). |
 | `ka_store_sync{store,state}`, `ka_store_ahead{store}` | Each store's sync state and unpushed commits. |
@@ -118,6 +122,7 @@ peer, principal, actor), and `--log-format json` writes JSON lines for a log pip
   | HTTP | Codes |
   |---|---|
   | 401, 403 | `unauthorized`, `forbidden`, `read_only_store` |
+  | 405 | `method_not_allowed` |
   | 404 | `not_found`, `unknown_project`, `no_candidates`, `no_open_question` |
   | 409 | `claim_lost`, `not_claimed`, `not_your_claim`, `ticket_moved`, `id_taken` |
   | 412, 428 | `edit_conflict` (stale `If-Match`), `if_match_required` |
@@ -207,7 +212,9 @@ about (for `ka_next`, the ticket it got), the error code if the call failed, and
 
 Changes stream as `presence.changed` events with `state` `connected`, `active` or `disconnected`.
 A session leaves presence when it closes (the `ka mcp` bridge ends its HTTP session when the client
-exits), or after 30 minutes without a call. There are no keep-alive pings: they would travel on the
+exits), or after 30 minutes without a call. The MCP session itself stays usable for 24 hours without a
+call, so an agent that waited that long keeps its session ID; after that the daemon ends it, and a client
+that comes back must start a new one, which the `ka mcp` bridge does by itself. There are no keep-alive pings: they would travel on the
 optional server-to-client stream, which stdio bridges and many HTTP clients never open. Presence is live state only: it is
 never written to git, and it starts empty when the daemon restarts. Sessions of a `ka mcp
 --no-daemon` don't appear, because they never talk to the daemon.

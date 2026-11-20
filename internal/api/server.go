@@ -67,6 +67,12 @@ type Server struct {
 	hub       *engine.EventHub
 	stats     httpStats
 	heartbeat time.Duration
+	wsHash    string // WorkspaceHash of the service's workspace, for /healthz
+
+	// stop ends long-lived streams (SSE, the MCP GET stream) when the server
+	// shuts down; Shutdown alone waits for them.
+	stop       context.Context
+	stopStream context.CancelFunc
 
 	ui atomic.Pointer[uiSource]
 
@@ -91,12 +97,16 @@ func New(svc *engine.Service, opts Options) *Server {
 		opts.Heartbeat = 15 * time.Second
 	}
 	s := &Server{svc: svc, opts: opts, mux: http.NewServeMux(), log: opts.Logger, started: time.Now(), hub: opts.Events, heartbeat: opts.Heartbeat}
+	s.stop, s.stopStream = context.WithCancel(context.Background())
+	if svc != nil {
+		s.wsHash = WorkspaceHash(svc.WS.Source)
+	}
 	s.api = humago.New(s.mux, Config(opts.Version))
 	s.routes()
 	s.documentEvents()
 	s.mux.HandleFunc("GET /api/v1/events", s.events)
 	if opts.MCP != nil {
-		s.mux.Handle("/mcp", opts.MCP)
+		s.mux.Handle("/mcp", s.mcp(opts.MCP))
 	}
 	s.mux.HandleFunc("GET /healthz", s.healthz)
 	s.mux.HandleFunc("GET /auth", s.auth)
@@ -162,35 +172,38 @@ func (s *Server) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		rw := &statusWriter{ResponseWriter: w, status: 200}
-		s.serve(rw, r)
+		rt := s.serve(rw, r)
 		d := time.Since(start)
-		if r.URL.Path != "/api/v1/events" { // streams last as long as the client stays
-			s.stats.observe(r.Method, r.URL.Path, rw.status, d)
+		if rt != "/api/v1/events" { // streams last as long as the client stays
+			s.stats.observe(r.Method, rt, rw.status, d)
 		}
 		s.log.Debug("request", "method", r.Method, "path", r.URL.Path, "status", rw.status, "ms", d.Milliseconds(),
 			"remote", r.RemoteAddr, "principal", r.Header.Get(PrincipalHeader), "actor", r.Header.Get("X-Ka-Actor"))
 	})
 }
 
-func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
+// serve handles a request and returns its route for metrics: the matched
+// pattern's path, "ui", routeRejected for requests refused before routing,
+// or routeOther. The label set stays bounded whatever clients send.
+func (s *Server) serve(w http.ResponseWriter, r *http.Request) string {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	r.Header.Del(PrincipalHeader) // only the server sets it
 	if !s.hostAllowed(r.Host) {
 		writeProblem(w, newProblem(codeForbidden, "connect to 127.0.0.1 or localhost (or the daemon's --public-url)", "Host "+strconv.Quote(r.Host)+" is not allowed"))
-		return
+		return routeRejected
 	}
 	if o := r.Header.Get("Origin"); o != "" && !s.originAllowed(o, r.Host) {
 		writeProblem(w, newProblem(codeForbidden, "", "cross-origin requests are not allowed (Origin "+strconv.Quote(o)+")"))
-		return
+		return routeRejected
 	}
 	if r.Header.Get("Sec-Fetch-Site") == "cross-site" {
 		writeProblem(w, newProblem(codeForbidden, "", "cross-site requests are not allowed"))
-		return
+		return routeRejected
 	}
 	if isUIPath(r.URL.Path) {
 		s.serveUI(w, r)
-		return
+		return "ui"
 	}
 	switch r.URL.Path {
 	case "/healthz", "/auth", GitHubHookPath: // the webhook checks its own HMAC
@@ -203,7 +216,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 				fix = "send Authorization: Bearer <API token> (ka token create on the daemon's machine), or sign in through the proxy"
 			}
 			writeProblem(w, newProblem(codeUnauthorized, fix, "missing or wrong token"))
-			return
+			return routeRejected
 		}
 		if principal != "" {
 			r.Header.Set(PrincipalHeader, principal)
@@ -211,6 +224,22 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set(SeqHeader, strconv.FormatUint(s.hub.Seq(), 10))
 	s.mux.ServeHTTP(w, r)
+	return routeOf(r.Pattern) // the mux sets Pattern on r when a route matched
+}
+
+// mcp serves /mcp. Its GET stream (server-to-client messages only) ends
+// when the server shuts down, like the event stream; POSTs, which may be
+// writing, keep their request context.
+func (s *Server) mcp(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			ctx, cancel := context.WithCancel(r.Context())
+			defer cancel()
+			defer context.AfterFunc(s.stop, cancel)()
+			r = r.WithContext(ctx)
+		}
+		h.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) hostAllowed(host string) bool {
@@ -296,7 +325,7 @@ func (s *Server) tokenOK(tok string) bool {
 
 func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(Health{Status: "ok", Version: s.opts.Version, PID: os.Getpid(), WorkspaceHash: WorkspaceHash(s.svc.WS.Source)})
+	json.NewEncoder(w).Encode(Health{Status: "ok", Version: s.opts.Version, PID: os.Getpid(), WorkspaceHash: s.wsHash})
 }
 
 // auth exchanges the local token for an HttpOnly cookie and redirects to
@@ -380,17 +409,28 @@ func isAddrInUse(err error) bool {
 }
 
 // Serve runs the server on ln until ctx is canceled, then shuts down
-// gracefully.
+// gracefully: event streams end at once, other requests get 5 seconds.
+//
+// The server sets no ReadTimeout or WriteTimeout: the event stream and MCP
+// responses (ka_ask waits up to 15 minutes) are long-lived. Handlers that
+// read untrusted bodies before authenticating set their own read deadline.
 func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
+	if err := s.opts.Remote.Validate(); err != nil {
+		ln.Close()
+		return err
+	}
 	s.SetAddr(ln.Addr().String())
-	hs := &http.Server{Handler: s.Handler(), ReadHeaderTimeout: 10 * time.Second}
+	hs := &http.Server{Handler: s.Handler(), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}
+	hs.RegisterOnShutdown(s.stopStream)
 	errc := make(chan error, 1)
 	go func() { errc <- hs.Serve(ln) }()
 	select {
 	case <-ctx.Done():
 		sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		hs.Shutdown(sctx)
+		if err := hs.Shutdown(sctx); err != nil {
+			hs.Close()
+		}
 		return nil
 	case err := <-errc:
 		if errors.Is(err, http.ErrServerClosed) {

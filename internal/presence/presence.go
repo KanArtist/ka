@@ -5,15 +5,33 @@ package presence
 
 import (
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/KanArtist/ka/internal/engine"
+	"github.com/KanArtist/ka/pkg/kaspec"
 )
 
 // IdleTimeout drops a session that made no call for this long (a client
 // that went away without closing).
 const IdleTimeout = 30 * time.Minute
+
+// SessionID cleans a client-supplied session ID (X-Ka-Session, an MCP
+// session ID) for the Ka-Session commit trailer: at most 128 characters from
+// [A-Za-z0-9._:-]. An ID with none of them gets a random one.
+func SessionID(id string) string {
+	var b strings.Builder
+	for _, r := range id {
+		if r < 128 && (r == '.' || r == '_' || r == ':' || r == '-' || ('0' <= r && r <= '9') || ('a' <= r && r <= 'z') || ('A' <= r && r <= 'Z')) {
+			b.WriteRune(r)
+		}
+	}
+	if b.Len() == 0 {
+		return kaspec.RandomBase32(12)
+	}
+	return b.String()[:min(b.Len(), 128)]
+}
 
 // Session is one connected agent session.
 type Session struct {

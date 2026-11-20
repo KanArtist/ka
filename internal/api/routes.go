@@ -24,6 +24,9 @@ type CallerHeaders struct {
 }
 
 func (s *Server) caller(h CallerHeaders) engine.Caller {
+	if h.Session != "" {
+		h.Session = presence.SessionID(h.Session) // as MCP does
+	}
 	if h.Principal != "" {
 		return s.svc.CallerAs(h.Principal, h.Actor, h.Session)
 	}
@@ -70,6 +73,19 @@ func (s *Server) routes() {
 	s.ticketRoutes()
 	s.questionRoutes()
 	s.adminRoutes()
+}
+
+// indexed runs f, a lookup of ticket id in the index. If it fails, it runs
+// f again after Get has caught the index up with commits from other
+// processes, or returns Get's error (such as not_found).
+func (s *Server) indexed(id string, f func() error) error {
+	if f() == nil {
+		return nil
+	}
+	if _, err := s.svc.Get(engine.GetIn{ID: id}); err != nil {
+		return err
+	}
+	return f()
 }
 
 // ---- workspace -----------------------------------------------------------------
@@ -317,11 +333,9 @@ func (s *Server) ticketRoutes() {
 		CallerHeaders
 		Body engine.CreateIn
 	}) (*body[*engine.CreateOut], error) {
+		// A partial failure is not an error: out.Error reports it.
 		out, err := s.svc.Create(ctx, s.caller(in.CallerHeaders), []engine.CreateIn{in.Body})
-		if err != nil && (out == nil || len(out.Created) == 0) {
-			return nil, err
-		}
-		return &body[*engine.CreateOut]{out}, nil
+		return &body[*engine.CreateOut]{out}, err
 	})
 	op = post("createTickets", "/tickets/batch", "Create several tickets: one commit each, one push (ka_create)", "tickets")
 	op.DefaultStatus = http.StatusCreated
@@ -330,10 +344,7 @@ func (s *Server) ticketRoutes() {
 		Body batchCreate
 	}) (*body[*engine.CreateOut], error) {
 		out, err := s.svc.Create(ctx, s.caller(in.CallerHeaders), in.Body.Tickets)
-		if err != nil && (out == nil || len(out.Created) == 0) {
-			return nil, err
-		}
-		return &body[*engine.CreateOut]{out}, nil
+		return &body[*engine.CreateOut]{out}, err
 	})
 
 	reg(s, get("getTicket", "/tickets/{id}", "A ticket with relations and a comment digest", "tickets"),
@@ -341,11 +352,22 @@ func (s *Server) ticketRoutes() {
 			TicketID
 			Include []string `query:"include" enum:"comments,children,relations" doc:"comments: every comment instead of the digest."`
 		}) (*ticketOut, error) {
+			// The ETag is read before the body: a write in between leaves a
+			// stale ETag (If-Match then fails safely), never a stale body
+			// with a current ETag (which would let a replace overwrite the
+			// write it never saw).
+			var tag string
+			err := s.indexed(in.ID, func() (err error) {
+				tag, err = s.svc.ETag(in.ID)
+				return err
+			})
+			if err != nil {
+				return nil, err
+			}
 			d, err := s.svc.Get(engine.GetIn{ID: in.ID, Include: in.Include})
 			if err != nil {
 				return nil, err
 			}
-			tag, _ := s.svc.ETag(d.ID)
 			return &ticketOut{ETag: etag(tag), Body: d}, nil
 		})
 
@@ -387,10 +409,11 @@ func (s *Server) ticketRoutes() {
 
 	reg(s, get("getTicketSource", "/tickets/{id}/source", "The raw ticket.md", "tickets"),
 		func(ctx context.Context, in *TicketID) (*rawTicket, error) {
-			if _, err := s.svc.Get(engine.GetIn{ID: in.ID}); err != nil {
-				return nil, err
-			}
-			p, _, err := s.svc.TicketPath(in.ID)
+			var p string
+			err := s.indexed(in.ID, func() (err error) {
+				p, _, err = s.svc.TicketPath(in.ID)
+				return err
+			})
 			if err != nil {
 				return nil, err
 			}
@@ -672,7 +695,12 @@ func (s *Server) adminRoutes() {
 		})
 	op = post("shutdownDaemon", "/daemon/shutdown", "Stop the daemon (ka daemon stop)", "daemon")
 	op.DefaultStatus = http.StatusAccepted
-	reg(s, op, func(ctx context.Context, in *struct{}) (*struct{}, error) {
+	reg(s, op, func(ctx context.Context, in *struct {
+		Principal string `header:"X-Ka-Principal" hidden:"true"`
+	}) (*struct{}, error) {
+		if in.Principal != "" { // an API token or a proxied user, not the local token
+			return nil, newProblem(codeForbidden, "run `ka daemon stop` on the daemon's machine", "only the daemon's local token can stop it")
+		}
 		if s.opts.Shutdown == nil {
 			return nil, engine.Errf(engine.CodeInvalid, "", "this server cannot be stopped over HTTP")
 		}

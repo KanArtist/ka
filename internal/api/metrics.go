@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"regexp"
 	"runtime"
 	"sort"
 	"strings"
@@ -29,33 +28,37 @@ type httpStats struct {
 	sse     atomic.Int64
 }
 
-var (
-	idInPath  = regexp.MustCompile(`/[A-Za-z][A-Za-z0-9]{0,9}-[0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{5,8}(?:-[a-z0-9-]*)?(/|$)`)
-	shaInPath = regexp.MustCompile(`/[0-9a-f]{7,64}(/|$)`)
+// Routes for requests that matched no pattern: refused by the Host, Origin
+// or token checks, or unknown (404, 405).
+const (
+	routeRejected = "rejected"
+	routeOther    = "other"
 )
 
-// route turns a path into a low-cardinality label.
-func route(p string) string {
-	switch {
-	case strings.HasPrefix(p, "/api/"):
-		p = idInPath.ReplaceAllString(p, "/{id}$1")
-		p = shaInPath.ReplaceAllString(p, "/{sha}$1")
-		if strings.HasPrefix(p, "/api/v1/boards/") || strings.HasPrefix(p, "/api/v1/projects/") {
-			parts := strings.Split(p, "/")
-			if len(parts) > 4 {
-				parts[4] = "{name}"
-			}
-			p = strings.Join(parts, "/")
-		}
-		return p
-	case p == "/mcp", p == "/healthz", p == "/auth", p == "/metrics":
-		return p
+// routeOf turns a ServeMux pattern ("GET /api/v1/tickets/{id}") into a route
+// label ("/api/v1/tickets/{id}"), so labels come from the fixed route table
+// and never from what a client sent.
+func routeOf(pattern string) string {
+	if pattern == "" {
+		return routeOther
 	}
-	return "ui"
+	if i := strings.IndexByte(pattern, ' '); i >= 0 {
+		pattern = pattern[i+1:]
+	}
+	return pattern
 }
 
-func (h *httpStats) observe(method, path string, code int, d time.Duration) {
-	r := route(path)
+// methodLabel bounds the method label to the standard methods.
+func methodLabel(m string) string {
+	switch m {
+	case http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions:
+		return m
+	}
+	return "OTHER"
+}
+
+func (h *httpStats) observe(method, r string, code int, d time.Duration) {
+	method = methodLabel(method)
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.count == nil {
