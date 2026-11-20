@@ -3,10 +3,12 @@ package kaspec
 import (
 	_ "embed"
 	"fmt"
+	"math"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -15,6 +17,15 @@ var defaultsYAML []byte
 
 // DefaultsYAML returns the built-in data-config defaults (spec §6.2).
 func DefaultsYAML() []byte { return slices.Clone(defaultsYAML) }
+
+// parsedDefaults is defaultsYAML parsed once; callers clone it before use.
+var parsedDefaults = sync.OnceValue(func() *Node {
+	def, err := ParseYAML(defaultsYAML)
+	if err != nil {
+		panic("kaspec: built-in defaults do not parse: " + err.Error())
+	}
+	return def
+})
 
 // Categories is the fixed set of workflow categories.
 var Categories = []string{"triage", "backlog", "unstarted", "started", "completed", "canceled"}
@@ -105,12 +116,8 @@ type ConfigLayer struct {
 // layer stop every later layer from changing the locked path.
 func ResolveConfig(layers []ConfigLayer) (*Config, []Diagnostic) {
 	var diags []Diagnostic
-	def, err := ParseYAML(defaultsYAML)
-	if err != nil {
-		panic("kaspec: built-in defaults do not parse: " + err.Error())
-	}
 	m := &merger{lockedBy: map[string]string{}, sources: map[string]string{}, lines: map[string]int{}, notes: map[string]string{}}
-	merged := cloneNode(def)
+	merged := cloneNode(parsedDefaults())
 	m.recordSources(merged, "", "built-in defaults", 0)
 	for _, l := range layers {
 		if l.Node == nil {
@@ -122,11 +129,7 @@ func ResolveConfig(layers []ConfigLayer) (*Config, []Diagnostic) {
 		}
 		for _, k := range l.Node.Keys {
 			if !slices.Contains(ConfigKeys, k) {
-				fix := ""
-				if s := nearest(k, ConfigKeys); s != "" {
-					fix = "did you mean " + s + "?"
-				}
-				diags = append(diags, diag("unknown_key", l.Path, l.Node.KeyLines[k], fix, "unknown config key %q", k))
+				diags = append(diags, diag("unknown_key", l.Path, l.Node.KeyLines[k], suggest(k, ConfigKeys), "unknown config key %q", k))
 			}
 		}
 		m.layer, m.path = l.Name, l.Path
@@ -385,8 +388,12 @@ var durationRe = regexp.MustCompile(`^([0-9]+)d$`)
 // ParseDuration accepts Go durations plus a whole-day form such as "7d".
 func ParseDuration(s string) (time.Duration, error) {
 	if m := durationRe.FindStringSubmatch(s); m != nil {
-		n, _ := strconv.Atoi(m[1])
-		return time.Duration(n) * 24 * time.Hour, nil
+		const day = 24 * time.Hour
+		n, err := strconv.ParseInt(m[1], 10, 64)
+		if err != nil || n > int64(math.MaxInt64/day) {
+			return 0, fmt.Errorf("duration %q is out of range", s)
+		}
+		return time.Duration(n) * day, nil
 	}
 	return time.ParseDuration(s)
 }
@@ -419,19 +426,33 @@ func decodeConfig(n *Node, layers []ConfigLayer) (*Config, []Diagnostic) {
 		}
 		return v
 	}
+	// intOf decodes an integer in [lo, hi]. An invalid value is reported and
+	// replaced by the built-in default, so a bad override cannot disable a
+	// limit (0 means "no limit") or reach callers out of range.
 	intOf := func(key string, v *Node, lo, hi int64) int64 {
 		if v == nil {
 			return 0
 		}
 		if v.Kind != ScalarNode || v.Quoted || !intRe.MatchString(v.Value) {
 			bad(key, "must be an integer")
-			return 0
+			return defaultInt(key)
 		}
-		x, _ := strconv.ParseInt(v.Value, 10, 64)
-		if x < lo || x > hi {
+		x, err := strconv.ParseInt(v.Value, 10, 64)
+		if err != nil || x < lo || x > hi {
 			bad(key, "must be between %d and %d", lo, hi)
+			return defaultInt(key)
 		}
 		return x
+	}
+	boolOf := func(key string, v *Node) bool {
+		if v == nil {
+			return false
+		}
+		if v.Kind != ScalarNode || v.Quoted || (v.Value != "true" && v.Value != "false") {
+			bad(key, "must be true or false")
+			return false
+		}
+		return v.Value == "true"
 	}
 	durOf := func(key string, v *Node) time.Duration {
 		if v == nil {
@@ -464,12 +485,7 @@ func decodeConfig(n *Node, layers []ConfigLayer) (*Config, []Diagnostic) {
 	}
 
 	cfg.IDSuffixLength = int(intOf("id_suffix_length", get(n, "id_suffix_length"), 5, 8))
-	if v := get(n, "slugs"); v != nil {
-		if v.Kind != ScalarNode || v.Quoted || (v.Value != "true" && v.Value != "false") {
-			bad("slugs", "must be true or false")
-		}
-		cfg.Slugs = v.Value == "true" && !v.Quoted
-	}
+	cfg.Slugs = boolOf("slugs", get(n, "slugs"))
 
 	wf := get(n, "workflow")
 	if st := get(wf, "statuses"); st == nil || st.Kind != SeqNode || len(st.Items) == 0 {
@@ -488,9 +504,7 @@ func decodeConfig(n *Node, layers []ConfigLayer) (*Config, []Diagnostic) {
 			if v := get(it, "category"); v != nil {
 				s.Category = v.Value
 			}
-			if v := get(it, "blocked"); v != nil {
-				s.Blocked = v.Value == "true" && !v.Quoted
-			}
+			s.Blocked = boolOf("workflow.statuses.blocked", get(it, "blocked"))
 			for _, k := range it.Keys {
 				if !slices.Contains([]string{"name", "category", "blocked", "description"}, k) {
 					bad("workflow.statuses", "unknown key %q", k)
@@ -538,9 +552,7 @@ func decodeConfig(n *Node, layers []ConfigLayer) (*Config, []Diagnostic) {
 		}
 	}
 	lb := get(n, "labels")
-	if v := get(lb, "closed"); v != nil {
-		cfg.LabelsClosed = v.Value == "true" && !v.Quoted
-	}
+	cfg.LabelsClosed = boolOf("labels.closed", get(lb, "closed"))
 	cfg.LabelsKnown = strList("labels.known", get(lb, "known"))
 
 	if fs := get(n, "fields"); fs != nil {
@@ -586,6 +598,22 @@ func decodeConfig(n *Node, layers []ConfigLayer) (*Config, []Diagnostic) {
 	cfg.TemplateSections = strList("template.sections", get(get(n, "template"), "sections"))
 	cfg.Runtime = get(n, "runtime")
 	return cfg, diags
+}
+
+// defaultInt returns the built-in default of a dotted integer key, or 0.
+func defaultInt(key string) int64 {
+	n := parsedDefaults()
+	for _, k := range strings.Split(key, ".") {
+		if n == nil || n.Kind != MapNode {
+			return 0
+		}
+		n = n.Map[k]
+	}
+	if n == nil || n.Kind != ScalarNode {
+		return 0
+	}
+	x, _ := strconv.ParseInt(n.Value, 10, 64)
+	return x
 }
 
 // ValidateFieldValue checks a custom field value against its declaration.

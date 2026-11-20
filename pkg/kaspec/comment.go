@@ -2,6 +2,7 @@ package kaspec
 
 import (
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -124,7 +125,7 @@ func FormatComment(c *Comment) []byte {
 		{"answers", c.Answers},
 	}
 	if c.Choice != nil {
-		fm = append(fm, KV{"choice", Raw(itoa(*c.Choice))})
+		fm = append(fm, KV{"choice", Raw(strconv.FormatInt(*c.Choice, 10))})
 	}
 	if c.Approved != nil {
 		fm = append(fm, KV{"approved", Raw(map[bool]string{true: "true", false: "false"}[*c.Approved])})
@@ -136,25 +137,6 @@ func FormatComment(c *Comment) []byte {
 		KV{"options", toAny(c.Options)},
 	)
 	return renderDocument(dropEmptyStrings(fm), c.Body)
-}
-
-func itoa(n int64) string {
-	if n == 0 {
-		return "0"
-	}
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	var b []byte
-	for n > 0 {
-		b = append([]byte{byte('0' + n%10)}, b...)
-		n /= 10
-	}
-	if neg {
-		b = append([]byte{'-'}, b...)
-	}
-	return string(b)
 }
 
 // CommentFilename builds a comment filename from a canonical timestamp and a 4-character suffix.

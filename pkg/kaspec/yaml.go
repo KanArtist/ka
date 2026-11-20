@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -78,8 +80,7 @@ func yamlErrLine(err error) int {
 	if m == nil {
 		return 0
 	}
-	n := 0
-	fmt.Sscanf(m[1], "%d", &n)
+	n, _ := strconv.Atoi(m[1])
 	return n
 }
 
@@ -227,8 +228,11 @@ func (r *fieldReader) integer(key string) (int64, bool) {
 		r.bad(key, "", "must be an integer")
 		return 0, false
 	}
-	var n int64
-	fmt.Sscanf(v.Value, "%d", &n)
+	n, err := strconv.ParseInt(v.Value, 10, 64)
+	if err != nil {
+		r.bad(key, "", "%s is out of range", v.Value)
+		return 0, false
+	}
 	return n, true
 }
 
@@ -266,18 +270,19 @@ func (r *fieldReader) unknown(known []string) {
 		if r.seen[k] {
 			continue
 		}
-		fix := ""
-		if s := nearest(k, known); s != "" {
-			fix = "did you mean " + s + "?"
-		}
-		r.diags = append(r.diags, diag("unknown_key", r.path, r.line(k), fix, "unknown key %q", k))
+		r.diags = append(r.diags, diag("unknown_key", r.path, r.line(k), suggest(k, known), "unknown key %q", k))
 	}
 }
 
 // nearest returns the closest candidate within edit distance 2, or "".
 func nearest(s string, cands []string) string {
 	best, bestD := "", 3
+	n := utf8.RuneCountInString(s)
 	for _, c := range cands {
+		// the distance is at least the difference in length
+		if diff := n - utf8.RuneCountInString(c); diff >= bestD || -diff >= bestD {
+			continue
+		}
 		if d := levenshtein(s, c); d < bestD {
 			best, bestD = c, d
 		}
@@ -287,12 +292,11 @@ func nearest(s string, cands []string) string {
 
 func levenshtein(a, b string) int {
 	ra, rb := []rune(a), []rune(b)
-	prev := make([]int, len(rb)+1)
+	prev, cur := make([]int, len(rb)+1), make([]int, len(rb)+1)
 	for j := range prev {
 		prev[j] = j
 	}
 	for i := 1; i <= len(ra); i++ {
-		cur := make([]int, len(rb)+1)
 		cur[0] = i
 		for j := 1; j <= len(rb); j++ {
 			cost := 1
@@ -301,7 +305,7 @@ func levenshtein(a, b string) int {
 			}
 			cur[j] = min(prev[j]+1, cur[j-1]+1, prev[j-1]+cost)
 		}
-		prev = cur
+		prev, cur = cur, prev
 	}
 	return prev[len(rb)]
 }
@@ -321,9 +325,7 @@ func (n *Node) ToAny() any {
 			if n.Value == "true" || n.Value == "false" {
 				return n.Value == "true"
 			}
-			if intRe.MatchString(n.Value) {
-				var i int64
-				fmt.Sscanf(n.Value, "%d", &i)
+			if i, err := strconv.ParseInt(n.Value, 10, 64); err == nil && intRe.MatchString(n.Value) {
 				return i
 			}
 		}

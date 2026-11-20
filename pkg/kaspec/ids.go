@@ -47,8 +47,9 @@ func ParseID(id string) (prefix, suffix string, ok bool) {
 }
 
 // NewID returns a fresh random ID with the given prefix and suffix length.
+// The length is clamped to the 5-8 characters an ID allows.
 func NewID(prefix string, n int) string {
-	return prefix + "-" + RandomBase32(n)
+	return prefix + "-" + RandomBase32(min(max(n, 5), 8))
 }
 
 // RandomBase32 returns n cryptographically random Crockford base32 characters.

@@ -1,0 +1,5 @@
+description: "A store file that is not a regular file (here a directory named config.yml) is unreadable."
+stores:
+  - store
+expect:
+  - unreadable store/.ka/config.yml

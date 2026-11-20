@@ -9,6 +9,7 @@ import (
 type rawDoc struct {
 	fm      *Node
 	fmLine  int // line number of the first frontmatter line
+	bodyLn  int // line number of the first body line
 	body    string
 	diags   []Diagnostic
 	encoded bool // false when crlf/bom were found (canonical comparison is skipped)
@@ -71,6 +72,7 @@ func splitDocument(path string, data []byte) rawDoc {
 	shiftLines(fm, 1)
 	d.fm = fm
 	d.fmLine = 2
+	d.bodyLn = strings.Count(text[:len(text)-len(rest)], "\n") + 1
 	d.body = rest
 	return d
 }

@@ -1,6 +1,7 @@
 package kaspec
 
 import (
+	"bytes"
 	"fmt"
 	"io/fs"
 	"regexp"
@@ -118,6 +119,25 @@ func (c *checker) index() {
 			}
 		}
 	}
+	// A ticket ID names one ticket across the workspace; directory names only
+	// make it unique within a project.
+	ids := map[string]projRef{}
+	for _, s := range c.w.Stores {
+		for _, k := range s.Keys {
+			pr := s.Projects[k]
+			for _, id := range pr.IDs {
+				prev, ok := ids[id]
+				if !ok {
+					ids[id] = projRef{s, pr}
+					continue
+				}
+				if prev.proj.Key != pr.Key { // same key: already a duplicate_project
+					c.diags = append(c.diags, diag("duplicate_id", s.p(pr.Tickets[id].Dir+"/ticket.md"), 0,
+						"keep one ticket with this ID; give the other a new ID", "ticket %s also exists in project %s (%s)", id, prev.proj.Key, labelOr(prev.store)))
+				}
+			}
+		}
+	}
 	for k, refs := range c.byKey {
 		if len(refs) > 1 {
 			for _, r := range refs[1:] {
@@ -214,15 +234,16 @@ func (c *checker) parent(from *Store, p Parent) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	if s, ok := c.w.loaded[key]; ok {
-		return s, nil
+	s, ok := c.w.loaded[key]
+	if !ok {
+		s = LoadStore(fsys, label)
+		c.w.loaded[key] = s
+		c.w.keyOf[s] = key
 	}
-	s := LoadStore(fsys, label)
-	c.w.loaded[key] = s
-	c.w.keyOf[s] = key
-	// a parent's store/config file problems affect its children
+	// A parent's store/config file problems affect its children. Report them
+	// on every lookup, not just the first load, so each Check sees them.
 	for _, d := range s.Diags {
-		if strings.Contains(d.Path, ".ka/") {
+		if strings.HasPrefix(d.Path, s.p(".ka/")) {
 			c.diags = append(c.diags, d)
 		}
 	}
@@ -352,14 +373,10 @@ func (c *checker) checkTicket(s *Store, pr *Project, cfg *Config, te *TicketEntr
 				add(diag("self_ref", tp, ln(r.key), "", "%s refers to the ticket itself", r.key))
 				continue
 			}
-			pfx, _, _ := ParseID(id)
-			target, ok := c.byPrefix[pfx]
+			id, target, ok := c.resolve(id)
 			if !ok {
 				add(diag("external_ref", tp, ln(r.key), "", "%s %s is in a project outside this workspace", r.key, id))
 				continue
-			}
-			if pfx != target.proj.File.Prefix {
-				id = target.proj.File.Prefix + id[len(pfx):] // a former prefix
 			}
 			if _, ok := target.proj.Tickets[id]; !ok {
 				add(diag("dangling_ref", tp, ln(r.key), "", "%s %s does not exist in project %s", r.key, id, target.proj.Key))
@@ -412,6 +429,20 @@ func (c *checker) checkTicket(s *Store, pr *Project, cfg *Config, te *TicketEntr
 	}
 }
 
+// resolve finds the project an ID belongs to and rewrites a former prefix to
+// the project's current one.
+func (c *checker) resolve(id string) (string, projRef, bool) {
+	pfx, _, _ := ParseID(id)
+	target, ok := c.byPrefix[pfx]
+	if !ok {
+		return id, projRef{}, false
+	}
+	if pfx != target.proj.File.Prefix {
+		id = target.proj.File.Prefix + id[len(pfx):] // a former prefix
+	}
+	return id, target, true
+}
+
 func nonEmpty(s string) []string {
 	if s == "" {
 		return nil
@@ -450,10 +481,20 @@ func (c *checker) cycles() {
 	for _, rel := range []string{"parent", "blocked_by"} {
 		edges := func(id string) []string {
 			t := all[id].te.Ticket
+			out := t.BlockedBy
 			if rel == "parent" {
-				return nonEmpty(t.Parent)
+				out = nonEmpty(t.Parent)
 			}
-			return t.BlockedBy
+			cloned := false
+			for i, e := range out {
+				if r, _, ok := c.resolve(e); ok && r != e {
+					if !cloned { // do not rewrite the ticket's own slice
+						out, cloned = slices.Clone(out), true
+					}
+					out[i] = r
+				}
+			}
+			return out
 		}
 		const (
 			white = iota
@@ -478,10 +519,10 @@ func (c *checker) cycles() {
 					i := slices.Index(stack, nx)
 					cyc := slices.Clone(stack[i:])
 					start := slices.Min(cyc)
-					if !reported[start] {
-						reported[start] = true
-						k := slices.Index(cyc, start)
-						cyc = append(cyc[k:], cyc[:k]...)
+					k := slices.Index(cyc, start)
+					cyc = append(cyc[k:], cyc[:k]...)
+					if key := strings.Join(cyc, " "); !reported[key] {
+						reported[key] = true
 						n := all[start]
 						c.diags = append(c.diags, diag("cycle", n.s.p(n.te.Dir+"/ticket.md"), lineOf(n.te.Ticket, rel), "break the cycle by removing one edge",
 							"%s cycle: %s -> %s", rel, strings.Join(cyc, " -> "), start))
@@ -556,8 +597,10 @@ func findPlaceholder(body string) (int, string) {
 		if emptyBoxRe.MatchString(l) {
 			return i + 1, "empty checklist item `- [ ]`"
 		}
-		if code := inlineCodeRe.ReplaceAllString(l, ""); moustache.MatchString(code) {
-			return i + 1, fmt.Sprintf("template variable %q", moustache.FindString(code))
+		if strings.IndexByte(l, '{') >= 0 { // cheap guard: most lines have no braces
+			if code := inlineCodeRe.ReplaceAllString(l, ""); moustache.MatchString(code) {
+				return i + 1, fmt.Sprintf("template variable %q", moustache.FindString(code))
+			}
 		}
 		if strings.TrimSpace(l) == "" || bareDashRe.MatchString(l) || strings.HasPrefix(strings.TrimSpace(l), "<!--") {
 			continue
@@ -572,35 +615,35 @@ func findPlaceholder(body string) (int, string) {
 	return 0, ""
 }
 
-// bodyLine returns the 1-based line where the body starts in a raw document.
+// bodyLine returns the 1-based line where the body starts in a raw document,
+// as splitDocument splits it.
 func bodyLine(raw []byte) int {
-	text := string(NormalizeEncoding(raw))
-	if !strings.HasPrefix(text, "---\n") {
-		return 1
+	if d := splitDocument("", raw); d.bodyLn > 0 {
+		return d.bodyLn
 	}
-	i := strings.Index(text[4:], "\n---\n")
-	if i < 0 {
-		return 1
-	}
-	return strings.Count(text[:4+i+5], "\n") + 1
+	return 1
 }
 
+// secretPatterns are credential shapes. lits are literals of which every
+// match contains at least one; the regexp only runs when one is present,
+// since most of the regexps start with \b and cannot use a literal scan.
 var secretPatterns = []struct {
 	name string
+	lits []string
 	re   *regexp.Regexp
 }{
-	{"AWS access key", regexp.MustCompile(`\bAKIA[0-9A-Z]{16}\b`)},
-	{"GitHub token", regexp.MustCompile(`\bgh[pousr]_[A-Za-z0-9]{36,}\b`)},
-	{"GitHub fine-grained token", regexp.MustCompile(`\bgithub_pat_[A-Za-z0-9_]{50,}`)},
-	{"Slack token", regexp.MustCompile(`\bxox[baprs]-[A-Za-z0-9-]{10,}`)},
-	{"private key", regexp.MustCompile(`-----BEGIN [A-Z ]*PRIVATE KEY-----`)},
-	{"Anthropic API key", regexp.MustCompile(`\bsk-ant-[A-Za-z0-9_-]{20,}`)},
-	{"Google API key", regexp.MustCompile(`\bAIza[0-9A-Za-z_-]{35}\b`)},
+	{"AWS access key", []string{"AKIA"}, regexp.MustCompile(`\bAKIA[0-9A-Z]{16}\b`)},
+	{"GitHub token", []string{"ghp_", "gho_", "ghu_", "ghs_", "ghr_"}, regexp.MustCompile(`\bgh[pousr]_[A-Za-z0-9]{36,}\b`)},
+	{"GitHub fine-grained token", []string{"github_pat_"}, regexp.MustCompile(`\bgithub_pat_[A-Za-z0-9_]{50,}`)},
+	{"Slack token", []string{"xoxb-", "xoxa-", "xoxp-", "xoxr-", "xoxs-"}, regexp.MustCompile(`\bxox[baprs]-[A-Za-z0-9-]{10,}`)},
+	{"private key", []string{"-----BEGIN "}, regexp.MustCompile(`-----BEGIN [A-Z ]*PRIVATE KEY-----`)},
+	{"Anthropic API key", []string{"sk-ant-"}, regexp.MustCompile(`\bsk-ant-[A-Za-z0-9_-]{20,}`)},
+	{"Google API key", []string{"AIza"}, regexp.MustCompile(`\bAIza[0-9A-Za-z_-]{35}\b`)},
 }
 
 func findSecret(b []byte) string {
 	for _, p := range secretPatterns {
-		if p.re.Match(b) {
+		if slices.ContainsFunc(p.lits, func(l string) bool { return bytes.Contains(b, []byte(l)) }) && p.re.Match(b) {
 			return p.name
 		}
 	}

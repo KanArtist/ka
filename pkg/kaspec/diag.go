@@ -84,6 +84,7 @@ var Codes = map[string]Severity{
 	"duplicate_prefix":          SevError,
 	"duplicate_id":              SevError,
 	"stray_file":                SevWarning,
+	"unreadable":                SevError,
 	"comment_filename":          SevError,
 	"comment_time_mismatch":     SevWarning,
 	// relations

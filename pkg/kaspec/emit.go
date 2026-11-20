@@ -94,6 +94,10 @@ func emitSeq(b *strings.Builder, items []any, indent int) {
 			var sub strings.Builder
 			emitMap(&sub, v, indent+2)
 			s := sub.String()
+			if s == "" { // every value was empty: keep the item as an empty mapping
+				fmt.Fprintf(b, "%s- {}\n", pad)
+				continue
+			}
 			// replace the first line's indentation with "- "
 			s = pad + "- " + strings.TrimPrefix(s, pad+"  ")
 			b.WriteString(s)

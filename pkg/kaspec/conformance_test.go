@@ -248,9 +248,6 @@ func TestConformanceCoversCodes(t *testing.T) {
 		}
 	}
 	sort.Strings(missing)
-	// duplicate_id cannot arise from a filesystem (directory names are unique);
-	// it is reserved for engines that index several sources.
-	missing = slices.DeleteFunc(missing, func(s string) bool { return s == "duplicate_id" })
 	if len(missing) > 0 {
 		t.Errorf("codes without a conformance case: %s", strings.Join(missing, ", "))
 	}

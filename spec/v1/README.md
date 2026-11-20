@@ -71,6 +71,10 @@ Rules:
 4. Names MUST be portable: ASCII, no `:`, no names differing only by case, and paths short enough
    for Windows (keep the full path well under 260 characters).
 5. `milestones/` at the store root is reserved for a future minor version.
+6. Store files and the directories that hold them MUST be regular files and directories.
+   Implementations MUST NOT follow symbolic links, and MAY refuse files larger than a limit of
+   at least 8 MiB (`ka` refuses larger ones). A file or directory that cannot be read for these
+   or any other reasons (permissions, I/O errors) is `unreadable`; it is never treated as absent.
 
 ## 3. File format
 
@@ -510,8 +514,9 @@ implementations.
 | `duplicate_project` | error | Two stores in a workspace define the same project key. |
 | `moved_project_has_tickets` | warning | A project tombstone (`moved_to_store`) still has tickets; they are ignored. |
 | `duplicate_prefix` | error | Two projects use the same prefix. |
-| `duplicate_id` | error | Two tickets share an ID. |
+| `duplicate_id` | error | Two tickets share an ID (in different projects or stores). |
 | `stray_file` | warning | An unexpected file or directory (§2). |
+| `unreadable` | error | A store file or directory cannot be read: not a regular file, too large, or an I/O error (§2). |
 | `comment_filename` | error | A comment file name does not follow §7.1. |
 | `comment_time_mismatch` | warning | A comment's `created` differs from its file name. |
 | `dangling_ref` | error | A relation names a missing ticket in a known project. |

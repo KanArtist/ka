@@ -1,6 +1,9 @@
 package kaspec
 
 import (
+	"errors"
+	"fmt"
+	"io"
 	"io/fs"
 	"path"
 	"regexp"
@@ -101,8 +104,9 @@ func ParseStoreFile(p string, data []byte) (*StoreFile, []Diagnostic) {
 	}
 	r := newFieldReader(p, n)
 	sf := &StoreFile{}
-	if v, ok := r.integer("spec"); ok {
-		sf.Spec = int(v)
+	spec, specOK := r.integer("spec")
+	if specOK {
+		sf.Spec = int(spec)
 	} else if r.node.Map["spec"] == nil {
 		r.diags = append(r.diags, diag("missing_field", p, 1, "add `spec: 1`", "required field \"spec\" is missing"))
 	}
@@ -137,8 +141,8 @@ func ParseStoreFile(p string, data []byte) (*StoreFile, []Diagnostic) {
 	if !KaVersionSatisfies(sf.RequiresKa) {
 		diags = append(diags, diag("ka_outdated", p, n.KeyLines["requires_ka"], UpgradeHint, "store %s requires ka %s or newer; this is ka %s", sf.Name, sf.RequiresKa, KaVersion))
 	}
-	if sf.Spec != 0 && sf.Spec != SpecVersion {
-		diags = append(diags, diag("spec_unsupported", p, n.KeyLines["spec"], "upgrade ka, or run `ka migrate`", "store uses spec %d; this implementation supports spec %d", sf.Spec, SpecVersion))
+	if specOK && spec != SpecVersion {
+		diags = append(diags, diag("spec_unsupported", p, n.KeyLines["spec"], "upgrade ka, or run `ka migrate`", "store uses spec %d; this implementation supports spec %d", spec, SpecVersion))
 	}
 	return sf, diags
 }
@@ -211,6 +215,10 @@ func ParseActors(p string, data []byte) (*Actors, []Diagnostic) {
 				r.diags = append(r.diags, diag("invalid_value", p, h.KeyLines[k], "", "humans: invalid handle %q", k))
 				continue
 			}
+			if h.Map[k].Kind != MapNode {
+				r.diags = append(r.diags, diag("invalid_value", p, h.KeyLines[k], "", "humans.%s: must be a mapping with name, emails and aliases", k))
+				continue
+			}
 			hr := newFieldReader(p, h.Map[k])
 			hu := Human{Name: hr.str("name"), Emails: hr.strList("emails", nil, ""), Aliases: hr.strList("aliases", nil, "")}
 			hr.unknown([]string{"name", "emails", "aliases"})
@@ -224,6 +232,10 @@ func ParseActors(p string, data []byte) (*Actors, []Diagnostic) {
 		for _, k := range g.Keys {
 			if !AgentRe.MatchString(k) {
 				r.diags = append(r.diags, diag("invalid_value", p, g.KeyLines[k], "agent handles are agent/<name>", "agents: invalid handle %q", k))
+				continue
+			}
+			if g.Map[k].Kind != MapNode {
+				r.diags = append(r.diags, diag("invalid_value", p, g.KeyLines[k], "", "agents.%s: must be a mapping with name", k))
 				continue
 			}
 			gr := newFieldReader(p, g.Map[k])
@@ -327,9 +339,89 @@ func (s *Store) p(rel string) string {
 
 func (s *Store) add(ds ...Diagnostic) { s.Diags = append(s.Diags, ds...) }
 
-func (s *Store) read(rel string) ([]byte, bool) {
-	b, err := fs.ReadFile(s.FS, rel)
-	return b, err == nil
+// MaxFileBytes is the largest store file LoadStore reads (spec §2). A bigger
+// file is reported as unreadable instead of being loaded.
+const MaxFileBytes = 8 << 20
+
+// Files and directories are classified by the type their parent directory
+// listing reports, so loading costs no path lookups beyond the listings and
+// one open per file; symbolic links are never followed.
+
+// readEntry reads the file e found at rel. It fails when the entry is not a
+// regular file, when it is larger than MaxFileBytes, or when reading fails.
+func (s *Store) readEntry(rel string, e fs.DirEntry) ([]byte, error) {
+	if !e.Type().IsRegular() {
+		return nil, notRegular(e.Type())
+	}
+	f, err := s.FS.Open(rel)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	// re-check the opened file: the entry may have been swapped since listing
+	if info, err := f.Stat(); err != nil {
+		return nil, err
+	} else if !info.Mode().IsRegular() {
+		return nil, notRegular(info.Mode())
+	}
+	b, err := io.ReadAll(io.LimitReader(f, MaxFileBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(b) > MaxFileBytes {
+		return nil, fmt.Errorf("file is larger than %d bytes", MaxFileBytes)
+	}
+	return b, nil
+}
+
+// listEntry lists the directory e found at rel. A nil entry is an absent,
+// empty directory; an entry that is not a directory (a symbolic link, say) or
+// cannot be listed is reported through add.
+func (s *Store) listEntry(rel string, e fs.DirEntry, add func(...Diagnostic)) []fs.DirEntry {
+	if e == nil {
+		return nil
+	}
+	if !e.IsDir() {
+		add(s.unreadable(rel, notRegular(e.Type())))
+		return nil
+	}
+	ents, err := fs.ReadDir(s.FS, rel)
+	if err != nil {
+		add(s.unreadable(rel, err))
+		return nil
+	}
+	return ents
+}
+
+// entry returns the listing entry named name, or nil.
+func entry(ents []fs.DirEntry, name string) fs.DirEntry {
+	// listings are sorted by name
+	if i, ok := slices.BinarySearchFunc(ents, name, func(e fs.DirEntry, n string) int { return strings.Compare(e.Name(), n) }); ok {
+		return ents[i]
+	}
+	return nil
+}
+
+func isLink(e fs.DirEntry) bool { return e.Type()&fs.ModeSymlink != 0 }
+
+func notRegular(m fs.FileMode) error {
+	switch {
+	case m&fs.ModeSymlink != 0:
+		return errors.New("is a symbolic link; links are not followed")
+	case m.IsDir():
+		return errors.New("is a directory, not a file")
+	case m.IsRegular():
+		return errors.New("is a file, not a directory")
+	}
+	return errors.New("is not a regular file")
+}
+
+func (s *Store) unreadable(rel string, err error) Diagnostic {
+	var pe *fs.PathError
+	if errors.As(err, &pe) {
+		err = pe.Err // the path is already in the diagnostic (and may be absolute)
+	}
+	return diag("unreadable", s.p(rel), 0, "replace it with a regular file of at most 8 MiB, or fix its permissions", "cannot read: %v", err)
 }
 
 // LoadStore reads a store rooted at fsys. Label prefixes diagnostic paths
@@ -337,50 +429,79 @@ func (s *Store) read(rel string) ([]byte, bool) {
 // cross-file rules run in Check.
 func LoadStore(fsys fs.FS, label string) *Store {
 	s := &Store{Label: label, FS: fsys, Boards: map[string]*Board{}, Projects: map[string]*Project{}}
-	data, ok := s.read(".ka/store.yml")
-	if !ok {
+	notStore := func() *Store {
 		s.add(diag("invalid_store", s.p(".ka/store.yml"), 0, "run `ka init`, or create .ka/store.yml with `spec: 1` and `name:`", "not a KanArtist store: .ka/store.yml is missing"))
+		return s
+	}
+	root, err := fs.ReadDir(fsys, ".")
+	if errors.Is(err, fs.ErrNotExist) {
+		return notStore()
+	} else if err != nil {
+		s.add(s.unreadable(".ka/store.yml", err))
+		return s
+	}
+	ka := entry(root, ".ka")
+	if ka == nil {
+		return notStore()
+	}
+	if !ka.IsDir() {
+		s.add(s.unreadable(".ka", notRegular(ka.Type())))
+		return s
+	}
+	kaEnts, err := fs.ReadDir(fsys, ".ka")
+	if err != nil {
+		s.add(s.unreadable(".ka", err))
+		return s
+	}
+	se := entry(kaEnts, "store.yml")
+	if se == nil {
+		return notStore()
+	}
+	data, err := s.readEntry(".ka/store.yml", se)
+	if err != nil {
+		s.add(s.unreadable(".ka/store.yml", err))
 		return s
 	}
 	sf, ds := ParseStoreFile(s.p(".ka/store.yml"), data)
 	s.add(ds...)
 	s.File = sf
-	if data, ok := s.read(".ka/config.yml"); ok {
+	if data, ok := s.readOptional(".ka/config.yml", entry(kaEnts, "config.yml"), s.add); ok {
 		n, ds := parseYAMLFile(s.p(".ka/config.yml"), data)
 		s.add(ds...)
 		s.Config = n
 	}
-	if data, ok := s.read(".ka/actors.yml"); ok {
+	if data, ok := s.readOptional(".ka/actors.yml", entry(kaEnts, "actors.yml"), s.add); ok {
 		a, ds := ParseActors(s.p(".ka/actors.yml"), data)
 		s.add(ds...)
 		s.Actors = a
 	}
-	if ents, err := fs.ReadDir(fsys, "boards"); err == nil {
-		for _, e := range ents {
-			rel := "boards/" + e.Name()
-			if e.IsDir() || !boardFileRe.MatchString(e.Name()) {
-				s.add(diag("stray_file", s.p(rel), 0, "board files are boards/<name>.yml", "unexpected entry in boards/"))
-				continue
-			}
-			data, _ := s.read(rel)
-			b, ds := ParseBoard(s.p(rel), data)
-			s.add(ds...)
-			if b != nil {
-				s.Boards[strings.TrimSuffix(e.Name(), ".yml")] = b
-			}
-		}
-	}
-	ents, err := fs.ReadDir(fsys, "projects")
-	if err != nil {
-		return s
-	}
-	for _, e := range ents {
-		rel := "projects/" + e.Name()
-		if !e.IsDir() {
-			s.add(diag("stray_file", s.p(rel), 0, "", "unexpected file in projects/"))
+	for _, e := range s.listEntry("boards", entry(root, "boards"), s.add) {
+		rel := "boards/" + e.Name()
+		if e.IsDir() || !boardFileRe.MatchString(e.Name()) {
+			s.add(diag("stray_file", s.p(rel), 0, "board files are boards/<name>.yml", "unexpected entry in boards/"))
 			continue
 		}
-		s.loadProject(e.Name())
+		data, err := s.readEntry(rel, e)
+		if err != nil {
+			s.add(s.unreadable(rel, err))
+			continue
+		}
+		b, ds := ParseBoard(s.p(rel), data)
+		s.add(ds...)
+		if b != nil {
+			s.Boards[strings.TrimSuffix(e.Name(), ".yml")] = b
+		}
+	}
+	for _, e := range s.listEntry("projects", entry(root, "projects"), s.add) {
+		rel := "projects/" + e.Name()
+		switch {
+		case isLink(e):
+			s.add(s.unreadable(rel, notRegular(e.Type())))
+		case !e.IsDir():
+			s.add(diag("stray_file", s.p(rel), 0, "", "unexpected file in projects/"))
+		default:
+			s.loadProject(e.Name())
+		}
 	}
 	for k := range s.Projects {
 		s.Keys = append(s.Keys, k)
@@ -389,12 +510,35 @@ func LoadStore(fsys fs.FS, label string) *Store {
 	return s
 }
 
+// readOptional reads the file e found at rel; a nil entry is an absent file.
+// A file that exists but cannot be read is reported through add.
+func (s *Store) readOptional(rel string, e fs.DirEntry, add func(...Diagnostic)) ([]byte, bool) {
+	if e == nil {
+		return nil, false
+	}
+	data, err := s.readEntry(rel, e)
+	if err != nil {
+		add(s.unreadable(rel, err))
+		return nil, false
+	}
+	return data, true
+}
+
 func (s *Store) loadProject(dirName string) {
 	dir := "projects/" + dirName
 	pyml := dir + "/project.yml"
-	data, ok := s.read(pyml)
-	if !ok {
+	ents, err := fs.ReadDir(s.FS, dir)
+	if err != nil {
+		s.add(s.unreadable(dir, err))
+		return
+	}
+	pe := entry(ents, "project.yml")
+	if pe == nil {
 		s.add(diag("project_missing_file", s.p(pyml), 0, "create project.yml with at least `key:`", "project directory has no project.yml"))
+		return
+	}
+	data, ok := s.readOptional(pyml, pe, s.add)
+	if !ok {
 		return
 	}
 	pf, ds := ParseProjectFile(s.p(pyml), data)
@@ -405,12 +549,13 @@ func (s *Store) loadProject(dirName string) {
 	if pf.Key != dirName {
 		s.add(diag("project_key_mismatch", s.p(pyml), 1, "make the key equal the directory name", "project key %q does not match its directory %q", pf.Key, dirName))
 	}
+	tents := s.listEntry(dir+"/tickets", entry(ents, "tickets"), s.add)
 	if pf.MovedToStore != "" {
 		if s.Moved == nil {
 			s.Moved = map[string]string{}
 		}
 		s.Moved[dirName] = pf.MovedToStore
-		if ents, _ := fs.ReadDir(s.FS, dir+"/tickets"); len(ents) > 0 {
+		if len(tents) > 0 {
 			s.add(diag("moved_project_has_tickets", s.p(pyml), 1, "the project lives in "+pf.MovedToStore+"; remove projects/"+dirName+"/tickets here",
 				"project %q moved to %s but still has tickets here; they are ignored", dirName, pf.MovedToStore))
 		}
@@ -419,7 +564,6 @@ func (s *Store) loadProject(dirName string) {
 	pr := &Project{Key: dirName, Dir: dir, File: pf, Tickets: map[string]*TicketEntry{}}
 	s.Projects[dirName] = pr
 
-	ents, _ := fs.ReadDir(s.FS, dir)
 	for _, e := range ents {
 		switch e.Name() {
 		case "project.yml", "tickets", "docs":
@@ -427,7 +571,6 @@ func (s *Store) loadProject(dirName string) {
 			s.add(diag("stray_file", s.p(dir+"/"+e.Name()), 0, "a project holds project.yml, tickets/ and docs/", "unexpected entry in project directory"))
 		}
 	}
-	tents, _ := fs.ReadDir(s.FS, dir+"/tickets")
 	// Tickets are independent: read and parse them in parallel, then merge in
 	// directory order so results and diagnostics stay deterministic.
 	type loaded struct {
@@ -448,21 +591,21 @@ func (s *Store) loadProject(dirName string) {
 		}()
 	}
 	for i, e := range tents {
-		if !e.IsDir() {
-			s.add(diag("stray_file", s.p(dir+"/tickets/"+e.Name()), 0, "tickets live in tickets/<ID>/ticket.md", "unexpected file in tickets/"))
-			continue
+		rel := dir + "/tickets/" + e.Name()
+		switch {
+		case isLink(e):
+			s.add(s.unreadable(rel, notRegular(e.Type())))
+		case !e.IsDir():
+			s.add(diag("stray_file", s.p(rel), 0, "tickets live in tickets/<ID>/ticket.md", "unexpected file in tickets/"))
+		default:
+			work <- i
 		}
-		work <- i
 	}
 	close(work)
 	wg.Wait()
 	for i, l := range out {
 		s.add(l.diags...)
 		if l.te == nil {
-			continue
-		}
-		if _, dup := pr.Tickets[tents[i].Name()]; dup {
-			s.add(diag("duplicate_id", s.p(l.te.Dir), 0, "", "duplicate ticket directory %q", tents[i].Name()))
 			continue
 		}
 		pr.Tickets[tents[i].Name()] = l.te
@@ -475,16 +618,35 @@ func (s *Store) loadProject(dirName string) {
 
 // LoadTicket reads one ticket directory (relative to the store root).
 func (s *Store) LoadTicket(tdir string) (*TicketEntry, []Diagnostic) {
+	// no parent listing here: refuse a symlinked ticket directory explicitly
+	if info, err := fs.Lstat(s.FS, tdir); err == nil && !info.IsDir() {
+		return nil, []Diagnostic{s.unreadable(tdir, notRegular(info.Mode()))}
+	}
 	return s.loadTicket(tdir, path.Base(tdir))
 }
 
+// loadTicket reads a ticket directory that is known to be a directory.
 func (s *Store) loadTicket(tdir, name string) (*TicketEntry, []Diagnostic) {
 	var diags []Diagnostic
 	add := func(ds ...Diagnostic) { diags = append(diags, ds...) }
 	tp := tdir + "/ticket.md"
-	data, ok := s.read(tp)
-	if !ok {
+	missing := func() (*TicketEntry, []Diagnostic) {
 		add(diag("ticket_missing_file", s.p(tdir), 0, "every ticket directory needs a ticket.md", "ticket directory has no ticket.md"))
+		return nil, diags
+	}
+	ents, err := fs.ReadDir(s.FS, tdir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return missing()
+	} else if err != nil {
+		add(s.unreadable(tdir, err))
+		return nil, diags
+	}
+	me := entry(ents, "ticket.md")
+	if me == nil {
+		return missing()
+	}
+	data, ok := s.readOptional(tp, me, add)
+	if !ok {
 		return nil, diags
 	}
 	t, ds := ParseTicket(s.p(tp), data)
@@ -494,20 +656,23 @@ func (s *Store) loadTicket(tdir, name string) (*TicketEntry, []Diagnostic) {
 		add(diag("id_dir_mismatch", s.p(tp), lineOf(t, "id"), "the directory name must equal the ticket id", "ticket id %q does not match its directory %q", t.ID, name))
 	}
 
-	ents, _ := fs.ReadDir(s.FS, tdir)
 	for _, e := range ents {
 		rel := tdir + "/" + e.Name()
 		switch {
 		case e.Name() == "ticket.md":
+		case (e.Name() == "comments" || e.Name() == "files") && isLink(e):
+			add(s.unreadable(rel, notRegular(e.Type())))
 		case e.Name() == "comments" && e.IsDir():
-			cents, _ := fs.ReadDir(s.FS, rel)
-			for _, ce := range cents {
+			for _, ce := range s.listEntry(rel, e, add) {
 				cp := rel + "/" + ce.Name()
 				if ce.IsDir() || !strings.HasSuffix(ce.Name(), ".md") {
 					add(diag("stray_file", s.p(cp), 0, "comments are <yyyymmddThhmmssZ>-<XXXX>.md files", "unexpected entry in comments/"))
 					continue
 				}
-				data, _ := s.read(cp)
+				data, ok := s.readOptional(cp, ce, add)
+				if !ok {
+					continue
+				}
 				if !CommentFileRe.MatchString(ce.Name()) {
 					add(diag("comment_filename", s.p(cp), 0, "name comments <yyyymmddThhmmssZ>-<4 base32 chars>.md, e.g. 20261107T130722Z-4F2A.md", "invalid comment filename %q", ce.Name()))
 				}
@@ -516,22 +681,28 @@ func (s *Store) loadTicket(tdir, name string) (*TicketEntry, []Diagnostic) {
 				te.Comments = append(te.Comments, &CommentEntry{Name: ce.Name(), Path: cp, Comment: c, Raw: data})
 			}
 		case e.Name() == "files" && e.IsDir():
-			fs.WalkDir(s.FS, rel, func(fp string, d fs.DirEntry, err error) error {
-				if err != nil || d.IsDir() {
-					return nil
-				}
-				info, err := d.Info()
-				if err == nil {
-					te.Files = append(te.Files, FileEntry{Path: fp, Size: info.Size()})
-				}
-				return nil
-			})
+			s.walkFiles(rel, e, te, add)
 		default:
 			add(diag("stray_file", s.p(rel), 0, "a ticket directory holds ticket.md, comments/ and files/", "unexpected entry in ticket directory"))
 		}
 	}
 	slices.SortFunc(te.Comments, func(a, b *CommentEntry) int { return strings.Compare(a.Name, b.Name) })
 	return te, diags
+}
+
+// walkFiles records the attachments under the directory e found at rel, in
+// lexical order. Attachments are not read; symbolic links are not followed.
+func (s *Store) walkFiles(rel string, e fs.DirEntry, te *TicketEntry, add func(...Diagnostic)) {
+	for _, f := range s.listEntry(rel, e, add) {
+		fp := rel + "/" + f.Name()
+		if f.IsDir() {
+			s.walkFiles(fp, f, te, add)
+			continue
+		}
+		if info, err := f.Info(); err == nil {
+			te.Files = append(te.Files, FileEntry{Path: fp, Size: info.Size()})
+		}
+	}
 }
 
 func lineOf(t *Ticket, key string) int {
