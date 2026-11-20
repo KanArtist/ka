@@ -2,6 +2,8 @@ package engine
 
 import (
 	"bytes"
+	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"path"
@@ -38,28 +40,34 @@ type DocOut struct {
 const maxDoc = 1 << 20
 
 // Docs lists the files under projects/<key>/docs/ (every project when
-// project is empty), sorted by project and path.
+// project is empty), sorted by project and path. Links and other files
+// that are not regular are left out: ka never follows them.
 func (s *Service) Docs(project string) (*DocsOut, error) {
 	s.ix.catchUp()
+	// Read the project list under the index lock, walk without it.
+	type proj struct{ key, root string }
+	var projs []proj
 	s.ix.mu.RLock()
-	defer s.ix.mu.RUnlock()
-	out := &DocsOut{Docs: []DocEntry{}}
 	if project != "" && s.ix.projects[project] == nil {
-		return nil, Errf(CodeUnknownProject, "projects: "+strings.Join(sortedKeys(s.ix.projects), ", "), "no project %q", project)
+		s.ix.mu.RUnlock()
+		return nil, s.unknownDocProject(project)
 	}
 	for _, k := range sortedKeys(s.ix.projects) {
-		if project != "" && k != project {
-			continue
+		if project == "" || k == project {
+			pi := s.ix.projects[k]
+			projs = append(projs, proj{k, filepath.Join(pi.Store.Root, filepath.FromSlash(pi.Dir), "docs")})
 		}
-		pi := s.ix.projects[k]
-		root := filepath.Join(pi.Store.Root, filepath.FromSlash(pi.Dir), "docs")
-		filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
-			if err != nil || d.IsDir() || strings.HasPrefix(d.Name(), ".") {
+	}
+	s.ix.mu.RUnlock()
+	out := &DocsOut{Docs: []DocEntry{}}
+	for _, pr := range projs {
+		filepath.WalkDir(pr.root, func(p string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() || !d.Type().IsRegular() || strings.HasPrefix(d.Name(), ".") {
 				return nil
 			}
-			rel, _ := filepath.Rel(root, p)
+			rel, _ := filepath.Rel(pr.root, p)
 			info, _ := d.Info()
-			e := DocEntry{Project: k, Path: filepath.ToSlash(rel), Title: d.Name()}
+			e := DocEntry{Project: pr.key, Path: filepath.ToSlash(rel), Title: d.Name()}
 			if info != nil {
 				e.Size = info.Size()
 			}
@@ -77,33 +85,44 @@ func (s *Service) Docs(project string) (*DocsOut, error) {
 	return out, nil
 }
 
-// Doc returns one project doc and its backlinks.
+func (s *Service) unknownDocProject(project string) error {
+	return Errf(CodeUnknownProject, "projects: "+strings.Join(s.Projects(), ", "), "no project %q", project)
+}
+
+// Doc returns one project doc and its backlinks. The file is read through
+// the docs directory as a root, so a link cannot lead out of it, and it must
+// be a regular file; at most maxDoc bytes of it are returned.
 func (s *Service) Doc(project, rel string) (*DocOut, error) {
 	s.ix.catchUp()
 	s.ix.mu.RLock()
-	defer s.ix.mu.RUnlock()
 	pi := s.ix.projects[project]
+	var root, dir, storeName string
+	if pi != nil {
+		root, dir, storeName = filepath.Join(pi.Store.Root, filepath.FromSlash(pi.Dir), "docs"), pi.Dir, pi.Store.Name
+	}
+	s.ix.mu.RUnlock()
 	if pi == nil {
-		return nil, Errf(CodeUnknownProject, "projects: "+strings.Join(sortedKeys(s.ix.projects), ", "), "no project %q", project)
+		return nil, s.unknownDocProject(project)
 	}
 	clean := path.Clean("/" + strings.ReplaceAll(rel, "\\", "/"))[1:]
 	if clean == "" || clean == "." || strings.HasPrefix(clean, "../") {
 		return nil, Errf(CodeInvalid, "pass a path inside the project's docs/ directory", "bad doc path %q", rel)
 	}
-	root := filepath.Join(pi.Store.Root, filepath.FromSlash(pi.Dir), "docs")
-	p := filepath.Join(root, filepath.FromSlash(clean))
-	info, err := os.Stat(p)
-	if err != nil || info.IsDir() {
-		return nil, Errf(CodeNotFound, "list docs with GET /api/v1/docs?project="+project, "no doc %s in project %s", clean, project)
-	}
-	data, err := os.ReadFile(p)
-	if err != nil {
+	notFound := Errf(CodeNotFound, "list docs with GET /api/v1/docs?project="+project, "no doc %s in project %s", clean, project)
+	data, size, err := readDoc(root, clean)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, notFound
+	} else if err != nil {
 		return nil, err
 	}
-	out := &DocOut{DocEntry: DocEntry{Project: project, Path: clean, Title: path.Base(clean), Size: info.Size()}, Store: pi.Store.Name,
-		StorePath: pi.Dir + "/docs/" + clean, Backlinks: []Ref{}}
+	out := &DocOut{DocEntry: DocEntry{Project: project, Path: clean, Title: path.Base(clean), Size: size}, Store: storeName,
+		StorePath: dir + "/docs/" + clean, Backlinks: []Ref{}}
 	if len(data) > maxDoc {
-		data, out.Truncated = data[:maxDoc], true
+		cut := maxDoc
+		for cut > 0 && !utf8.RuneStart(data[cut]) {
+			cut-- // never split a character: the text would look binary
+		}
+		data, out.Truncated = data[:cut], true
 	}
 	out.Text = utf8.Valid(data) && !bytes.Contains(data, []byte{0})
 	if out.Text {
@@ -115,6 +134,8 @@ func (s *Service) Doc(project, rel string) (*DocOut, error) {
 		}
 	}
 	needle := []byte(out.StorePath)
+	s.ix.mu.RLock()
+	defer s.ix.mu.RUnlock()
 	for _, id := range sortedKeys(s.ix.tickets) {
 		r := s.ix.tickets[id]
 		hit := bytes.Contains(r.Raw, needle)
@@ -131,6 +152,37 @@ func (s *Service) Doc(project, rel string) (*DocOut, error) {
 		}
 	}
 	return out, nil
+}
+
+// readDoc reads at most maxDoc+1 bytes of the regular file rel (slash
+// separated) under root, without leaving root. Anything else (a directory,
+// a link, a device) reads as not existing.
+func readDoc(root, rel string) ([]byte, int64, error) {
+	r, err := os.OpenRoot(root)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer r.Close()
+	name := filepath.FromSlash(rel)
+	if fi, err := r.Lstat(name); err != nil {
+		return nil, 0, err
+	} else if !fi.Mode().IsRegular() {
+		return nil, 0, fs.ErrNotExist
+	}
+	f, err := r.Open(name)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return nil, 0, err
+	}
+	if !fi.Mode().IsRegular() {
+		return nil, 0, fs.ErrNotExist
+	}
+	data, err := io.ReadAll(io.LimitReader(f, maxDoc+1))
+	return data, fi.Size(), err
 }
 
 func docTitle(p, name string) string {

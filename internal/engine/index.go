@@ -5,8 +5,10 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	neturl "net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -52,6 +54,7 @@ type Index struct {
 	projects map[string]*ProjectInfo // by key
 	prefixes map[string]*ProjectInfo // by ID prefix
 	actors   *kaspec.Actors
+	actorBy  map[string]string // actorKey(handle, email or alias) -> handle
 	children map[string][]string
 	blocks   map[string][]string
 	diags    []kaspec.Diagnostic
@@ -100,7 +103,9 @@ func (ix *Index) catchUp() {
 		prev := ix.heads[s]
 		ix.mu.RUnlock()
 		cur := ix.stamp(s, prev)
-		if prev != nil && cur.head == prev.head {
+		// Skip HEAD moves that are this process's own commits and syncs,
+		// whose paths were reloaded as they were made.
+		if prev != nil && (cur.head == prev.head || s.ownedSince(prev.head, cur.head)) {
 			ix.mu.Lock()
 			ix.heads[s] = cur
 			ix.mu.Unlock()
@@ -200,7 +205,7 @@ func isStoreDir(dir string) bool {
 func localParentPath(base, url string) (string, bool) {
 	switch {
 	case strings.HasPrefix(url, "file://"):
-		return filepath.FromSlash(strings.TrimPrefix(url, "file://")), true
+		return fileURLPath(url)
 	case strings.HasPrefix(url, ".") || filepath.IsAbs(url) || strings.HasPrefix(url, "/"):
 		if filepath.IsAbs(url) {
 			return filepath.Clean(url), true
@@ -208,6 +213,28 @@ func localParentPath(base, url string) (string, bool) {
 		return filepath.Clean(filepath.Join(base, filepath.FromSlash(url))), true
 	}
 	return "", false
+}
+
+// fileURLPath turns a file:// URL into a local path: file:///srv/org,
+// file://localhost/srv/org, file:///C:/stores/org (Windows), and
+// file://server/share as a UNC path on Windows.
+func fileURLPath(raw string) (string, bool) {
+	u, err := neturl.Parse(raw)
+	if err != nil || u.Path == "" {
+		return "", false
+	}
+	p := u.Path
+	if runtime.GOOS == "windows" {
+		if len(p) >= 3 && p[0] == '/' && p[2] == ':' {
+			p = p[1:] // /C:/stores -> C:/stores
+		}
+		if u.Host != "" && !strings.EqualFold(u.Host, "localhost") {
+			p = "//" + u.Host + p
+		}
+	} else if u.Host != "" && !strings.EqualFold(u.Host, "localhost") {
+		return "", false
+	}
+	return filepath.Clean(filepath.FromSlash(p)), true
 }
 
 func samePath(a, b string) bool {
@@ -290,6 +317,7 @@ func (ix *Index) rebuild() {
 			}
 		}
 	}
+	ix.actorBy = actorIndex(ix.actors)
 	// Former prefixes (after a rename) find the project too, unless an
 	// active prefix took them over.
 	for _, pi := range ix.projects {
@@ -467,6 +495,9 @@ func (ix *Index) reload(s *Store, paths []string) (touched []recChange, full boo
 			delete(ix.tickets, id)
 			if kp := ks.Projects[pi.Key]; kp != nil {
 				delete(kp.Tickets, id)
+				if i, ok := slices.BinarySearch(kp.IDs, id); ok {
+					kp.IDs = slices.Delete(kp.IDs, i, i+1)
+				}
 			}
 			continue
 		}
@@ -476,9 +507,8 @@ func (ix *Index) reload(s *Store, paths []string) (touched []recChange, full boo
 			continue
 		}
 		if kp := ks.Projects[pi.Key]; kp != nil {
-			if _, ok := kp.Tickets[id]; !ok {
-				kp.IDs = append(kp.IDs, id)
-				slices.Sort(kp.IDs)
+			if i, ok := slices.BinarySearch(kp.IDs, id); !ok {
+				kp.IDs = slices.Insert(kp.IDs, i, id)
 			}
 			kp.Tickets[id] = te
 		}
@@ -551,24 +581,37 @@ func (ix *Index) authorActor(author string) string {
 	email = strings.TrimSuffix(email, ">")
 	ix.mu.RLock()
 	defer ix.mu.RUnlock()
-	if ix.actors == nil {
-		return name
+	if h, ok := ix.actorBy[actorKey(email)]; ok && email != "" {
+		return h
 	}
-	for _, h := range sortedKeys(ix.actors.Humans) {
-		hu := ix.actors.Humans[h]
-		if strings.EqualFold(h, name) {
-			return h
-		}
-		for _, e := range hu.Emails {
-			if email != "" && strings.EqualFold(e, email) {
-				return h
-			}
-		}
-		for _, a := range hu.Aliases {
-			if strings.EqualFold(a, name) {
-				return h
-			}
-		}
+	if h, ok := ix.actorBy[actorKey(name)]; ok {
+		return h
 	}
 	return name
+}
+
+// actorKey is the one case rule for matching handles, emails and aliases
+// against the actor registry: case-insensitive, surrounding space ignored.
+func actorKey(s string) string { return strings.ToLower(strings.TrimSpace(s)) }
+
+// actorIndex maps every handle, email and alias in the registry (by
+// actorKey) to its handle. Handles win over another human's alias; ties
+// otherwise go to the handle that sorts first.
+func actorIndex(a *kaspec.Actors) map[string]string {
+	m := map[string]string{}
+	hs := sortedKeys(a.Humans)
+	for _, h := range hs {
+		m[actorKey(h)] = h
+	}
+	for _, h := range hs {
+		hu := a.Humans[h]
+		for _, k := range append(append([]string(nil), hu.Emails...), hu.Aliases...) {
+			if k = actorKey(k); k != "" {
+				if _, taken := m[k]; !taken {
+					m[k] = h
+				}
+			}
+		}
+	}
+	return m
 }

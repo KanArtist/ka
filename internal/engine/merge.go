@@ -46,6 +46,7 @@ func MergeTickets(ctx context.Context, base, up, local []byte) (merged []byte, p
 		}
 	}
 	scalar("title", pb.Title, pu.Title, pl.Title, &out.Title)
+	scalar("slug", pb.Slug, pu.Slug, pl.Slug, &out.Slug)
 	scalar("status", pb.Status, pu.Status, pl.Status, &out.Status)
 	scalar("priority", pb.Priority, pu.Priority, pl.Priority, &out.Priority)
 	scalar("kind", pb.Kind, pu.Kind, pl.Kind, &out.Kind)
@@ -207,7 +208,9 @@ func RunMergeDriver(ctx context.Context, base, ours, theirs, path string) int {
 		return 1
 	}
 	cwd, _ := os.Getwd()
-	g := &gitx.Repo{Dir: cwd}
+	// git runs the driver inside the repository it is merging, and may say
+	// which one through GIT_DIR.
+	g := &gitx.Repo{Dir: cwd, InheritGitEnv: true}
 	// During a rebase or cherry-pick, "ours" is the branch being built on
 	// (upstream); during a merge, "theirs" is what was fetched.
 	upIsOurs := true
@@ -222,30 +225,34 @@ func RunMergeDriver(ctx context.Context, base, ours, theirs, path string) int {
 	if !ok {
 		return mergeFileFallback(ctx, g, ours, base, theirs)
 	}
-	if err := os.WriteFile(ours, merged, 0o644); err != nil {
-		return 1
-	}
+	// Record what lost before reporting a clean merge; if it cannot be
+	// recorded, report a conflict rather than drop it.
 	if len(preserved) > 0 {
 		gd, err := g.GitDir(ctx)
-		if err == nil {
-			commit := ""
-			if h, err := g.Run(ctx, "rev-parse", "-q", "--verify", "CHERRY_PICK_HEAD"); err == nil {
-				commit = h
-			} else if h, err := g.Run(ctx, "rev-parse", "-q", "--verify", "REBASE_HEAD"); err == nil {
-				commit = h
-			} else if h, err := g.Run(ctx, "rev-parse", "-q", "--verify", "MERGE_HEAD"); err == nil {
-				commit = h
-			}
-			for i := range preserved {
-				preserved[i].Path = path
-				preserved[i].Commit = commit
-			}
-			dir := filepath.Join(gd, "ka-preserved")
-			os.MkdirAll(dir, 0o755)
-			data, _ := json.MarshalIndent(preserved, "", "  ")
-			name := fmt.Sprintf("%d-%s.json", time.Now().UnixNano(), kaspec.RandomBase32(4))
-			os.WriteFile(filepath.Join(dir, name), data, 0o644)
+		if err != nil {
+			return 1
 		}
+		commit := ""
+		if h, err := g.Run(ctx, "rev-parse", "-q", "--verify", "CHERRY_PICK_HEAD"); err == nil {
+			commit = h
+		} else if h, err := g.Run(ctx, "rev-parse", "-q", "--verify", "REBASE_HEAD"); err == nil {
+			commit = h
+		} else if h, err := g.Run(ctx, "rev-parse", "-q", "--verify", "MERGE_HEAD"); err == nil {
+			commit = h
+		}
+		for i := range preserved {
+			preserved[i].Path = path
+			preserved[i].Commit = commit
+		}
+		dir := filepath.Join(gd, "ka-preserved")
+		data, _ := json.MarshalIndent(preserved, "", "  ")
+		name := fmt.Sprintf("%d-%s.json", time.Now().UnixNano(), kaspec.RandomBase32(4))
+		if os.MkdirAll(dir, 0o755) != nil || os.WriteFile(filepath.Join(dir, name), data, 0o644) != nil {
+			return 1
+		}
+	}
+	if err := os.WriteFile(ours, merged, 0o644); err != nil {
+		return 1
 	}
 	return 0
 }

@@ -1,10 +1,16 @@
 package engine
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -41,9 +47,9 @@ type FixOptions struct {
 
 // FixWith is Fix with options.
 func (s *Service) FixWith(ctx context.Context, c Caller, o FixOptions) (*FixOut, error) {
-	dryRun := o.DryRun
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
+	s.ix.catchUp()
 	out := &FixOut{}
 	aliases := s.aliasMap()
 	var slugProjects map[*Store]map[string]bool
@@ -53,78 +59,218 @@ func (s *Service) FixWith(ctx context.Context, c Caller, o FixOptions) (*FixOut,
 			return nil, err
 		}
 	}
+	var touched []*Store
 	for _, st := range s.WS.Stores {
 		if st.ReadOnly {
 			continue
 		}
-		unlock, err := st.lock(ctx)
+		cats, committed, err := s.fixStore(ctx, c, st, aliases, slugProjects[st], o.DryRun)
+		out.Categories = append(out.Categories, cats...)
+		if committed {
+			touched = append(touched, st)
+		}
 		if err != nil {
-			return nil, err
-		}
-		cats := []struct {
-			name string
-			fn   func(rel string, data []byte) []byte
-		}{
-			{"timestamps", func(rel string, data []byte) []byte { return fixTimestamps(ctx, st, rel, data) }},
-			{"actors", func(rel string, data []byte) []byte { return fixActors(rel, data, aliases) }},
-			{"format", fixFormat},
-		}
-		if keys := slugProjects[st]; len(keys) > 0 {
-			cats = append(cats, struct {
-				name string
-				fn   func(rel string, data []byte) []byte
-			}{"slugs", func(rel string, data []byte) []byte { return fixSlug(rel, data, keys) }})
-		}
-		for _, cat := range cats {
-			fc := FixCategory{Name: cat.name}
-			var paths []string
-			filepath.WalkDir(filepath.Join(st.Root, "projects"), func(p string, d fs.DirEntry, err error) error {
-				if err != nil || d.IsDir() || !strings.HasSuffix(p, ".md") {
-					return nil
-				}
-				rel, _ := filepath.Rel(st.Root, p)
-				rel = filepath.ToSlash(rel)
-				if !strings.HasSuffix(rel, "/ticket.md") && !strings.Contains(rel, "/comments/") {
-					return nil
-				}
-				data, err := os.ReadFile(p)
-				if err != nil {
-					return nil
-				}
-				if nd := cat.fn(rel, data); nd != nil && string(nd) != string(data) {
-					fc.Files = append(fc.Files, st.Name+"/"+rel)
-					if !dryRun {
-						os.WriteFile(p, nd, 0o644)
-						paths = append(paths, st.repoPath(rel))
-					}
-				}
-				return nil
-			})
-			if len(paths) > 0 {
-				st.git.Run(ctx, append([]string{"add", "--"}, paths...)...)
-				msg := "ka fix: " + cat.name + " (" + itoaN(len(paths)) + " files)\n\nKa-Actor: " + c.Actor + "\nKa-Spec: 1\n"
-				if _, err := st.git.RunRaw(ctx, []byte(msg), "commit", "-q", "--no-verify", "-F", "-"); err == nil {
-					fc.Commit = short(st.git.Head(ctx))
-				}
+			if len(touched) > 0 {
+				s.ix.refresh(nil, nil)
 			}
-			if len(fc.Files) > 0 {
-				out.Categories = append(out.Categories, fc)
-			}
+			return out, err
 		}
-		unlock()
 	}
-	if !dryRun {
-		s.ix.refresh(nil, nil)
-		for _, st := range s.WS.Stores {
-			if !st.ReadOnly && !s.NoPush && st.PushMode != "manual" {
-				st.Sync(ctx, s.hooks(st))
-			}
+	if len(touched) == 0 {
+		return out, nil
+	}
+	s.ix.refresh(nil, nil)
+	for _, st := range touched {
+		if _, err := s.push(ctx, st); err != nil {
+			return out, Errf(CodeGit, "the fixes are committed locally; ka sync retries the push", "push %s: %v", st.Name, err)
 		}
 	}
 	return out, nil
 }
 
 func itoaN(n int) string { return strconv.Itoa(n) }
+
+// fixCats are ka fix's categories, in the order they are committed.
+var fixCats = []string{"actors", "timestamps", "format", "slugs"}
+
+// fixStore runs every fixer over one store in a single walk, parsing each
+// file once, then commits each category that changed something.
+func (s *Service) fixStore(ctx context.Context, c Caller, st *Store, aliases map[string]string, slugKeys map[string]bool, dryRun bool) (cats []FixCategory, committed bool, err error) {
+	unlock, err := st.lock(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	defer unlock()
+	if !dryRun {
+		if err := st.guard(); err != nil {
+			return nil, false, err
+		}
+	}
+	type fixed struct {
+		rel    string
+		stages [][]byte // the file after each category; nil: unchanged by it
+	}
+	var files []fixed
+	var added map[string]string // ticket.md -> when it was first committed
+	addedAt := func(rel string) string {
+		if added == nil {
+			added = fileAddedTimes(ctx, st)
+		}
+		return added[rel]
+	}
+	walkErr := filepath.WalkDir(filepath.Join(st.Root, "projects"), func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
+			return err
+		}
+		if d.IsDir() || !d.Type().IsRegular() || !strings.HasSuffix(p, ".md") {
+			return nil // links and other non-regular files are never followed
+		}
+		rel, _ := filepath.Rel(st.Root, p)
+		rel = filepath.ToSlash(rel)
+		if !strings.HasSuffix(rel, "/ticket.md") && !strings.Contains(rel, "/comments/") {
+			return nil
+		}
+		data, err := readRegular(p)
+		if err != nil {
+			return nil // reported by ka check
+		}
+		if stages := fixFile(rel, data, aliases, slugKeys, func() string { return addedAt(rel) }, st.now); stages != nil {
+			files = append(files, fixed{rel, stages})
+		}
+		return nil
+	})
+	if walkErr != nil {
+		return nil, false, walkErr
+	}
+	for i, name := range fixCats {
+		fc := FixCategory{Name: name}
+		var paths []string
+		for _, f := range files {
+			if f.stages[i] == nil {
+				continue
+			}
+			fc.Files = append(fc.Files, st.Name+"/"+f.rel)
+			if dryRun {
+				continue
+			}
+			paths = append(paths, f.rel)
+			if err = os.WriteFile(filepath.Join(st.Root, filepath.FromSlash(f.rel)), f.stages[i], 0o644); err != nil {
+				break
+			}
+		}
+		if len(paths) > 0 {
+			var sha string
+			if err == nil {
+				before := st.git.Head(ctx)
+				if sha, err = st.commitPaths(ctx, c, fmt.Sprintf("ka fix: %s (%d files)", name, len(paths)), nil, paths); err == nil && sha != "" {
+					st.own(before, sha)
+				}
+			}
+			if err != nil {
+				rp := make([]string, len(paths))
+				for k, p := range paths {
+					rp[k] = st.repoPath(p)
+				}
+				st.rollback(ctx, rp)
+				return cats, committed, err
+			}
+			fc.Commit = short(sha)
+			committed = committed || sha != ""
+		}
+		if len(fc.Files) > 0 {
+			cats = append(cats, fc)
+		}
+	}
+	return cats, committed, nil
+}
+
+// fixFile runs the fixers over one ticket.md or comment, in fixCats order,
+// and returns the file after each (nil where a fixer changed nothing), or
+// nil if nothing changes. A file that does not parse cleanly is left as it
+// is, byte for byte: rewriting a partial parse would drop whatever failed
+// to parse (B3). Missing timestamps and actor aliases are exceptions,
+// because they are what the fixers repair.
+func fixFile(rel string, raw []byte, aliases map[string]string, slugKeys map[string]bool, addedAt func() string, now func() time.Time) [][]byte {
+	isTicket := strings.HasSuffix(rel, "/ticket.md")
+	stages := make([][]byte, len(fixCats))
+	cur, changed := raw, false
+	next := func(i int, b []byte) {
+		if !bytes.Equal(b, cur) {
+			stages[i], cur, changed = b, b, true
+		}
+	}
+	// actors: an alias ("Bryan Sant") is not a valid actor, so it is mapped
+	// in the text, before parsing would drop it.
+	next(0, fixActorLines(cur, isTicket, aliases))
+	norm := kaspec.NormalizeEncoding(cur)
+	if !isTicket {
+		cm, ds := kaspec.ParseComment(rel, norm)
+		if cm == nil || kaspec.HasErrors(ds, false) {
+			return nil
+		}
+		next(2, kaspec.FormatComment(cm))
+	} else {
+		t, ds := kaspec.ParseTicket(rel, norm)
+		if t == nil || slices.ContainsFunc(ds, func(d kaspec.Diagnostic) bool {
+			return d.Severity == kaspec.SevError && !(d.Code == "missing_field" && (strings.Contains(d.Message, `"created"`) || strings.Contains(d.Message, `"updated"`)))
+		}) {
+			return nil
+		}
+		if t.Created == "" || t.Updated == "" {
+			ts := ""
+			if at := addedAt(); at != "" {
+				ts, _ = parseISO(at)
+			}
+			if ts == "" {
+				ts = now().UTC().Format("2006-01-02T15:04:05Z")
+			}
+			if t.Created == "" {
+				t.Created = ts
+			}
+			if t.Updated == "" {
+				t.Updated = t.Created
+			}
+			next(1, kaspec.FormatTicket(t))
+		}
+		next(2, kaspec.FormatTicket(t))
+		parts := strings.Split(rel, "/") // projects/<key>/tickets/<ID>/ticket.md
+		if len(parts) == 5 && slugKeys[parts[1]] && t.Slug == "" && t.MovedTo == "" {
+			if t.Slug = kaspec.DeriveSlug(t.Title); t.Slug != "" {
+				next(3, kaspec.FormatTicket(t))
+			}
+		}
+	}
+	if !changed {
+		return nil
+	}
+	return stages
+}
+
+// fileAddedTimes maps each ticket.md under projects/ to the author date of
+// the newest commit that added it, in one git log.
+func fileAddedTimes(ctx context.Context, st *Store) map[string]string {
+	out := map[string]string{}
+	log, err := st.git.Run(ctx, "-c", "core.quotePath=false", "log", "--diff-filter=A", "--no-renames", "--name-only", "--format=%x00%aI", "--", st.repoPath("projects"))
+	if err != nil {
+		return out
+	}
+	at := ""
+	for _, l := range strings.Split(log, "\n") {
+		if d, ok := strings.CutPrefix(l, "\x00"); ok {
+			at = d
+			continue
+		}
+		if sp, ok := st.storePath(l); ok && strings.HasSuffix(sp, "/ticket.md") {
+			if _, seen := out[sp]; !seen {
+				out[sp] = at
+			}
+		}
+	}
+	return out
+}
 
 // slugProjects finds, per writable store, the projects with slugs: true. It
 // refuses when such a store does not require ka 1.2.0 or newer, since older
@@ -152,23 +298,6 @@ func (s *Service) slugProjects() (map[*Store]map[string]bool, error) {
 	return out, nil
 }
 
-// fixSlug gives a ticket in one of the given projects a slug derived from
-// its title, if it has none.
-func fixSlug(rel string, data []byte, keys map[string]bool) []byte {
-	parts := strings.Split(rel, "/") // projects/<key>/tickets/<ID>/ticket.md
-	if len(parts) != 5 || parts[0] != "projects" || parts[4] != "ticket.md" || !keys[parts[1]] {
-		return nil
-	}
-	t, ds := kaspec.ParseTicket(rel, data)
-	if t == nil || kaspec.HasErrors(ds, false) || t.Slug != "" || t.MovedTo != "" {
-		return nil
-	}
-	if t.Slug = kaspec.DeriveSlug(t.Title); t.Slug == "" {
-		return nil
-	}
-	return kaspec.FormatTicket(t)
-}
-
 func parseISO(s string) (string, error) {
 	t, err := time.Parse(time.RFC3339, strings.TrimSpace(s))
 	if err != nil {
@@ -177,105 +306,62 @@ func parseISO(s string) (string, error) {
 	return t.UTC().Format("2006-01-02T15:04:05Z"), nil
 }
 
+// aliasMap is the actor registry's lookup (actorKey -> handle).
 func (s *Service) aliasMap() map[string]string {
 	s.ix.mu.RLock()
 	defer s.ix.mu.RUnlock()
-	m := map[string]string{}
-	for h, hu := range s.ix.actors.Humans {
-		for _, a := range hu.Aliases {
-			m[a] = h
-			m[strings.ToLower(a)] = h
-		}
-		for _, e := range hu.Emails {
-			m[e] = h
-			m[strings.ToLower(e)] = h
-		}
-	}
-	return m
+	return maps.Clone(s.ix.actorBy)
 }
 
-func fixFormat(rel string, data []byte) []byte {
-	norm := kaspec.NormalizeEncoding(data)
-	if strings.HasSuffix(rel, "/ticket.md") {
-		t, _ := kaspec.ParseTicket(rel, norm)
-		if t == nil {
-			return norm
-		}
-		return kaspec.FormatTicket(t)
-	}
-	c, _ := kaspec.ParseComment(rel, norm)
-	if c == nil {
-		return norm
-	}
-	return kaspec.FormatComment(c)
-}
+// actorKeys are the frontmatter keys that hold actors: top-level ones, and
+// claim's by (indented).
+var (
+	ticketActorKeys  = map[string]bool{"assignee": true, "owner": true, "created_by": true}
+	commentActorKeys = map[string]bool{"author": true, "on_behalf_of": true, "to": true}
+	actorLineRe      = regexp.MustCompile(`^([ \t]*)([a-z_]+):[ \t]*(.*?)[ \t]*(\r?)$`)
+)
 
-func fixTimestamps(ctx context.Context, st *Store, rel string, data []byte) []byte {
-	if !strings.HasSuffix(rel, "/ticket.md") {
-		return nil
-	}
-	t, _ := kaspec.ParseTicket(rel, kaspec.NormalizeEncoding(data))
-	if t == nil || (t.Created != "" && t.Updated != "") {
-		return nil
-	}
-	ts := ""
-	if out, err := st.git.Run(ctx, "log", "--diff-filter=A", "--format=%aI", "-1", "--", st.repoPath(rel)); err == nil && out != "" {
-		if tt, err := parseISO(out); err == nil {
-			ts = tt
-		}
-	}
-	if ts == "" {
-		ts = st.now().UTC().Format("2006-01-02T15:04:05Z")
-	}
-	if t.Created == "" {
-		t.Created = ts
-	}
-	if t.Updated == "" {
-		t.Updated = t.Created
-	}
-	return kaspec.FormatTicket(t)
-}
-
-func fixActors(rel string, data []byte, aliases map[string]string) []byte {
+// fixActorLines maps actor values in a document's frontmatter through
+// aliases, editing just those lines; everything else stays byte for byte.
+func fixActorLines(data []byte, isTicket bool, aliases map[string]string) []byte {
 	if len(aliases) == 0 {
-		return nil
+		return data
 	}
-	norm := kaspec.NormalizeEncoding(data)
-	m := func(s string) string {
-		if s == "" {
-			return s
-		}
-		if h, ok := aliases[s]; ok {
-			return h
-		}
-		if h, ok := aliases[strings.ToLower(s)]; ok {
-			return h
-		}
-		return s
+	lines := strings.Split(string(data), "\n")
+	if len(lines) == 0 || strings.TrimSuffix(strings.TrimPrefix(lines[0], "\uFEFF"), "\r") != "---" {
+		return data
 	}
-	if strings.HasSuffix(rel, "/ticket.md") {
-		t, _ := kaspec.ParseTicket(rel, norm)
-		if t == nil {
-			return nil
-		}
-		before := string(kaspec.FormatTicket(t))
-		t.Assignee, t.Owner, t.CreatedBy = m(t.Assignee), m(t.Owner), m(t.CreatedBy)
-		if t.Claim != nil {
-			t.Claim.By = m(t.Claim.By)
-		}
-		if after := kaspec.FormatTicket(t); string(after) != before {
-			return after
-		}
-		return nil
+	keys := commentActorKeys
+	if isTicket {
+		keys = ticketActorKeys
 	}
-	c, _ := kaspec.ParseComment(rel, norm)
-	if c == nil {
-		return nil
+	changed := false
+	for i := 1; i < len(lines); i++ {
+		if strings.TrimSuffix(lines[i], "\r") == "---" {
+			break
+		}
+		m := actorLineRe.FindStringSubmatch(lines[i])
+		if m == nil {
+			continue
+		}
+		indent, key, v, cr := m[1], m[2], m[3], m[4]
+		if !(indent == "" && keys[key]) && !(indent != "" && isTicket && key == "by") {
+			continue
+		}
+		if len(v) >= 2 && (v[0] == '"' && v[len(v)-1] == '"') {
+			if u, err := strconv.Unquote(v); err == nil {
+				v = u
+			}
+		} else if len(v) >= 2 && v[0] == '\'' && v[len(v)-1] == '\'' {
+			v = strings.ReplaceAll(v[1:len(v)-1], "''", "'")
+		}
+		if h, ok := aliases[actorKey(v)]; ok && h != v {
+			lines[i] = indent + key + ": " + h + cr
+			changed = true
+		}
 	}
-	before := string(kaspec.FormatComment(c))
-	c.Author, c.OnBehalfOf, c.To = m(c.Author), m(c.OnBehalfOf), m(c.To)
-	if after := kaspec.FormatComment(c); string(after) != before {
-		return after
+	if !changed {
+		return data
 	}
-	return nil
+	return []byte(strings.Join(lines, "\n"))
 }

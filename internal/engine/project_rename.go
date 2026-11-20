@@ -2,10 +2,12 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -30,6 +32,14 @@ type RenameProjectOut struct {
 	DryRun    bool              `json:"dry_run,omitempty"`
 }
 
+// renamePlan is what a rename changes; it does not depend on the tickets.
+type renamePlan struct {
+	key, newKey, oldPrefix, newPrefix string
+	keepFormer                        bool
+	home                              *Store
+	idRe, keyRe, defRe                *regexp.Regexp
+}
+
 // RenameProject gives a project a new key and/or ID prefix (PRD §9.2).
 // Every ticket keeps its suffix (KA-7QK3M becomes KAN-7QK3M); its
 // directory and id change, and every reference to it in every writable
@@ -38,16 +48,138 @@ type RenameProjectOut struct {
 // and default_project. One commit per store, the home store pushed first.
 // keepFormer records the old prefix in former_prefixes, so old IDs keep
 // resolving during a transition.
+//
+// Every writable store is locked and synced before anything is read. The
+// rewrite is idempotent: if a push is rejected because the remote moved,
+// the commits not yet pushed are undone and the rename is redone on top of
+// upstream, so tickets that arrived meanwhile are renamed too.
 func (s *Service) RenameProject(ctx context.Context, c Caller, key, newKey, newPrefix string, keepFormer, dryRun bool) (*RenameProjectOut, error) {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 	s.ix.catchUp()
+	p, err := s.planRename(key, newKey, newPrefix, keepFormer)
+	if err != nil {
+		return nil, err
+	}
+	out := &RenameProjectOut{From: key, To: p.newKey, OldPrefix: p.oldPrefix, NewPrefix: p.newPrefix,
+		Files: map[string]int{}, Commits: map[string]string{}, KeptOld: p.keepFormer, DryRun: dryRun}
+	var stores []*Store
+	for _, st := range s.WS.Stores {
+		if st.ReadOnly {
+			out.Skipped = append(out.Skipped, st.Name)
+		} else {
+			stores = append(stores, st)
+		}
+	}
+	sort.Slice(stores, func(i, j int) bool { return stores[i].Name < stores[j].Name })
+	if dryRun {
+		ids, files, err := renameChanges(p, stores, nil)
+		if err != nil {
+			return nil, err
+		}
+		out.IDs, out.Tickets, out.Files = ids, len(ids), files
+		return out, nil
+	}
 
+	unlock, err := lockStores(ctx, stores)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+	// The home store is pushed first, so references never name IDs that
+	// are not published yet.
+	order := []*Store{p.home}
+	for _, st := range stores {
+		if st != p.home {
+			order = append(order, st)
+		}
+	}
+	for attempt := 1; ; attempt++ {
+		if err := s.syncHeld(ctx, order); err != nil {
+			return nil, err
+		}
+		if attempt == 1 {
+			// Check again on the latest state (B16).
+			if p, err = s.planRename(key, newKey, newPrefix, keepFormer); err != nil {
+				return nil, err
+			}
+		}
+		js := map[*Store]*journal{}
+		for _, st := range stores {
+			js[st] = newJournal(ctx, st)
+		}
+		undo := func(from int) error {
+			var errs []error
+			for _, st := range order[from:] {
+				errs = append(errs, js[st].undo(ctx))
+			}
+			s.ix.refresh(nil, nil)
+			return errors.Join(errs...)
+		}
+		ids, files, err := renameChanges(p, stores, js)
+		if err == nil {
+			err = s.commitRename(ctx, c, p, order, js, out, len(ids))
+		}
+		if err != nil {
+			return nil, errors.Join(err, undo(0))
+		}
+		s.ix.refresh(nil, nil)
+		if out.IDs == nil {
+			out.IDs = map[string]string{}
+		}
+		for k, v := range ids {
+			out.IDs[k] = v
+		}
+		out.Tickets = len(out.IDs)
+		for k, n := range files {
+			out.Files[k] += n
+		}
+
+		var committed []*Store
+		for _, st := range order {
+			if out.Commits[st.Name] != "" {
+				committed = append(committed, st)
+			}
+		}
+		pushed, rejected, why := s.pushChain(ctx, committed)
+		out.Pushed = pushed
+		if rejected == nil {
+			out.PushError = why
+			return out, nil
+		}
+		from := 0
+		for i, st := range order {
+			if st == rejected {
+				from = i
+			}
+		}
+		if attempt == moveAttempts {
+			if rejected == p.home {
+				if err := undo(0); err != nil {
+					return nil, err
+				}
+				return nil, Errf(CodeGit, "retry the rename once the stores are quieter", "the remote of %s kept changing while the rename was pushed; nothing was renamed", p.home.Name)
+			}
+			out.PushError = rejected.Name + ": the remote kept changing; its reference updates are committed locally and the next ka sync publishes them"
+			return out, nil
+		}
+		if err := undo(from); err != nil {
+			return nil, err
+		}
+		for _, st := range order[from:] {
+			delete(out.Commits, st.Name)
+			delete(out.Files, st.Name)
+		}
+	}
+}
+
+// planRename checks a rename against the index.
+func (s *Service) planRename(key, newKey, newPrefix string, keepFormer bool) (*renamePlan, error) {
 	s.ix.mu.RLock()
+	defer s.ix.mu.RUnlock()
 	pi := s.ix.projects[key]
 	if pi == nil {
-		s.ix.mu.RUnlock()
-		return nil, Errf(CodeUnknownProject, "projects: "+strings.Join(s.Projects(), ", "), "no project %q", key)
+		return nil, Errf(CodeUnknownProject, "projects: "+strings.Join(sortedKeys(s.ix.projects), ", "), "no project %q", key)
 	}
 	if newKey == "" {
 		newKey = key
@@ -58,233 +190,208 @@ func (s *Service) RenameProject(ctx context.Context, c Caller, key, newKey, newP
 			newPrefix = kaspec.DefaultPrefix(newKey)
 		}
 	}
-	oldPrefix, home := pi.Prefix, pi.Store
-	var err error
+	p := &renamePlan{key: key, newKey: newKey, oldPrefix: pi.Prefix, newPrefix: newPrefix, home: pi.Store,
+		keepFormer: keepFormer && newPrefix != pi.Prefix}
 	switch {
 	case !kaspec.ProjectKeyRe.MatchString(newKey):
-		err = Errf(CodeInvalid, "project keys are lower-case letters, digits and -, starting with a letter", "invalid project key %q", newKey)
+		return nil, Errf(CodeInvalid, "project keys are lower-case letters, digits and -, starting with a letter", "invalid project key %q", newKey)
 	case !kaspec.PrefixRe.MatchString(newPrefix):
-		err = Errf(CodeInvalid, "prefixes are upper-case letters and digits, starting with a letter, at most 10", "invalid prefix %q", newPrefix)
-	case newKey == key && newPrefix == oldPrefix:
-		err = Errf(CodeInvalid, "pass --key, --prefix or both", "nothing to rename")
+		return nil, Errf(CodeInvalid, "prefixes are upper-case letters and digits, starting with a letter, at most 10", "invalid prefix %q", newPrefix)
+	case newKey == key && newPrefix == p.oldPrefix:
+		return nil, Errf(CodeInvalid, "pass --key, --prefix or both", "nothing to rename")
 	case newKey != key && s.ix.projects[newKey] != nil:
-		err = Errf(CodeConflict, "", "project %q already exists", newKey)
-	case newPrefix != oldPrefix && s.ix.prefixes[newPrefix] != nil && s.ix.prefixes[newPrefix] != pi:
-		err = Errf(CodeConflict, "", "prefix %s is already used by project %s", newPrefix, s.ix.prefixes[newPrefix].Key)
-	case home.ReadOnly:
-		err = Errf(CodeReadOnly, "add the store to your workspace to write to it", "store %s is read-only here", home.Name)
+		return nil, Errf(CodeConflict, "", "project %q already exists", newKey)
+	case newPrefix != p.oldPrefix && s.ix.prefixes[newPrefix] != nil && s.ix.prefixes[newPrefix] != pi:
+		return nil, Errf(CodeConflict, "", "prefix %s is already used by project %s", newPrefix, s.ix.prefixes[newPrefix].Key)
+	case p.home.ReadOnly:
+		return nil, Errf(CodeReadOnly, "add the store to your workspace to write to it", "store %s is read-only here", p.home.Name)
 	case pi.File.MovedToStore != "":
-		err = Errf(CodeInvalid, "rename it in the store it moved to", "project %s moved to %s", key, pi.File.MovedToStore)
+		return nil, Errf(CodeInvalid, "rename it in the store it moved to", "project %s moved to %s", key, pi.File.MovedToStore)
+	case pi.Dir != "projects/"+key:
+		return nil, Errf(CodeInvalid, "", "project %s lives in %s, not projects/%s", key, pi.Dir, key)
 	}
+	p.idRe = regexp.MustCompile(`\b` + regexp.QuoteMeta(p.oldPrefix) + `-[0-9A-Z]+\b`)
+	// project:<key> as a whole value: project:jk, not project:jk-web.
+	p.keyRe = regexp.MustCompile(`\bproject:` + regexp.QuoteMeta(key) + `([^a-z0-9_-]|$)`)
+	p.defRe = regexp.MustCompile(`(?m)^(\s*default_project:\s*)` + regexp.QuoteMeta(key) + `\s*$`)
+	return p, nil
+}
+
+// renameChanges computes a rename from the files as they are now and, with
+// journals, applies it. It is idempotent: on a tree that is already renamed
+// it changes nothing, and on one where tickets arrived in the old project
+// since, it renames just those. It returns the ID map (old ID to new, for
+// every ticket of the project) and the files changed per store.
+func renameChanges(p *renamePlan, stores []*Store, js map[*Store]*journal) (map[string]string, map[string]int, error) {
+	oldRel, newRel := "projects/"+p.key, "projects/"+p.newKey
+	type file struct{ from, to string }
+	var moves []file
 	ids := map[string]string{}
-	if err == nil {
-		for id, r := range s.ix.tickets {
-			if r.Project == pi {
-				_, sfx, _ := kaspec.ParseID(id)
-				ids[id] = newPrefix + "-" + sfx
-			}
-		}
-	}
-	s.ix.mu.RUnlock()
-	if err != nil {
-		return nil, err
-	}
-	out := &RenameProjectOut{From: key, To: newKey, OldPrefix: oldPrefix, NewPrefix: newPrefix, Tickets: len(ids),
-		IDs: ids, Files: map[string]int{}, Commits: map[string]string{}, KeptOld: keepFormer && newPrefix != oldPrefix, DryRun: dryRun}
-
-	// Start from the latest of every store, so no reference is missed.
-	if !s.NoPush && !dryRun {
-		for _, st := range s.WS.Stores {
-			if remote, _ := st.upstream(ctx); remote != "" && !st.ReadOnly {
-				if _, err := st.Sync(ctx, s.hooks(st)); err != nil {
-					return nil, err
-				}
-			}
-		}
-		s.ix.refresh(nil, nil)
-	}
-
-	stores := append([]*Store(nil), s.WS.Stores...)
-	sort.Slice(stores, func(i, j int) bool { return stores[i].Name < stores[j].Name })
-	var unlocks []func()
-	unlock := func() {
-		for i := len(unlocks) - 1; i >= 0; i-- {
-			unlocks[i]()
-		}
-		unlocks = nil
-	}
-	defer unlock()
-	if !dryRun {
-		for _, st := range stores {
-			if st.ReadOnly {
-				continue
-			}
-			u, err := st.lock(ctx)
-			if err != nil {
-				return nil, err
-			}
-			unlocks = append(unlocks, u)
-		}
-	}
-
-	// 1. Move the project and its tickets in the home store.
-	oldRel, newRel := pi.Dir, "projects/"+newKey
-	oldDir := filepath.Join(home.Root, filepath.FromSlash(oldRel))
-	newDir := filepath.Join(home.Root, filepath.FromSlash(newRel))
-	if newKey != key {
-		if _, err := os.Stat(newDir); err == nil {
-			return nil, Errf(CodeConflict, "remove or rename it first", "%s already has %s", home.Name, newRel)
-		}
-	}
-	if !dryRun {
-		if newKey != key {
-			if err := os.Rename(oldDir, newDir); err != nil {
-				return nil, err
-			}
-		}
-		for oldID, newID := range ids {
-			if oldID == newID {
-				continue
-			}
-			from := filepath.Join(newDir, "tickets", oldID)
-			to := filepath.Join(newDir, "tickets", newID)
-			if _, err := os.Stat(to); err == nil {
-				return nil, Errf(CodeConflict, "", "%s/tickets/%s already exists", newRel, newID)
-			}
-			if err := os.Rename(from, to); err != nil {
-				return nil, err
-			}
-		}
-		if err := rewriteProjectFile(filepath.Join(newDir, "project.yml"), newKey, newPrefix, oldPrefix, out.KeptOld); err != nil {
-			return nil, err
-		}
-	}
-
-	// 2. Rewrite references in every writable store.
-	idRe := regexp.MustCompile(`\b` + regexp.QuoteMeta(oldPrefix) + `-[0-9A-Z]+\b`)
-	keyRe := regexp.MustCompile(`\bproject:` + regexp.QuoteMeta(key) + `\b`)
-	defRe := regexp.MustCompile(`(?m)^(\s*default_project:\s*)` + regexp.QuoteMeta(key) + `\s*$`)
-	for _, st := range stores {
-		if st.ReadOnly {
-			out.Skipped = append(out.Skipped, st.Name)
+	for i, rel := range []string{oldRel, newRel} {
+		if i == 1 && newRel == oldRel {
 			continue
 		}
-		n := 0
-		filepath.WalkDir(st.Root, func(p string, d fs.DirEntry, err error) error {
+		names, err := regularFiles(p.home.Root, rel)
+		if err != nil {
+			return nil, nil, err
+		}
+		for _, f := range names {
+			parts := strings.Split(f, "/")
+			if len(parts) >= 3 && parts[0] == "tickets" {
+				if pfx, sfx, ok := kaspec.ParseID(parts[1]); ok && (pfx == p.oldPrefix || pfx == p.newPrefix) {
+					ids[p.oldPrefix+"-"+sfx] = p.newPrefix + "-" + sfx
+					parts[1] = p.newPrefix + "-" + sfx
+				}
+			}
+			moves = append(moves, file{rel + "/" + f, newRel + "/" + strings.Join(parts, "/")})
+		}
+	}
+	files := map[string]int{}
+	rewrite := func(rel string, data []byte) []byte {
+		ext := strings.ToLower(filepath.Ext(rel))
+		if ext != ".md" && ext != ".yml" && ext != ".yaml" {
+			return data
+		}
+		text := p.idRe.ReplaceAllStringFunc(string(data), func(m string) string {
+			if nid, ok := ids[m]; ok {
+				return nid
+			}
+			return m
+		})
+		if p.newKey != p.key && ext != ".md" {
+			text = p.keyRe.ReplaceAllString(text, "project:"+p.newKey+"${1}")
+			text = p.defRe.ReplaceAllString(text, "${1}"+p.newKey)
+		}
+		return []byte(text)
+	}
+	write := func(st *Store, rel string, data []byte) error {
+		files[st.Name]++
+		if js == nil {
+			return nil
+		}
+		return js[st].write(rel, data)
+	}
+
+	// 1. The project and its tickets, in the home store.
+	seen, froms := map[string]bool{}, map[string]bool{}
+	for _, m := range moves {
+		if seen[m.to] {
+			return nil, nil, Errf(CodeConflict, "", "%s and another file both become %s", m.from, m.to)
+		}
+		seen[m.to], froms[m.from] = true, true
+	}
+	for _, m := range moves {
+		data, err := readRegular(filepath.Join(p.home.Root, filepath.FromSlash(m.from)))
+		if err != nil {
+			return nil, nil, err
+		}
+		nd := rewrite(m.to, data)
+		if m.to == newRel+"/project.yml" {
+			nd = rewriteProjectYAML(nd, p.newKey, p.newPrefix, p.oldPrefix, p.keepFormer)
+		}
+		if m.from != m.to && !froms[m.to] {
+			if _, err := os.Lstat(filepath.Join(p.home.Root, filepath.FromSlash(m.to))); err == nil {
+				return nil, nil, Errf(CodeConflict, "remove or rename it first", "%s already has %s", p.home.Name, m.to)
+			}
+		}
+		if m.from == m.to && string(nd) == string(data) {
+			continue
+		}
+		if string(nd) != string(data) {
+			files[p.home.Name]++
+		}
+		if js != nil {
+			if err := js[p.home].write(m.to, nd); err != nil {
+				return nil, nil, err
+			}
+		}
+		if m.from != m.to && js != nil {
+			if err := js[p.home].remove(m.from); err != nil {
+				return nil, nil, err
+			}
+		}
+	}
+
+	// 2. References in every writable store.
+	for _, st := range stores {
+		err := filepath.WalkDir(st.Root, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return nil
 			}
+			rel, _ := filepath.Rel(st.Root, path)
+			rel = filepath.ToSlash(rel)
 			if d.IsDir() {
-				if d.Name() == ".git" {
+				if d.Name() == ".git" || (st == p.home && (rel == oldRel || rel == newRel)) {
 					return filepath.SkipDir
 				}
 				return nil
 			}
-			switch strings.ToLower(filepath.Ext(p)) {
-			case ".md", ".yml", ".yaml":
-			default:
-				return nil
+			if !d.Type().IsRegular() {
+				return nil // never rewrite through a link
 			}
-			data, err := os.ReadFile(p)
+			data, err := readRegular(path)
 			if err != nil {
 				return nil
 			}
-			text := idRe.ReplaceAllStringFunc(string(data), func(m string) string {
-				if nid, ok := ids[m]; ok {
-					return nid
-				}
-				return m
-			})
-			if ext := strings.ToLower(filepath.Ext(p)); newKey != key && (ext == ".yml" || ext == ".yaml") {
-				text = keyRe.ReplaceAllString(text, "project:"+newKey)
-				text = defRe.ReplaceAllString(text, "${1}"+newKey)
-			}
-			if text != string(data) {
-				n++
-				if !dryRun {
-					fi, _ := os.Stat(p)
-					os.WriteFile(p, []byte(text), fi.Mode().Perm())
-				}
+			if nd := rewrite(rel, data); string(nd) != string(data) {
+				return write(st, rel, nd)
 			}
 			return nil
 		})
-		if n > 0 || st == home {
-			out.Files[st.Name] = n
+		if err != nil {
+			return nil, nil, err
+		}
+		if _, ok := files[st.Name]; !ok && st == p.home {
+			files[st.Name] = 0
 		}
 	}
-	if dryRun {
-		return out, nil
-	}
+	return ids, files, nil
+}
 
-	// 3. One commit per store that changed.
-	trail := "\n\nKa-Actor: " + c.Actor + "\n"
-	if c.OnBehalfOf != "" {
-		trail += "Ka-On-Behalf-Of: " + c.OnBehalfOf + "\n"
+// commitRename makes one commit per store that changed.
+func (s *Service) commitRename(ctx context.Context, c Caller, p *renamePlan, order []*Store, js map[*Store]*journal, out *RenameProjectOut, tickets int) error {
+	what := "ka: rename project " + p.key
+	if p.newKey != p.key {
+		what += " to " + p.newKey
 	}
-	trail += "Ka-Spec: 1\n"
-	what := "ka: rename project " + key
-	if newKey != key {
-		what += " to " + newKey
+	if p.newPrefix != p.oldPrefix {
+		what += " (" + p.oldPrefix + "- to " + p.newPrefix + "-, " + strconv.Itoa(tickets) + " tickets)"
 	}
-	if newPrefix != oldPrefix {
-		what += " (" + oldPrefix + "- to " + newPrefix + "-, " + strconv.Itoa(len(ids)) + " tickets)"
-	}
-	for _, st := range stores {
-		if _, ok := out.Files[st.Name]; !ok {
-			continue
-		}
-		if _, err := st.git.Run(ctx, "add", "-A", "--", st.repoPath(".")); err != nil {
-			return nil, err
-		}
-		if _, err := st.git.Run(ctx, "diff", "--cached", "--quiet"); err == nil { // nothing staged
-			delete(out.Files, st.Name)
+	extra := []string{"Ka-Renamed-Project: " + p.key + " " + p.newKey + " " + p.oldPrefix + " " + p.newPrefix}
+	for _, st := range order {
+		j := js[st]
+		if len(j.paths) == 0 {
 			continue
 		}
 		msg := what
-		if st != home {
-			msg = "ka: references to project " + key + " follow its rename"
-		}
-		if _, err := st.git.RunRaw(ctx, []byte(msg+trail+"Ka-Renamed-Project: "+key+" "+newKey+" "+oldPrefix+" "+newPrefix+"\n"), "commit", "-q", "--no-verify", "-F", "-"); err != nil {
-			return nil, err
-		}
-		out.Commits[st.Name] = short(st.git.Head(ctx))
-	}
-	unlock()
-	s.ix.refresh(nil, nil)
-
-	// 4. Push the home store first, then the rest.
-	if !s.NoPush {
-		order := []*Store{home}
-		for _, st := range stores {
-			if st != home {
-				order = append(order, st)
+		paths := j.paths
+		if st != p.home {
+			msg = "ka: references to project " + p.key + " follow its rename"
+		} else {
+			// The project directories as a whole, plus anything else
+			// (docs, boards): keeps the command line short.
+			paths = []string{"projects/" + p.key, "projects/" + p.newKey}
+			for _, rel := range j.paths {
+				if !strings.HasPrefix(rel, paths[0]+"/") && !strings.HasPrefix(rel, paths[1]+"/") {
+					paths = append(paths, rel)
+				}
 			}
 		}
-		for _, st := range order {
-			if out.Commits[st.Name] == "" {
-				continue
-			}
-			remote, _ := st.upstream(ctx)
-			if remote == "" || st.PushMode == "manual" {
-				continue
-			}
-			if _, err := st.Sync(ctx, s.hooks(st)); err != nil {
-				out.PushError = st.Name + ": " + err.Error()
-				break
-			}
-			out.Pushed = append(out.Pushed, st.Name)
+		sha, err := j.commit(ctx, c, msg, extra, paths)
+		if err != nil {
+			return err
+		}
+		if sha != "" {
+			out.Commits[st.Name] = short(sha)
 		}
 	}
-	return out, nil
+	return nil
 }
 
-// rewriteProjectFile sets key and prefix in project.yml, and adds the old
-// prefix to former_prefixes when asked; other lines stay as they are.
-func rewriteProjectFile(p, key, prefix, oldPrefix string, keepFormer bool) error {
-	data, err := os.ReadFile(p)
-	if err != nil {
-		return err
-	}
+// rewriteProjectYAML sets key and prefix in project.yml, and adds the old
+// prefix to former_prefixes (block or flow style) when asked; other lines
+// stay as they are. It is idempotent.
+func rewriteProjectYAML(data []byte, key, prefix, oldPrefix string, keepFormer bool) []byte {
 	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
 	var out []string
 	sawPrefix, sawFormer := false, false
@@ -298,17 +405,36 @@ func rewriteProjectFile(p, key, prefix, oldPrefix string, keepFormer bool) error
 			sawPrefix = true
 		case strings.HasPrefix(l, "former_prefixes:"):
 			sawFormer = true
-			out = append(out, l)
-			if keepFormer && strings.TrimSpace(strings.TrimPrefix(l, "former_prefixes:")) == "" {
-				// a block list follows; append to it
-				j := i + 1
-				for j < len(lines) && strings.HasPrefix(strings.TrimSpace(lines[j]), "- ") {
-					out = append(out, lines[j])
-					j++
-				}
-				out = append(out, "  - "+oldPrefix)
-				i = j - 1
+			v := strings.TrimSpace(strings.TrimPrefix(l, "former_prefixes:"))
+			if !keepFormer {
+				out = append(out, l)
+				break
 			}
+			if strings.HasPrefix(v, "[") && strings.HasSuffix(v, "]") {
+				var items []string
+				for _, it := range strings.Split(strings.Trim(v, "[]"), ",") {
+					if it = strings.Trim(strings.TrimSpace(it), `"'`); it != "" {
+						items = append(items, it)
+					}
+				}
+				if !slices.Contains(items, oldPrefix) {
+					items = append(items, oldPrefix)
+				}
+				out = append(out, "former_prefixes: ["+strings.Join(items, ", ")+"]")
+				break
+			}
+			out = append(out, l)
+			// a block list follows; append to it
+			j, has := i+1, false
+			for j < len(lines) && strings.HasPrefix(strings.TrimSpace(lines[j]), "- ") {
+				out = append(out, lines[j])
+				has = has || strings.Trim(strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(lines[j]), "- ")), `"'`) == oldPrefix
+				j++
+			}
+			if !has {
+				out = append(out, "  - "+oldPrefix)
+			}
+			i = j - 1
 		default:
 			out = append(out, l)
 		}
@@ -319,5 +445,5 @@ func rewriteProjectFile(p, key, prefix, oldPrefix string, keepFormer bool) error
 	if keepFormer && !sawFormer {
 		out = append(out, "former_prefixes:", "  - "+oldPrefix)
 	}
-	return os.WriteFile(p, []byte(strings.Join(out, "\n")+"\n"), 0o644)
+	return []byte(strings.Join(out, "\n") + "\n")
 }

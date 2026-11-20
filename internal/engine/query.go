@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"path"
 	"slices"
 	"sort"
 	"strings"
@@ -45,12 +44,11 @@ func ParseQuery(s string) (*Query, error) {
 	q := &Query{}
 	for _, tok := range tokenize(s) {
 		neg := false
-		raw := tok
 		if strings.HasPrefix(tok, "-") && len(tok) > 1 {
 			neg, tok = true, tok[1:]
 		}
 		k, v, ok := strings.Cut(tok, ":")
-		if ok && k != "" && !strings.Contains(k, " ") && !strings.HasPrefix(raw, "\"") {
+		if ok && k != "" && !strings.Contains(k, " ") && !strings.HasPrefix(tok, "\"") {
 			k = strings.ToLower(k)
 			if a, ok := keyAliases[k]; ok {
 				k = a
@@ -63,7 +61,7 @@ func ParseQuery(s string) (*Query, error) {
 				return nil, Errf(CodeInvalid, fix, "unknown filter key %q", k)
 			}
 			k = strings.Replace(k, "fields.", "field.", 1)
-			vals := strings.Split(v, ",")
+			vals := splitValues(v)
 			if k == "sort" {
 				q.Sort = append(q.Sort, vals...)
 				continue
@@ -74,6 +72,26 @@ func ParseQuery(s string) (*Query, error) {
 		q.text = append(q.text, textTerm{s: strings.ToLower(strings.Trim(tok, "\"")), neg: neg})
 	}
 	return q, nil
+}
+
+// splitValues splits a filter value on commas outside quotes and drops the
+// quotes: label:"needs review",ui is two labels.
+func splitValues(v string) []string {
+	var out []string
+	var cur strings.Builder
+	inQ := false
+	for _, r := range v {
+		switch {
+		case r == '"':
+			inQ = !inQ
+		case r == ',' && !inQ:
+			out = append(out, cur.String())
+			cur.Reset()
+		default:
+			cur.WriteRune(r)
+		}
+	}
+	return append(out, cur.String())
 }
 
 func tokenize(s string) []string {
@@ -115,10 +133,28 @@ func valueMatch(pattern, v string) bool {
 		return v == ""
 	}
 	if strings.Contains(pattern, "*") {
-		ok, _ := path.Match(strings.ToLower(pattern), strings.ToLower(v))
-		return ok
+		return globMatch(strings.ToLower(pattern), strings.ToLower(v))
 	}
 	return strings.EqualFold(pattern, v)
+}
+
+// globMatch matches v against a pattern in which * stands for any run of
+// characters, / included (assignee:*claude* matches agent/claude-code).
+func globMatch(pattern, v string) bool {
+	parts := strings.Split(pattern, "*")
+	if !strings.HasPrefix(v, parts[0]) {
+		return false
+	}
+	v = v[len(parts[0]):]
+	last := len(parts) - 1
+	for _, p := range parts[1:last] {
+		i := strings.Index(v, p)
+		if i < 0 {
+			return false
+		}
+		v = v[i+len(p):]
+	}
+	return strings.HasSuffix(v, parts[last])
 }
 
 func anyMatch(patterns, vals []string) bool {

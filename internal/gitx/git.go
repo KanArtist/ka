@@ -11,8 +11,10 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // MinVersion is the oldest git ka supports.
@@ -38,6 +40,33 @@ type Repo struct {
 	Dir string
 	// Env is appended to the environment of every invocation.
 	Env []string
+	// InheritGitEnv keeps repository-locating variables (GIT_DIR,
+	// GIT_INDEX_FILE, ...) inherited from the process environment. Only a
+	// merge driver, which git runs inside the repository it is merging,
+	// wants them; everything else locates the repository from Dir.
+	InheritGitEnv bool
+}
+
+// repoEnv lists variables that make git ignore Dir and use another
+// repository, index or object store. Git exports them to hooks, aliases and
+// rebase --exec commands, so a ka run from one would otherwise write to the
+// calling repository.
+var repoEnv = []string{
+	"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_PREFIX",
+	"GIT_NAMESPACE", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+}
+
+// environ returns the process environment without repoEnv.
+func environ() []string {
+	env := os.Environ()
+	out := env[:0:0]
+	for _, kv := range env {
+		k, _, _ := strings.Cut(kv, "=")
+		if !slices.ContainsFunc(repoEnv, func(r string) bool { return strings.EqualFold(r, k) }) {
+			out = append(out, kv)
+		}
+	}
+	return out
 }
 
 // baseEnv keeps git non-interactive and its output parseable.
@@ -60,7 +89,14 @@ func (r *Repo) RunRaw(ctx context.Context, stdin []byte, args ...string) ([]byte
 	}
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = r.Dir
-	cmd.Env = append(append(os.Environ(), baseEnv...), r.Env...)
+	// When ctx ends, git is killed, but a child it started (ssh) can keep
+	// the output pipes open; do not wait for it indefinitely.
+	cmd.WaitDelay = 5 * time.Second
+	env := os.Environ()
+	if !r.InheritGitEnv {
+		env = environ()
+	}
+	cmd.Env = append(append(env, baseEnv...), r.Env...)
 	if stdin != nil {
 		cmd.Stdin = bytes.NewReader(stdin)
 	}
@@ -118,6 +154,22 @@ func (r *Repo) Branch(ctx context.Context) string {
 
 // Upstream returns the remote and remote branch the current branch tracks.
 func (r *Repo) Upstream(ctx context.Context) (remote, branch string) {
+	// One spawn in the usual case: the branch HEAD is on, with its upstream.
+	out, err := r.Run(ctx, "for-each-ref", "--points-at=HEAD",
+		"--format=%(HEAD)%00%(upstream:remotename)%00%(upstream:remoteref)", "refs/heads/")
+	if err == nil {
+		for _, line := range strings.Split(out, "\n") {
+			f := strings.Split(line, "\x00")
+			if len(f) != 3 || f[0] != "*" {
+				continue
+			}
+			if f[1] == "" || f[1] == "." || f[2] == "" {
+				return "", ""
+			}
+			return f[1], strings.TrimPrefix(f[2], "refs/heads/")
+		}
+	}
+	// Detached, or an unborn branch (HEAD does not resolve yet).
 	b := r.Branch(ctx)
 	if b == "" {
 		return "", ""
@@ -152,6 +204,11 @@ func (r *Repo) InProgress(ctx context.Context) string {
 	if err != nil {
 		return ""
 	}
+	return InProgressAt(gd)
+}
+
+// InProgressAt is InProgress for a known absolute .git directory.
+func InProgressAt(gd string) string {
 	for _, p := range []struct{ file, what string }{
 		{"rebase-merge", "rebase"}, {"rebase-apply", "rebase"},
 		{"MERGE_HEAD", "merge"}, {"CHERRY_PICK_HEAD", "cherry-pick"}, {"REVERT_HEAD", "revert"},
@@ -173,9 +230,13 @@ type Commit struct {
 	Trailers map[string]string
 }
 
+// logFormat ends every field with a NUL, which a commit message cannot
+// contain (unlike the ASCII separators, which it can).
+const logFormat = "--format=%H%x00%an <%ae>%x00%aI%x00%B%x00"
+
 // Log returns commits in rev range (oldest first when reverse is true).
 func (r *Repo) Log(ctx context.Context, revRange string, reverse bool, paths ...string) ([]Commit, error) {
-	args := []string{"log", "--format=%H%x1f%an <%ae>%x1f%aI%x1f%B%x1e"}
+	args := []string{"log", logFormat}
 	if reverse {
 		args = append(args, "--reverse")
 	}
@@ -190,10 +251,21 @@ func (r *Repo) Log(ctx context.Context, revRange string, reverse bool, paths ...
 	return parseLog(out), nil
 }
 
+// LogLinear returns the non-merge commits in rev range, parents before
+// children: the order to replay them in. A merge commit's own changes are
+// recomputed by replaying both of its sides.
+func (r *Repo) LogLinear(ctx context.Context, revRange string) ([]Commit, error) {
+	out, err := r.Run(ctx, "log", "--no-merges", "--topo-order", "--reverse", logFormat, revRange, "--")
+	if err != nil {
+		return nil, err
+	}
+	return parseLog(out), nil
+}
+
 // Recent returns up to n commits reachable from HEAD, newest first,
 // optionally only those authored before a time (RFC 3339).
 func (r *Repo) Recent(ctx context.Context, n int, before string, paths ...string) ([]Commit, error) {
-	args := []string{"log", "--no-merges", "-n", strconv.Itoa(n), "--format=%H%x1f%an <%ae>%x1f%aI%x1f%B%x1e"}
+	args := []string{"log", "--no-merges", "-n", strconv.Itoa(n), logFormat}
 	if before != "" {
 		args = append(args, "--before="+before)
 	}
@@ -210,7 +282,7 @@ func (r *Repo) Recent(ctx context.Context, n int, before string, paths ...string
 
 // CommitInfo returns one commit's metadata and message.
 func (r *Repo) CommitInfo(ctx context.Context, rev string) (*Commit, error) {
-	out, err := r.Run(ctx, "log", "-1", "--format=%H%x1f%an <%ae>%x1f%aI%x1f%B%x1e", rev, "--")
+	out, err := r.Run(ctx, "log", "-1", logFormat, rev, "--")
 	if err != nil {
 		return nil, err
 	}
@@ -223,18 +295,15 @@ func (r *Repo) CommitInfo(ctx context.Context, rev string) (*Commit, error) {
 
 func parseLog(out string) []Commit {
 	var cs []Commit
-	for _, rec := range strings.Split(out, "\x1e") {
-		rec = strings.TrimLeft(rec, "\n")
-		if rec == "" {
+	f := strings.Split(out, "\x00")
+	for i := 0; i+3 < len(f); i += 4 {
+		sha := strings.TrimLeft(f[i], "\n")
+		if sha == "" {
 			continue
 		}
-		f := strings.SplitN(rec, "\x1f", 4)
-		if len(f) < 4 {
-			continue
-		}
-		msg := strings.TrimRight(f[3], "\n")
+		msg := strings.TrimRight(f[i+3], "\n")
 		subject, body, _ := strings.Cut(msg, "\n")
-		cs = append(cs, Commit{SHA: f[0], Author: f[1], Date: f[2], Subject: subject,
+		cs = append(cs, Commit{SHA: sha, Author: f[i+1], Date: f[i+2], Subject: subject,
 			Body: strings.TrimLeft(body, "\n"), Trailers: ParseTrailers(msg)})
 	}
 	return cs
@@ -309,5 +378,7 @@ func IsNonFastForward(err error) bool {
 	s := ge.Stderr
 	return strings.Contains(s, "non-fast-forward") || strings.Contains(s, "[rejected]") ||
 		strings.Contains(s, "fetch first") || strings.Contains(s, "cannot lock ref") ||
-		strings.Contains(s, "failed to update ref")
+		strings.Contains(s, "failed to update ref") ||
+		// A concurrent push won the race for the ref (newer git says so this way).
+		strings.Contains(s, "incorrect old value provided")
 }

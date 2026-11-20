@@ -7,6 +7,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -46,6 +47,37 @@ type Store struct {
 	lastPush  time.Time
 	lastErr   string
 	lastErrAt time.Time
+
+	// HEAD moves this process made and already reloaded into the index
+	// (ownFrom to ownTo), so catchUp need not diff and re-parse them.
+	ownMu          sync.Mutex
+	ownFrom, ownTo string
+}
+
+// own records that this process moved HEAD from before to after and has
+// reloaded the changed paths.
+func (s *Store) own(before, after string) {
+	if before == after {
+		return
+	}
+	s.ownMu.Lock()
+	defer s.ownMu.Unlock()
+	if s.ownTo != before || s.ownFrom == "" {
+		s.ownFrom = before
+	}
+	s.ownTo = after
+}
+
+// ownedSince reports whether every HEAD move from prev to cur was this
+// process's own, and starts a new chain at cur.
+func (s *Store) ownedSince(prev, cur string) bool {
+	s.ownMu.Lock()
+	defer s.ownMu.Unlock()
+	if prev == "" || s.ownFrom != prev || s.ownTo != cur {
+		return false
+	}
+	s.ownFrom = cur
+	return true
 }
 
 // note records the outcome of a fetch or push.
@@ -99,6 +131,10 @@ type Result struct {
 	PushError string   `json:"push_error,omitempty"`
 	// PushPending: committed locally; a debounced push follows shortly.
 	PushPending bool `json:"push_pending,omitempty"`
+	// Unpreserved describes local changes that lost during replay and could
+	// not be recorded as a comment (their ticket is gone, say). The commits
+	// are kept under refs/ka/backup/.
+	Unpreserved []string `json:"unpreserved,omitempty"`
 	// Renamed maps IDs that collided with upstream during replay to their new IDs.
 	Renamed map[string]string `json:"renamed,omitempty"`
 }
@@ -106,6 +142,7 @@ type Result struct {
 func (r *Result) absorb(ir *integrateResult) {
 	r.Replayed += ir.Replayed
 	r.Preserved = append(r.Preserved, ir.Preserved...)
+	r.Unpreserved = append(r.Unpreserved, ir.Unpreserved...)
 	for k, v := range ir.IDMap {
 		if r.Renamed == nil {
 			r.Renamed = map[string]string{}
@@ -201,28 +238,122 @@ func (s *Store) upstream(ctx context.Context) (remote, branch string) {
 	return s.git.Upstream(ctx)
 }
 
+// inProgress reports a rebase, merge or cherry-pick left in the clone.
+func (s *Store) inProgress() string { return gitx.InProgressAt(s.gitDir) }
+
+func (s *Store) busyErr(p string) error {
+	return Errf(CodeGitBusy, "finish or abort it (git "+p+" --abort), then retry", "a git %s is in progress in %s", p, s.git.Dir)
+}
+
+// Network timeouts. A stalled connection would otherwise hold the write
+// lock (and the service's write mutex) until TCP gives up.
+var (
+	NetTimeout   = 3 * time.Minute  // one fetch or push
+	CloneTimeout = 30 * time.Minute // a first clone
+)
+
+// net runs a git command that talks to the remote, bounded by NetTimeout.
+func (s *Store) net(ctx context.Context, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, NetTimeout)
+	defer cancel()
+	return s.git.Run(ctx, args...)
+}
+
+func (s *Store) fetch(ctx context.Context, remote, branch string) error {
+	_, err := s.net(ctx, "fetch", "-q", remote, "+refs/heads/"+branch+":refs/remotes/"+remote+"/"+branch)
+	return err
+}
+
 // commitOp writes an operation's changes and commits them with trailers.
 func (s *Store) commitOp(ctx context.Context, o *Op, changes []change, subject, author, date string) (string, error) {
-	var paths []string
+	paths := make([]string, len(changes))
+	for i, c := range changes {
+		paths[i] = s.repoPath(c.Path)
+	}
+	// What is on disk now, to put back if the write or the commit fails: in
+	// an attached checkout that may include hand edits not yet committed,
+	// which a checkout of HEAD would discard.
+	before := make([][]byte, len(changes))
+	for i, c := range changes {
+		before[i], _ = os.ReadFile(filepath.Join(s.Root, filepath.FromSlash(c.Path)))
+	}
+	undo := func() {
+		s.git.Run(context.WithoutCancel(ctx), append([]string{"--literal-pathspecs", "reset", "-q", "--"}, paths...)...)
+		for i, c := range changes {
+			p := filepath.Join(s.Root, filepath.FromSlash(c.Path))
+			if before[i] == nil {
+				os.Remove(p)
+			} else if os.MkdirAll(filepath.Dir(p), 0o755) == nil {
+				os.WriteFile(p, before[i], 0o644)
+			}
+		}
+	}
+	if err := s.writeChanges(changes); err != nil {
+		undo()
+		return "", err
+	}
+	sha, parent, err := s.commit(ctx, subject+"\n\n"+trailers(o), author, date, paths)
+	if err != nil {
+		undo()
+		return "", err
+	}
+	// Every caller reloads the changed paths into the index next.
+	s.own(parent, sha)
+	return sha, nil
+}
+
+// writeChanges writes (or, with nil data, removes) files under the store root.
+func (s *Store) writeChanges(changes []change) error {
 	for _, c := range changes {
 		p := filepath.Join(s.Root, filepath.FromSlash(c.Path))
 		if c.Data == nil {
-			os.Remove(p)
-		} else {
-			if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-				return "", err
+			if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+				return err
 			}
-			if err := os.WriteFile(p, c.Data, 0o644); err != nil {
-				return "", err
-			}
+			continue
 		}
-		paths = append(paths, s.repoPath(c.Path))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(p, c.Data, 0o644); err != nil {
+			return err
+		}
 	}
-	if _, err := s.git.Run(ctx, append([]string{"add", "-A", "--"}, paths...)...); err != nil {
-		return "", err
+	return nil
+}
+
+// stage stages exactly paths (repo-relative files or directories):
+// additions, edits and deletions, nothing else.
+func (s *Store) stage(ctx context.Context, paths []string) error {
+	var present, gone []string
+	for _, p := range paths {
+		if _, err := os.Lstat(filepath.Join(s.git.Dir, filepath.FromSlash(p))); err == nil {
+			present = append(present, p)
+		} else {
+			gone = append(gone, p)
+		}
 	}
-	msg := subject + "\n\n" + trailers(o)
-	args := []string{"commit", "-q", "--no-verify", "-F", "-"}
+	if len(present) > 0 {
+		if _, err := s.git.Run(ctx, append([]string{"--literal-pathspecs", "add", "-A", "--"}, present...)...); err != nil {
+			return err
+		}
+	}
+	if len(gone) > 0 {
+		if _, err := s.git.Run(ctx, append([]string{"--literal-pathspecs", "rm", "-r", "-q", "--cached", "--ignore-unmatch", "--"}, gone...)...); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// commit stages paths and commits only them (--only), so whatever else is
+// staged in an attached checkout stays staged and out of ka's commit. It
+// returns the new HEAD and its parent ("" for a root commit).
+func (s *Store) commit(ctx context.Context, msg, author, date string, paths []string) (sha, parent string, err error) {
+	if err := s.stage(ctx, paths); err != nil {
+		return "", "", err
+	}
+	args := []string{"--literal-pathspecs", "commit", "-q", "--no-verify", "-F", "-"}
 	if author != "" {
 		args = append(args, "--author", author)
 	}
@@ -230,29 +361,134 @@ func (s *Store) commitOp(ctx context.Context, o *Op, changes []change, subject, 
 	if date != "" {
 		g = &gitx.Repo{Dir: s.git.Dir, Env: append(append([]string{}, s.git.Env...), "GIT_AUTHOR_DATE="+date)}
 	}
-	if _, err := g.RunRaw(ctx, []byte(msg), append(args, "--")...); err != nil {
+	if _, err := g.RunRaw(ctx, []byte(msg), append(append(args, "--only", "--"), paths...)...); err != nil {
 		if strings.Contains(err.Error(), "Please tell me who you are") || strings.Contains(err.Error(), "user.email") {
-			return "", Errf(CodeGit, "set an identity: git config --global user.name \"Your Name\" && git config --global user.email you@example.com", "git has no commit identity")
+			return "", "", Errf(CodeGit, "set an identity: git config --global user.name \"Your Name\" && git config --global user.email you@example.com", "git has no commit identity")
 		}
-		return "", err
+		return "", "", err
 	}
-	return s.git.Head(ctx), nil
+	out, err := s.git.Run(ctx, "log", "-1", "--format=%H %P", "HEAD")
+	if err != nil {
+		return "", "", err
+	}
+	f := append(strings.Fields(out), "", "")
+	return f[0], f[1], nil
+}
+
+// rollback returns paths (repo-relative files) in the index and working tree
+// to HEAD after a failed write or commit, so the next operation, which reads
+// tickets from disk, does not see this one as applied.
+func (s *Store) rollback(ctx context.Context, paths []string) {
+	ctx = context.WithoutCancel(ctx)
+	inHead := map[string]bool{}
+	if out, err := s.git.Run(ctx, append([]string{"--literal-pathspecs", "ls-tree", "-r", "-z", "--name-only", "HEAD"}, paths...)...); err == nil {
+		for _, p := range strings.Split(out, "\x00") {
+			inHead[p] = true
+		}
+	}
+	var tracked, fresh []string
+	for _, p := range paths {
+		if inHead[p] {
+			tracked = append(tracked, p)
+		} else {
+			fresh = append(fresh, p)
+		}
+	}
+	if len(tracked) > 0 {
+		s.git.Run(ctx, append([]string{"--literal-pathspecs", "checkout", "-q", "HEAD", "--"}, tracked...)...)
+	}
+	if len(fresh) > 0 {
+		s.git.Run(ctx, append([]string{"--literal-pathspecs", "rm", "-q", "--cached", "--ignore-unmatch", "--"}, fresh...)...)
+		for _, p := range fresh {
+			os.Remove(filepath.Join(s.git.Dir, filepath.FromSlash(p)))
+		}
+	}
 }
 
 func trailers(o *Op) string {
+	return "Ka-Op: " + o.Encode() + "\n" + actorTrailers(o.Actor, o.OnBehalfOf, o.Session, nil)
+}
+
+// actorTrailers is the trailer block every ka commit carries, with extra
+// "Key: value" lines after it.
+func actorTrailers(actor, onBehalfOf, session string, extra []string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Ka-Op: %s\n", o.Encode())
-	if o.Actor != "" {
-		fmt.Fprintf(&b, "Ka-Actor: %s\n", o.Actor)
+	if actor != "" {
+		fmt.Fprintf(&b, "Ka-Actor: %s\n", actor)
 	}
-	if o.OnBehalfOf != "" {
-		fmt.Fprintf(&b, "Ka-On-Behalf-Of: %s\n", o.OnBehalfOf)
+	if onBehalfOf != "" {
+		fmt.Fprintf(&b, "Ka-On-Behalf-Of: %s\n", onBehalfOf)
 	}
-	if o.Session != "" {
-		fmt.Fprintf(&b, "Ka-Session: %s\n", o.Session)
+	if session != "" {
+		fmt.Fprintf(&b, "Ka-Session: %s\n", session)
 	}
 	b.WriteString("Ka-Spec: 1\n")
+	for _, t := range extra {
+		b.WriteString(t + "\n")
+	}
 	return b.String()
+}
+
+// guard refuses to write to a store that is read-only here, needs a newer
+// ka, or has a merge, rebase or cherry-pick in progress: the checks Do runs.
+// Call it with the write lock held, before writing any file.
+func (s *Store) guard() error {
+	if s.ReadOnly {
+		return Errf(CodeReadOnly, "this store is only reachable through extends; add it to your workspace to write to it", "store %s is read-only here", s.Name)
+	}
+	if err := s.checkVersion(); err != nil {
+		return err
+	}
+	if p := s.inProgress(); p != "" {
+		return s.busyErr(p)
+	}
+	return nil
+}
+
+// commitPaths commits a change that is not an operation (a board, ka fix, a
+// project move or rename). The caller holds the write lock (s.lock), has
+// called guard before writing, and has written or removed the files; paths
+// are store-relative files or directories. Only those paths are staged and
+// committed: anything else staged in an attached checkout stays staged and
+// out of the commit, and untracked files elsewhere are never swept in.
+//
+// The message is subject plus the standard trailers for c (Ka-Actor,
+// Ka-On-Behalf-Of, Ka-Session, Ka-Spec) and then extra ("Key: value" lines,
+// such as "Ka-Moved-From: <url>"). It returns the new commit, or "" with no
+// error when the paths have no changes. If the commit fails, the paths are
+// unstaged again; the working tree is left as the caller wrote it.
+//
+// The index is not reloaded and nothing is pushed: callers refresh the
+// index and push as they need.
+func (s *Store) commitPaths(ctx context.Context, c Caller, subject string, extra []string, paths []string) (string, error) {
+	if err := s.guard(); err != nil {
+		return "", err
+	}
+	rp := make([]string, len(paths))
+	for i, p := range paths {
+		switch p = strings.TrimSuffix(p, "/"); {
+		case p != "" && p != ".":
+			rp[i] = s.repoPath(p)
+		case s.sub != "":
+			rp[i] = s.sub
+		default:
+			rp[i] = "."
+		}
+	}
+	if err := s.stage(ctx, rp); err != nil {
+		return "", err
+	}
+	// Nothing to commit for these paths (diff exits 0)?
+	if _, err := s.git.Run(ctx, append([]string{"--literal-pathspecs", "diff", "--cached", "--quiet", "--"}, rp...)...); err == nil {
+		return "", nil
+	}
+	msg := subject + "\n\n" + actorTrailers(c.Actor, c.OnBehalfOf, c.Session, extra)
+	sha, _, err := s.commit(ctx, msg, "", "", rp)
+	if err != nil {
+		s.git.Run(context.WithoutCancel(ctx), append([]string{"--literal-pathspecs", "reset", "-q", "--"}, rp...)...)
+		return "", err
+	}
+	return sha, nil
 }
 
 func opFromCommit(c gitx.Commit) *Op {
@@ -293,14 +529,15 @@ func (s *Store) Do(ctx context.Context, h hooks, o *Op, push bool) (*Result, err
 		return nil, err
 	}
 	defer unlock()
-	if p := s.git.InProgress(ctx); p != "" {
-		return nil, Errf(CodeGitBusy, "finish or abort it (git "+p+" --abort), then retry", "a git %s is in progress in %s", p, s.git.Dir)
+	if p := s.inProgress(); p != "" {
+		return nil, s.busyErr(p)
 	}
 	changes, subject, err := apply(h.env(), o)
 	if err != nil {
 		return nil, err
 	}
-	res := &Result{}
+	remote, branch := s.upstream(ctx)
+	res := &Result{HasRemote: remote != ""}
 	if len(changes) == 0 {
 		return res, nil
 	}
@@ -314,35 +551,47 @@ func (s *Store) Do(ctx context.Context, h hooks, o *Op, push bool) (*Result, err
 		paths[i] = c.Path
 	}
 	h.reloaded(paths)
-	remote, _ := s.upstream(ctx)
-	res.HasRemote = remote != ""
 	if !push || remote == "" {
 		return res, nil
 	}
-	if err := s.pushLocked(ctx, h, res, sha); err != nil {
-		s.note(false, false, err)
-		return res, err
-	}
-	s.note(true, true, nil)
-	return res, nil
+	return res, s.pushLocked(ctx, h, res, sha, remote, branch)
 }
 
 // pushLocked pushes, integrating upstream changes on rejection with bounded,
 // jittered retries (PRD §10.1). mine is the commit of the caller's
-// operation (empty for a plain sync); if its replay fails, the error is returned.
-func (s *Store) pushLocked(ctx context.Context, h hooks, res *Result, mine string) error {
-	remote, branch := s.upstream(ctx)
+// operation (empty for a plain sync); if its replay fails, the error is
+// returned. A push that cannot reach the remote (offline, auth, a failed
+// fetch after a rejection, retries exhausted) is not an error: the commits
+// stay local and res.PushError says why. It records the outcome for the
+// Sync & health view.
+func (s *Store) pushLocked(ctx context.Context, h hooks, res *Result, mine, remote, branch string) (err error) {
 	if remote == "" {
 		return nil
 	}
+	fetched, lostOp := false, false
+	defer func() {
+		switch {
+		case lostOp:
+			// The caller's operation no longer applies: not a network failure.
+			s.note(true, false, nil)
+		case err != nil:
+			s.note(false, false, err)
+		case res.PushError != "":
+			s.note(false, false, fmt.Errorf("%s", res.PushError))
+		default:
+			s.note(fetched, res.Pushed, nil)
+		}
+	}()
 	backoff := 50 * time.Millisecond
 	var lastErr error
 	for attempt := 0; attempt < 8; attempt++ {
-		if s.git.Head(ctx) == s.remoteHead(ctx, remote, branch) && attempt > 0 {
-			res.Pushed = true
-			return nil
+		if attempt > 0 {
+			if s.git.Head(ctx) == s.remoteHead(ctx, remote, branch) {
+				res.Pushed = true
+				return nil
+			}
 		}
-		_, err := s.git.Run(ctx, "push", "-q", remote, "HEAD:refs/heads/"+branch)
+		_, err := s.net(ctx, "push", "-q", remote, "HEAD:refs/heads/"+branch)
 		if err == nil {
 			res.Pushed = true
 			s.git.Run(ctx, "update-ref", "refs/remotes/"+remote+"/"+branch, "HEAD")
@@ -355,11 +604,19 @@ func (s *Store) pushLocked(ctx context.Context, h hooks, res *Result, mine strin
 			return nil
 		}
 		ir, err := s.integrateLocked(ctx, h, remote, branch, mine)
+		if ir != nil && ir.FetchErr != nil {
+			// Rejected, and then the fetch failed: as good as offline. The
+			// commit exists, so this is not the operation's failure.
+			res.PushError = firstLine(AsError(ir.FetchErr).Message)
+			return nil
+		}
+		fetched = fetched || err == nil
 		if ir != nil {
 			res.absorb(ir)
 			if mine != "" {
 				if ir.MineErr != nil {
 					res.Commit = ""
+					lostOp = true
 					return ir.MineErr
 				}
 				res.Commit = ir.MineSHA
@@ -375,8 +632,10 @@ func (s *Store) pushLocked(ctx context.Context, h hooks, res *Result, mine strin
 		if err != nil {
 			return err
 		}
-		s.sleep(backoff + time.Duration(rand.Int64N(int64(backoff))))
-		backoff *= 2
+		if attempt < 7 {
+			s.sleep(backoff + time.Duration(rand.Int64N(int64(backoff))))
+			backoff *= 2
+		}
 	}
 	res.PushError = "push rejected 8 times: " + firstLine(lastErr.Error())
 	return nil
@@ -400,35 +659,49 @@ type integrateResult struct {
 	MineErr   error
 	Moved     bool // HEAD changed to include upstream commits
 	IDMap     map[string]string
+	FetchErr  error // the fetch failed; nothing else was done
+	// Unpreserved describes local changes that lost and could not be
+	// recorded as a comment; the pre-replay branch stays in refs/ka/backup.
+	Unpreserved []string
+	conflicted  bool // a hand edit was cherry-picked with conflicts
 }
+
+// keepBackups is how many refs/ka/backup/* refs a clone keeps.
+const keepBackups = 20
 
 // integrateLocked fetches and brings upstream commits under local ones.
 // Local commits made by ka are replayed as operations; others are
 // cherry-picked with the semantic merge driver, and anything that loses is
-// preserved as a system comment (PRD §10.4).
+// preserved as a system comment (PRD §10.4). A replay is all or nothing: if
+// any step fails, the branch goes back to where it was.
 func (s *Store) integrateLocked(ctx context.Context, h hooks, remote, branch, mine string) (*integrateResult, error) {
-	if _, err := s.git.Run(ctx, "fetch", "-q", remote, "+refs/heads/"+branch+":refs/remotes/"+remote+"/"+branch); err != nil {
-		return nil, Errf(CodeGit, "check the network and credentials, then run ka sync", "fetch failed: %s", firstLine(err.Error()))
+	if err := s.fetch(ctx, remote, branch); err != nil {
+		ferr := Errf(CodeGit, "check the network and credentials, then run ka sync", "fetch failed: %s", firstLine(err.Error()))
+		return &integrateResult{MineSHA: mine, FetchErr: ferr}, ferr
 	}
-	up := "refs/remotes/" + remote + "/" + branch
+	// From here on the work is local. Finish it even if the caller goes
+	// away: a replay stopped halfway would drop local commits.
+	ctx = context.WithoutCancel(ctx)
+	// Use the fetched commit, not the ref, throughout: a concurrent fetch
+	// (another process, or the fetch loop) may move the ref meanwhile.
 	upSHA := s.remoteHead(ctx, remote, branch)
 	head := s.git.Head(ctx)
 	res := &integrateResult{MineSHA: mine}
 	if upSHA == "" || upSHA == head {
 		return res, nil
 	}
-	if err := s.checkUpstreamVersion(ctx, up); err != nil {
+	if err := s.checkUpstreamVersion(ctx, upSHA); err != nil {
 		return nil, err
 	}
 	if head == "" {
-		if _, err := s.git.Run(ctx, "reset", "-q", "--keep", up); err != nil {
+		if _, err := s.git.Run(ctx, "reset", "-q", "--keep", upSHA); err != nil {
 			return nil, err
 		}
 		res.Moved = true
 		h.reloaded(nil)
 		return res, nil
 	}
-	base, _ := s.git.Run(ctx, "merge-base", head, up)
+	base, _ := s.git.Run(ctx, "merge-base", head, upSHA)
 	if base == "" {
 		// No common commit: the remote is a different repository (renamed
 		// or moved, and its old URL now names something else). Replaying
@@ -441,37 +714,55 @@ func (s *Store) integrateLocked(ctx context.Context, h hooks, remote, branch, mi
 	case upSHA: // we are ahead
 		return res, nil
 	case head: // fast-forward
-		before := head
-		if _, err := s.git.Run(ctx, "merge", "-q", "--ff-only", up); err != nil {
+		if _, err := s.git.Run(ctx, "merge", "-q", "--ff-only", upSHA); err != nil {
 			return nil, Errf(CodeGit, "commit or stash local edits to the store, then run ka sync", "fast-forward failed: %s", firstLine(err.Error()))
 		}
 		res.Moved = true
-		s.reloadRange(ctx, h, before, s.git.Head(ctx))
+		after := s.git.Head(ctx)
+		s.reloadRange(ctx, h, head, after)
+		s.own(head, after)
 		return res, nil
 	}
 
-	// Diverged: replay local commits on top of upstream.
-	local, err := s.git.Log(ctx, up+".."+head, true)
+	// Diverged: replay local commits on top of upstream. Merge commits are
+	// linearized: both sides are replayed instead.
+	local, err := s.git.LogLinear(ctx, upSHA+".."+head)
 	if err != nil {
 		return nil, err
 	}
-	s.git.Run(ctx, "update-ref", "refs/ka/backup/"+time.Now().UTC().Format("20060102T150405.000000000Z"), head)
-	if _, err := s.git.Run(ctx, "reset", "-q", "--keep", up); err != nil {
+	backup := "refs/ka/backup/" + time.Now().UTC().Format("20060102T150405.000000000Z")
+	if _, err := s.git.Run(ctx, "update-ref", backup, head); err != nil {
+		return nil, err
+	}
+	if _, err := s.git.Run(ctx, "reset", "-q", "--keep", upSHA); err != nil {
+		s.git.Run(ctx, "update-ref", "-d", backup)
 		return nil, Errf(CodeGit, "commit or stash local edits to the store, then run ka sync", "cannot move to upstream: %s", firstLine(err.Error()))
 	}
 	res.Moved = true
-	s.reloadRange(ctx, h, base, upSHA)
+	s.reloadRange(ctx, h, head, upSHA)
+	s.own(head, upSHA)
+	if err := s.replay(ctx, h, res, local, mine); err != nil {
+		return nil, s.abortReplay(ctx, h, head, backup, err)
+	}
+	if len(res.Preserved) == 0 && len(res.Unpreserved) == 0 && !res.conflicted {
+		// Everything was replayed as it was: the backup holds nothing more.
+		s.git.Run(ctx, "update-ref", "-d", backup)
+	}
+	s.pruneBackups(ctx)
+	return res, nil
+}
+
+// replay re-applies local commits on top of the current HEAD.
+func (s *Store) replay(ctx context.Context, h hooks, res *integrateResult, local []gitx.Commit, mine string) error {
 	idMap := map[string]string{}
 	res.IDMap = idMap
 	var failed []failedOp
 	for _, c := range local {
 		o := opFromCommit(c)
 		if o == nil {
-			pres, err := s.cherryPick(ctx, h, c)
-			if err != nil {
-				return res, err
+			if err := s.cherryPick(ctx, h, c, res); err != nil {
+				return err
 			}
-			res.Preserved = append(res.Preserved, pres...)
 			res.Replayed++
 			continue
 		}
@@ -502,7 +793,7 @@ func (s *Store) integrateLocked(ctx context.Context, h hooks, remote, branch, mi
 		}
 		sha, err := s.commitOp(ctx, o, changes, subject, c.Author, c.Date)
 		if err != nil {
-			return res, err
+			return err
 		}
 		paths := make([]string, len(changes))
 		for i, ch := range changes {
@@ -517,10 +808,54 @@ func (s *Store) integrateLocked(ctx context.Context, h hooks, remote, branch, mi
 	for _, f := range failed {
 		if p := s.preserveFailed(ctx, h, f); p != "" {
 			res.Preserved = append(res.Preserved, p)
+		} else {
+			res.Unpreserved = append(res.Unpreserved, fmt.Sprintf("%s %s by %s (commit %s): %s; the original is kept under refs/ka/backup/",
+				f.op.Op, f.op.ID, orDefault(f.op.Actor, "an unknown actor"), short(f.commit.SHA), firstLine(AsError(f.err).Error())))
 		}
 	}
 	res.Preserved = append(res.Preserved, s.flushPreserved(ctx, h)...)
-	return res, nil
+	return nil
+}
+
+// abortReplay puts the branch back where it was before a replay that
+// failed, so no local commit is lost or published half-replayed.
+func (s *Store) abortReplay(ctx context.Context, h hooks, orig, backup string, cause error) error {
+	cur := s.git.Head(ctx)
+	if _, err := s.git.Run(ctx, "reset", "-q", "--keep", orig); err != nil {
+		h.reloaded(nil)
+		return Errf(CodeGit, "restore the branch by hand: git reset --keep "+backup,
+			"replay failed (%s) and the branch could not be restored: %s", firstLine(AsError(cause).Error()), firstLine(err.Error()))
+	}
+	s.reloadRange(ctx, h, cur, orig)
+	s.own(cur, orig)
+	return cause
+}
+
+// pruneBackups keeps the newest keepBackups refs/ka/backup/* refs.
+func (s *Store) pruneBackups(ctx context.Context) {
+	out, err := s.git.Run(ctx, "for-each-ref", "--sort=-refname", "--format=%(refname)", "refs/ka/backup/")
+	if err != nil {
+		return
+	}
+	refs := splitNonEmpty(out)
+	if len(refs) <= keepBackups {
+		return
+	}
+	var stdin strings.Builder
+	for _, r := range refs[keepBackups:] {
+		stdin.WriteString("delete " + r + "\n")
+	}
+	s.git.RunRaw(ctx, []byte(stdin.String()), "update-ref", "--stdin")
+}
+
+func splitNonEmpty(s string) []string {
+	var out []string
+	for _, l := range strings.Split(s, "\n") {
+		if l != "" {
+			out = append(out, l)
+		}
+	}
+	return out
 }
 
 type failedOp struct {
@@ -622,20 +957,23 @@ func (s *Store) writeSystemComment(ctx context.Context, h hooks, id, body, onBeh
 
 // cherryPick applies a commit that ka did not make (a hand edit). The merge
 // driver resolves ticket.md field by field; anything else that conflicts
-// takes the upstream side and the local version is preserved.
-func (s *Store) cherryPick(ctx context.Context, h hooks, c gitx.Commit) ([]string, error) {
+// takes the upstream side and the local version is preserved (in res).
+// Values the merge driver preserved are flushed by the caller once the whole
+// replay is done.
+func (s *Store) cherryPick(ctx context.Context, h hooks, c gitx.Commit, res *integrateResult) error {
 	before := s.git.Head(ctx)
-	_, err := s.git.Run(ctx, "cherry-pick", "--allow-empty", "--keep-redundant-commits", c.SHA)
-	var preserved []string
-	if err != nil {
-		conflicted, _ := s.git.Run(ctx, "diff", "--name-only", "--diff-filter=U")
+	if _, err := s.git.Run(ctx, "cherry-pick", "--allow-empty", "--keep-redundant-commits", c.SHA); err != nil {
+		files, _ := s.git.Run(ctx, "diff", "--name-only", "--diff-filter=U")
 		s.git.Run(ctx, "cherry-pick", "--abort")
 		if _, err := s.git.Run(ctx, "cherry-pick", "--allow-empty", "--keep-redundant-commits", "-X", "ours", c.SHA); err != nil {
 			s.git.Run(ctx, "cherry-pick", "--abort")
-			return nil, Errf(CodeGit, "resolve by hand: the original is at refs/ka/backup/*", "cannot replay %s: %s", c.SHA[:12], firstLine(err.Error()))
+			return Errf(CodeGit, "resolve by hand, then run ka sync", "cannot replay %s: %s", short(c.SHA), firstLine(err.Error()))
 		}
-		s.reloadRange(ctx, h, before, s.git.Head(ctx))
-		for _, p := range strings.Split(conflicted, "\n") {
+		after := s.git.Head(ctx)
+		s.reloadRange(ctx, h, before, after)
+		s.own(before, after)
+		res.conflicted = true
+		for _, p := range strings.Split(files, "\n") {
 			if p == "" {
 				continue
 			}
@@ -645,15 +983,20 @@ func (s *Store) cherryPick(ctx context.Context, h hooks, c gitx.Commit) ([]strin
 				body := fmt.Sprintf("A local edit to `%s` conflicted with upstream and lost. Upstream was kept; the local version from %s (%s, by %s) is below.\n\n````\n%s\n````\n",
 					sp, c.SHA[:12], c.Subject, c.Author, content)
 				if q := s.writeSystemComment(ctx, h, id, body, ""); q != "" {
-					preserved = append(preserved, q)
+					res.Preserved = append(res.Preserved, q)
+					continue
 				}
 			}
+			// Not a ticket (or its ticket is gone): no comment to put it in.
+			res.Unpreserved = append(res.Unpreserved, fmt.Sprintf("local edit to %s in %s (%s) conflicted and lost to upstream; the original is kept under refs/ka/backup/",
+				sp, short(c.SHA), c.Subject))
 		}
-	} else {
-		s.reloadRange(ctx, h, before, s.git.Head(ctx))
+		return nil
 	}
-	preserved = append(preserved, s.flushPreserved(ctx, h)...)
-	return preserved, nil
+	after := s.git.Head(ctx)
+	s.reloadRange(ctx, h, before, after)
+	s.own(before, after)
+	return nil
 }
 
 // ticketIDFromPath extracts the ticket ID from projects/<key>/tickets/<ID>/...
@@ -683,22 +1026,23 @@ func (s *Store) flushPreserved(ctx context.Context, h hooks) []string {
 		return nil
 	}
 	byTicket := map[string][]Preserved{}
-	var files []string
+	fileIDs := map[string][]string{} // file -> tickets it has values for
 	for _, e := range ents {
 		f := filepath.Join(dir, e.Name())
 		b, err := os.ReadFile(f)
 		if err != nil {
 			continue
 		}
-		files = append(files, f)
 		var ps []Preserved
 		if json.Unmarshal(b, &ps) != nil {
-			continue
+			continue // perhaps still being written; kept for the next flush
 		}
+		fileIDs[f] = []string{}
 		for _, p := range ps {
 			sp, _ := s.storePath(p.Path)
 			if id := ticketIDFromPath(sp); id != "" {
 				byTicket[id] = append(byTicket[id], p)
+				fileIDs[f] = append(fileIDs[f], id)
 			}
 		}
 	}
@@ -708,6 +1052,7 @@ func (s *Store) flushPreserved(ctx context.Context, h hooks) []string {
 	}
 	sort.Strings(ids)
 	var out []string
+	written := map[string]bool{}
 	for _, id := range ids {
 		var b strings.Builder
 		b.WriteString("Concurrent edits conflicted during a merge. The published value was kept; the other value is preserved here.\n\n")
@@ -716,10 +1061,15 @@ func (s *Store) flushPreserved(ctx context.Context, h hooks) []string {
 		}
 		if q := s.writeSystemComment(ctx, h, id, b.String(), ""); q != "" {
 			out = append(out, q)
+			written[id] = true
 		}
 	}
-	for _, f := range files {
-		os.Remove(f)
+	// A file goes once every value in it is in a committed comment; one
+	// whose comment could not be written stays for the next flush.
+	for f, ids := range fileIDs {
+		if !slices.ContainsFunc(ids, func(id string) bool { return !written[id] }) {
+			os.Remove(f)
+		}
 	}
 	return out
 }
@@ -750,6 +1100,8 @@ func (s *Store) sync(ctx context.Context, h hooks, push bool) (*Result, error) {
 	}
 	if s.ReadOnly {
 		_, err := s.integrateReadOnly(ctx, h, remote, branch)
+		// Nothing local to publish: "pushed" means level with upstream.
+		res.Pushed = err == nil && s.git.Head(ctx) == s.remoteHead(ctx, remote, branch)
 		return res, err
 	}
 	unlock, err := s.lock(ctx)
@@ -757,8 +1109,14 @@ func (s *Store) sync(ctx context.Context, h hooks, push bool) (*Result, error) {
 		return nil, err
 	}
 	defer unlock()
-	if p := s.git.InProgress(ctx); p != "" {
-		return nil, Errf(CodeGitBusy, "finish or abort it (git "+p+" --abort), then retry", "a git %s is in progress in %s", p, s.git.Dir)
+	return s.syncLocked(ctx, h, res, remote, branch, push)
+}
+
+// syncLocked is sync for a writable store with a remote, with the write lock
+// held by the caller.
+func (s *Store) syncLocked(ctx context.Context, h hooks, res *Result, remote, branch string, push bool) (*Result, error) {
+	if p := s.inProgress(); p != "" {
+		return nil, s.busyErr(p)
 	}
 	ir, err := s.integrateLocked(ctx, h, remote, branch, "")
 	if err != nil {
@@ -768,20 +1126,11 @@ func (s *Store) sync(ctx context.Context, h hooks, push bool) (*Result, error) {
 	s.note(true, false, nil)
 	res.absorb(ir)
 	res.Preserved = append(res.Preserved, s.flushPreserved(ctx, h)...)
-	if !push {
-		res.Pushed = s.git.Head(ctx) == s.remoteHead(ctx, remote, branch)
+	if level := s.git.Head(ctx) == s.remoteHead(ctx, remote, branch); !push || level {
+		res.Pushed = level
 		return res, nil
 	}
-	if s.git.Head(ctx) != s.remoteHead(ctx, remote, branch) {
-		if err := s.pushLocked(ctx, h, res, ""); err != nil {
-			s.note(false, false, err)
-			return res, err
-		}
-		s.note(false, true, nil)
-	} else {
-		res.Pushed = true
-	}
-	return res, nil
+	return res, s.pushLocked(ctx, h, res, "", remote, branch)
 }
 
 // integrateReadOnly fast-forwards a store this workspace only reads.
@@ -790,18 +1139,22 @@ func (s *Store) integrateReadOnly(ctx context.Context, h hooks, remote, branch s
 		return false, nil // never move someone's attached checkout we do not write to
 	}
 	before := s.git.Head(ctx)
-	if _, err := s.git.Run(ctx, "fetch", "-q", remote, "+refs/heads/"+branch+":refs/remotes/"+remote+"/"+branch); err != nil {
+	if err := s.fetch(ctx, remote, branch); err != nil {
+		s.note(false, false, Errf(CodeGit, "check the network and credentials", "fetch failed: %s", firstLine(err.Error())))
 		return false, nil
 	}
-	if err := s.checkUpstreamVersion(ctx, "refs/remotes/"+remote+"/"+branch); err != nil {
+	s.note(true, false, nil)
+	up := s.remoteHead(ctx, remote, branch)
+	if err := s.checkUpstreamVersion(ctx, up); err != nil {
 		return false, err
 	}
-	if _, err := s.git.Run(ctx, "merge", "-q", "--ff-only", "refs/remotes/"+remote+"/"+branch); err != nil {
+	if _, err := s.git.Run(ctx, "merge", "-q", "--ff-only", up); err != nil {
 		return false, nil
 	}
 	after := s.git.Head(ctx)
 	if after != before {
 		s.reloadRange(ctx, h, before, after)
+		s.own(before, after)
 	}
 	return after != before, nil
 }
@@ -809,7 +1162,7 @@ func (s *Store) integrateReadOnly(ctx context.Context, h hooks, remote, branch s
 // State reports sync status without touching the network.
 func (s *Store) State(ctx context.Context) SyncState {
 	st := SyncState{Store: s.Name, Attached: !s.Managed, Head: short(s.git.Head(ctx))}
-	if p := s.git.InProgress(ctx); p != "" {
+	if p := s.inProgress(); p != "" {
 		st.State, st.Detail = "busy", "git "+p+" in progress"
 		return st
 	}

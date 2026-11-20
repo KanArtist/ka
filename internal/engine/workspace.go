@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gofrs/flock"
+
 	"github.com/KanArtist/ka/internal/gitx"
 	"github.com/KanArtist/ka/pkg/kaspec"
 )
@@ -475,9 +477,17 @@ func shortHash(s string) string {
 	return hex.EncodeToString(h[:])[:8]
 }
 
+// cloneNameRe is what a store name may look like in a clone path (store
+// names are lower case: kaspec's storeNameRe), so a name from a workspace
+// file cannot climb out of the stores directory.
+var cloneNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
+
 // ClonePath is where ka keeps the managed clone of a store URL.
 func ClonePath(sp StoreSpec) string {
 	name := sp.Name
+	if name != "" && !cloneNameRe.MatchString(name) {
+		name = strings.Trim(nonName.ReplaceAllString(strings.ToLower(name), "-"), "-")
+	}
 	if name == "" {
 		base := strings.TrimSuffix(filepath.Base(strings.TrimSuffix(sp.URL, "/")), ".git")
 		if i := strings.LastIndexAny(base, ":/"); i >= 0 {
@@ -485,10 +495,17 @@ func ClonePath(sp StoreSpec) string {
 		}
 		name = strings.Trim(nonName.ReplaceAllString(strings.ToLower(base), "-"), "-")
 	}
+	if name == "" {
+		name = "store"
+	}
 	return filepath.Join(DataDir(), "stores", name+"-"+shortHash(sp.URL+"#"+sp.Branch))
 }
 
 // ensureClone returns the managed clone for a store URL, cloning it on first use.
+// Concurrent first uses (several agents each starting ka mcp) take turns on
+// a lock; the clone is made in a temporary directory and renamed into place,
+// so a clone is either complete or absent, and ka only ever deletes the
+// temporary directories it made.
 func ensureClone(ctx context.Context, sp StoreSpec, offline bool) (string, error) {
 	dir := ClonePath(sp)
 	if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
@@ -497,18 +514,52 @@ func ensureClone(ctx context.Context, sp StoreSpec, offline bool) (string, error
 	if offline {
 		return "", Errf("store_unavailable", "go online once so ka can clone it, or map it to a local checkout with --map", "no local clone of %s", sp.URL)
 	}
+	// A URL or branch read from a workspace file must not become an option.
+	if strings.HasPrefix(sp.URL, "-") || strings.HasPrefix(sp.Branch, "-") {
+		return "", Errf(CodeInvalid, "check the store's url and branch in the workspace file", "refusing to clone %q (branch %q): it starts with -", sp.URL, sp.Branch)
+	}
 	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
+		return "", err
+	}
+	fl := flock.New(dir + ".lock")
+	lctx, cancel := context.WithTimeout(ctx, CloneTimeout)
+	defer cancel()
+	if ok, err := fl.TryLockContext(lctx, 100*time.Millisecond); !ok || err != nil {
+		return "", Errf(CodeGitBusy, "another ka process is cloning this store; retry", "could not lock %s: %v", dir+".lock", err)
+	}
+	defer fl.Unlock()
+	if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
+		return dir, nil // another process cloned it while we waited
+	}
+	// Leftovers of clones that were killed: ours by name, and nobody else's
+	// clone is running while we hold the lock.
+	if old, _ := filepath.Glob(dir + ".tmp-*"); len(old) > 0 {
+		for _, o := range old {
+			os.RemoveAll(o)
+		}
+	}
+	tmp, err := os.MkdirTemp(filepath.Dir(dir), filepath.Base(dir)+".tmp-")
+	if err != nil {
 		return "", err
 	}
 	args := []string{"clone", "-q"}
 	if sp.Branch != "" {
 		args = append(args, "--branch", sp.Branch)
 	}
-	args = append(args, sp.URL, dir)
+	args = append(args, "--", sp.URL, tmp)
 	g := &gitx.Repo{Dir: filepath.Dir(dir)}
-	if _, err := g.Run(ctx, args...); err != nil {
-		os.RemoveAll(dir)
+	cctx, ccancel := context.WithTimeout(ctx, CloneTimeout)
+	defer ccancel()
+	if _, err := g.Run(cctx, args...); err != nil {
+		os.RemoveAll(tmp)
 		return "", Errf("store_unavailable", "check the URL and your git credentials", "cannot clone %s: %s", sp.URL, firstLine(err.Error()))
+	}
+	// An empty directory in the way goes (os.Remove never removes a
+	// non-empty one); Windows cannot rename over any directory.
+	os.Remove(dir)
+	if err := os.Rename(tmp, dir); err != nil {
+		os.RemoveAll(tmp)
+		return "", Errf("store_unavailable", "move "+dir+" out of the way, then retry", "cannot put the clone of %s in place: %v", sp.URL, err)
 	}
 	return dir, nil
 }

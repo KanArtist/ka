@@ -83,7 +83,7 @@ func (s *Service) detectHuman(ctx context.Context) string {
 	if a := s.WS.Actor; a != "" && kaspec.HumanRe.MatchString(a) {
 		return a
 	}
-	if a := os.Getenv("KA_HUMAN"); a != "" {
+	if a := os.Getenv("KA_HUMAN"); a != "" && kaspec.HumanRe.MatchString(a) {
 		return a
 	}
 	var email, name string
@@ -101,26 +101,37 @@ func (s *Service) detectHuman(ctx context.Context) string {
 			break
 		}
 	}
-	s.ix.mu.RLock()
-	defer s.ix.mu.RUnlock()
-	for _, h := range sortedKeys(s.ix.actors.Humans) {
-		hu := s.ix.actors.Humans[h]
-		for _, e := range hu.Emails {
-			if strings.EqualFold(e, email) {
-				return h
-			}
-		}
-		for _, a := range hu.Aliases {
-			if a == name {
-				return h
-			}
-		}
+	if h, ok := s.lookupActor(email); ok && email != "" {
+		return h
 	}
-	local, _, _ := strings.Cut(email, "@")
-	if h := strings.Trim(actorClean.ReplaceAllString(strings.ToLower(local), "-"), "-._"); h != "" && kaspec.HumanRe.MatchString(h) {
+	if h, ok := s.lookupActor(name); ok && name != "" {
+		return h
+	}
+	if h := handleFromEmail(email); h != "" {
 		return h
 	}
 	return "unknown"
+}
+
+// lookupActor maps a handle, email or alias to a handle through the actor
+// registry, with one case rule (actorKey).
+func (s *Service) lookupActor(v string) (string, bool) {
+	s.ix.mu.RLock()
+	defer s.ix.mu.RUnlock()
+	h, ok := s.ix.actorBy[actorKey(v)]
+	return h, ok
+}
+
+// handleFromEmail derives a handle from an email's local part ("" if none).
+func handleFromEmail(email string) string {
+	local, _, ok := strings.Cut(email, "@")
+	if !ok {
+		return ""
+	}
+	if h := strings.Trim(actorClean.ReplaceAllString(strings.ToLower(local), "-"), "-._"); h != "" && kaspec.HumanRe.MatchString(h) {
+		return h
+	}
+	return ""
 }
 
 // Human returns the detected principal.
@@ -153,28 +164,11 @@ func (s *Service) CallerAs(principal, actor, session string) Caller {
 // registry; anything else is returned as given.
 func (s *Service) ActorFor(nameOrEmail string) string {
 	v := strings.TrimSpace(nameOrEmail)
-	s.ix.mu.RLock()
-	defer s.ix.mu.RUnlock()
-	if _, ok := s.ix.actors.Humans[v]; ok {
-		return v
+	if h, ok := s.lookupActor(v); ok {
+		return h
 	}
-	for _, h := range sortedKeys(s.ix.actors.Humans) {
-		hu := s.ix.actors.Humans[h]
-		for _, e := range hu.Emails {
-			if strings.EqualFold(e, v) {
-				return h
-			}
-		}
-		for _, a := range hu.Aliases {
-			if strings.EqualFold(a, v) {
-				return h
-			}
-		}
-	}
-	if local, _, ok := strings.Cut(v, "@"); ok {
-		if h := strings.Trim(actorClean.ReplaceAllString(strings.ToLower(local), "-"), "-._"); h != "" && kaspec.HumanRe.MatchString(h) {
-			return h
-		}
+	if h := handleFromEmail(v); h != "" {
+		return h
 	}
 	return v
 }
@@ -516,8 +510,13 @@ func (s *Service) hooksBy(st *Store, actor string) hooks {
 func (s *Service) do(ctx context.Context, st *Store, o *Op, push bool) (res *Result, err error) {
 	start := time.Now()
 	defer func() { s.ops.record(o.Op, err, time.Since(start)) }()
-	deb := push && s.debounced(st)
-	res, err = st.Do(ctx, s.hooksBy(st, o.Actor), o, push && !deb && !s.NoPush && st.PushMode != "manual")
+	deb := push && s.debounced(st) && o.Op != "claim"
+	pushNow := push && !deb && s.mayPush(st)
+	if o.Op == "claim" {
+		// Claims always push synchronously (PRD §10.1), even in manual mode.
+		pushNow = push && !s.NoPush
+	}
+	res, err = st.Do(ctx, s.hooksBy(st, o.Actor), o, pushNow)
 	if err == nil && deb && res.HasRemote && res.Commit != "" {
 		res.PushPending = true
 		s.schedulePush(st)
@@ -646,25 +645,25 @@ func (s *Service) resolveProject(key string) (*ProjectInfo, error) {
 	return pi, nil
 }
 
-func (s *Service) newID(pi *ProjectInfo) string {
-	n := pi.Cfg.IDSuffixLength
-	if n < 5 {
-		n = 5
-	}
-	for {
+// newID picks a free random ID in a project. The suffix length comes from
+// id_suffix_length, clamped to the 5 to 8 characters IDs may have.
+func (s *Service) newID(pi *ProjectInfo) (string, error) {
+	n := min(max(pi.Cfg.IDSuffixLength, 5), 8)
+	for range 1000 {
 		id := kaspec.NewID(pi.Prefix, n)
-		_, sfx, _ := kaspec.ParseID(id)
-		if kaspec.LowEntropy(sfx) {
+		_, sfx, ok := kaspec.ParseID(id)
+		if !ok || kaspec.LowEntropy(sfx) {
 			continue
 		}
 		if _, taken := s.ix.tickets[id]; taken {
 			continue
 		}
-		if _, err := os.Stat(filepath.Join(pi.Store.Root, filepath.FromSlash(pi.Dir), "tickets", id)); err == nil {
+		if _, err := os.Lstat(filepath.Join(pi.Store.Root, filepath.FromSlash(pi.Dir), "tickets", id)); err == nil {
 			continue
 		}
-		return id
+		return id, nil
 	}
+	return "", Errf(CodeInvalid, "check id_suffix_length and prefix in the project's config (ka check)", "could not find a free ID in project %s", pi.Key)
 }
 
 func composeBody(in CreateIn) string {
@@ -765,10 +764,13 @@ func newSlug(cfg *kaspec.Config, given, title string) (string, error) {
 	return "", nil
 }
 
-func normalizeIDs(l []string) []string {
+// canonIDs normalizes ticket references for a relation field: upper case,
+// no slug, a former project prefix replaced by the current one. The caller
+// holds s.ix.mu.
+func (s *Service) canonIDs(l []string) []string {
 	out := make([]string, 0, len(l))
 	for _, x := range l {
-		if x = kaspec.RefID(x); x != "" {
+		if x = s.ix.canon(x); x != "" {
 			out = append(out, x)
 		}
 	}
@@ -814,8 +816,10 @@ func (s *Service) Create(ctx context.Context, c Caller, ins []CreateIn) (*Create
 			out.Local = out.Local && !res.HasRemote
 			out.PushPending = out.PushPending || res.PushPending
 			for i := range out.Created {
-				if n, ok := res.Renamed[out.Created[i].ID]; ok {
-					out.Created[i].ID = n
+				cr := &out.Created[i]
+				if n, ok := res.Renamed[cr.ID]; ok {
+					cr.Ref = n + strings.TrimPrefix(cr.Ref, cr.ID)
+					cr.ID = n
 				}
 			}
 		}
@@ -837,7 +841,7 @@ func withIndex(err error, i, n int) error {
 		return err
 	}
 	e := *AsError(err)
-	e.Message = fmt.Sprintf("ticket %d: %s", i, e.Message)
+	e.Message = fmt.Sprintf("ticket %d: %s", i+1, e.Message)
 	return &e
 }
 
@@ -879,8 +883,8 @@ func (s *Service) createOp(c Caller, pi *ProjectInfo, in CreateIn) (*Op, error) 
 	now := s.now()
 	t := &kaspec.Ticket{
 		Title: strings.TrimSpace(in.Title), Slug: slug, Status: status, Priority: strings.ToUpper(in.Priority), Kind: in.Kind,
-		Labels: in.Labels, Assignee: in.Assignee, Owner: owner, Parent: kaspec.RefID(in.Parent),
-		BlockedBy: normalizeIDs(in.BlockedBy), Related: normalizeIDs(in.Related), Links: in.Links,
+		Labels: in.Labels, Assignee: in.Assignee, Owner: owner, Parent: s.ix.canon(in.Parent),
+		BlockedBy: s.canonIDs(in.BlockedBy), Related: s.canonIDs(in.Related), Links: in.Links,
 		Fields: fields, Created: now, CreatedBy: c.Actor, Updated: now, Body: composeBody(in),
 	}
 	for _, a := range in.Acceptance {
@@ -888,13 +892,16 @@ func (s *Service) createOp(c Caller, pi *ProjectInfo, in CreateIn) (*Op, error) 
 			t.Acceptance = append(t.Acceptance, kaspec.AcceptanceItem{Text: a})
 		}
 	}
-	id := s.newID(pi)
+	id, err := s.newID(pi)
+	if err != nil {
+		return nil, err
+	}
 	return stamp(&Op{Op: "create", ID: id, New: t}, c, now), nil
 }
 
 // pushStore publishes a store's local commits (or schedules a debounced push).
 func (s *Service) pushStore(ctx context.Context, st *Store) (*Result, error) {
-	if s.NoPush || st.PushMode == "manual" || s.debounced(st) {
+	if !s.mayPush(st) || s.debounced(st) {
 		remote, _ := st.upstream(ctx)
 		res := &Result{HasRemote: remote != ""}
 		if res.HasRemote && s.debounced(st) {
@@ -923,13 +930,16 @@ func (s *Service) Update(ctx context.Context, c Caller, ins []UpdateIn) ([]*Writ
 	defer s.writeMu.Unlock()
 	s.ix.catchUp()
 	var outs []*WriteOut
+	var outStore []*Store // the store of each result
 	touched := map[*Store]bool{}
 	var firstErr error
 	for i, in := range ins {
 		st, pi, err := s.storeOf(&in.ID)
 		var o *Op
 		if err == nil {
+			s.ix.mu.RLock()
 			o, err = s.updateOp(c, pi, in)
+			s.ix.mu.RUnlock()
 		}
 		if err == nil {
 			var res *Result
@@ -937,6 +947,7 @@ func (s *Service) Update(ctx context.Context, c Caller, ins []UpdateIn) ([]*Writ
 			if err == nil {
 				touched[st] = true
 				outs = append(outs, s.writeOut(o.ID, res))
+				outStore = append(outStore, st)
 			}
 		}
 		if err != nil {
@@ -949,8 +960,11 @@ func (s *Service) Update(ctx context.Context, c Caller, ins []UpdateIn) ([]*Writ
 		if err != nil && firstErr == nil {
 			firstErr = err
 		}
-		for _, w := range outs {
-			if res != nil {
+		if res == nil {
+			continue
+		}
+		for i, w := range outs {
+			if outStore[i] == st {
 				w.Pushed, w.Local, w.PushError, w.PushPending = res.Pushed, !res.HasRemote, res.PushError, res.PushPending
 			}
 		}
@@ -991,7 +1005,7 @@ func (s *Service) updateOp(c Caller, pi *ProjectInfo, in UpdateIn) (*Op, error) 
 		case "priority":
 			str = strings.ToUpper(str)
 		case "parent", "duplicate_of":
-			str = kaspec.RefID(str)
+			str = s.ix.canon(str)
 		case "slug":
 			n, err := normSlug(str)
 			if err != nil {
@@ -1004,7 +1018,7 @@ func (s *Service) updateOp(c Caller, pi *ProjectInfo, in UpdateIn) (*Op, error) 
 	for _, m := range []map[string][]string{o.Add, o.Remove} {
 		for k, vs := range m {
 			if k == "blocked_by" || k == "related" {
-				m[k] = normalizeIDs(vs)
+				m[k] = s.canonIDs(vs)
 			}
 		}
 	}
@@ -1068,16 +1082,16 @@ func (s *Service) claimLocked(ctx context.Context, c Caller, id string, steal bo
 		return nil, err
 	}
 	s.ix.mu.RLock()
-	cur := ""
+	cur, takeover := "", ""
 	if r, ok := s.ix.tickets[s.ix.canon(id)]; ok {
 		cur = r.T.Status
+		if cl := r.T.Claim; cl != nil && cl.By == c.Actor && cl.Session != c.Session {
+			takeover = cl.Session // the caller's own claim from an earlier session
+		}
 	}
 	s.ix.mu.RUnlock()
-	o := stamp(&Op{Op: "claim", ID: kaspec.RefID(id), Steal: steal, Status: startStatus(pi.Cfg, cur)}, c, s.now())
-	// Claims always push synchronously (PRD §10.1), even in manual mode.
-	start := time.Now()
-	res, err := st.Do(ctx, s.hooks(st), o, !s.NoPush)
-	s.ops.record(o.Op, err, time.Since(start))
+	o := stamp(&Op{Op: "claim", ID: kaspec.RefID(id), Steal: steal, Status: startStatus(pi.Cfg, cur), Takeover: takeover}, c, s.now())
+	res, err := s.do(ctx, st, o, true)
 	if err != nil {
 		return nil, err
 	}
@@ -1105,8 +1119,10 @@ func (s *Service) Release(ctx context.Context, c Caller, id, status string, forc
 			status = unstartedStatus(pi.Cfg)
 		}
 		s.ix.mu.RUnlock()
-	} else if _, ok := pi.Cfg.StatusByName(status); !ok {
+	} else if stt, ok := pi.Cfg.StatusByName(status); !ok {
 		return nil, unknownStatus(pi.Cfg, status)
+	} else if closedCategory(stt.Category) {
+		return nil, releaseCloses(kaspec.RefID(id), status)
 	}
 	o := stamp(&Op{Op: "release", ID: kaspec.RefID(id), Status: status, Steal: force}, c, s.now())
 	res, err := s.do(ctx, st, o, true)
@@ -1369,11 +1385,17 @@ func (s *Service) waitAnswer(ctx context.Context, st *Store, id, question string
 			return nil, ctx.Err()
 		case <-time.After(min(s.PollStep, time.Until(deadline)+time.Millisecond)):
 		}
-		s.writeMu.Lock()
-		if remote, _ := st.upstream(ctx); remote != "" && !s.NoPush {
-			st.Sync(ctx, s.hooks(st))
+		// Only answers are needed: fetch without the write locks, and
+		// integrate only when something arrived. Never push here.
+		if remote, branch := st.upstream(ctx); remote != "" && !s.NoPush && !st.fetchLevel(ctx, remote, branch) {
+			s.writeMu.Lock()
+			// A failure is recorded for the Sync & health view; the
+			// next poll tries again.
+			if res, err := st.FetchOnly(ctx, s.hooks(st)); err == nil {
+				s.syncEvents(st, res)
+			}
+			s.writeMu.Unlock()
 		}
-		s.writeMu.Unlock()
 		// Answers may also arrive through another local process.
 		s.ix.mu.RLock()
 		dir := ""
@@ -1411,13 +1433,26 @@ func (s *Service) Answer(ctx context.Context, c Caller, in AnswerIn) (*WriteOut,
 	if err == nil {
 		open := openQuestions(r)
 		if in.Question != "" {
-			for _, ce := range r.Comments {
-				if ce.Name == in.Question || strings.HasPrefix(ce.Name, in.Question) {
+			// An open question, by its file name or a prefix of it that
+			// names exactly one.
+			var prefixed []*kaspec.CommentEntry
+			for _, ce := range open {
+				if ce.Name == in.Question {
 					q = ce
+					break
+				}
+				if strings.HasPrefix(ce.Name, in.Question) {
+					prefixed = append(prefixed, ce)
 				}
 			}
-			if q == nil {
-				err = Errf(CodeNoQuestion, "", "%s has no comment %s", r.ID, in.Question)
+			switch {
+			case q != nil:
+			case len(prefixed) == 1:
+				q = prefixed[0]
+			case len(prefixed) > 1:
+				err = Errf(CodeNoQuestion, "give more of the question's file name", "%q matches %d open questions on %s", in.Question, len(prefixed), r.ID)
+			default:
+				err = Errf(CodeNoQuestion, "ka_get lists the open questions", "%s has no open question %s", r.ID, in.Question)
 			}
 		} else if len(open) > 0 {
 			q = open[len(open)-1]
@@ -1438,8 +1473,16 @@ func (s *Service) Answer(ctx context.Context, c Caller, in AnswerIn) (*WriteOut,
 	} else {
 		cm.Type = "answer"
 		if in.Choice != nil {
-			if q.Comment == nil || *in.Choice < 0 || *in.Choice >= len(q.Comment.Options) {
-				return nil, Errf(CodeInvalid, fmt.Sprintf("choose 0 to %d", max(0, len(q.Comment.Options)-1)), "choice %d is not an option of %s", *in.Choice, q.Name)
+			n := 0
+			if q.Comment != nil {
+				n = len(q.Comment.Options)
+			}
+			if *in.Choice < 0 || *in.Choice >= n {
+				fix := fmt.Sprintf("choose 0 to %d", max(0, n-1))
+				if n == 0 {
+					fix = "the question has no options; answer with text"
+				}
+				return nil, Errf(CodeInvalid, fix, "choice %d is not an option of %s", *in.Choice, q.Name)
 			}
 			ch := int64(*in.Choice)
 			cm.Choice = &ch
@@ -1509,6 +1552,13 @@ func (s *Service) Inbox(c Caller, since string) *InboxOut {
 		}
 	}
 	return out
+}
+
+// releaseCloses refuses a release into a closed status, which would close
+// the ticket without the resolution summary closing requires.
+func releaseCloses(id, status string) error {
+	return Errf(CodeResolutionRequired, "release without a status, then close it with ka_transition and a summary",
+		"release cannot move %s to %s: closing needs a resolution summary", id, status)
 }
 
 func parseTS(s string) (time.Time, error) { return time.Parse("2006-01-02T15:04:05Z", s) }

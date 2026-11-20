@@ -236,7 +236,14 @@ func (s *Service) FetchLoop(ctx context.Context) {
 				return
 			}
 			next[st] = time.Now().Add(st.fetchEvery())
-			if remote, _ := st.upstream(ctx); remote == "" {
+			remote, branch := st.upstream(ctx)
+			if remote == "" {
+				continue
+			}
+			// Most ticks find nothing new: fetch without the write locks
+			// and take them only when there is something to integrate or push.
+			if st.fetchLevel(ctx, remote, branch) {
+				s.syncEvents(st, &Result{HasRemote: true, Pushed: true})
 				continue
 			}
 			s.writeMu.Lock()
@@ -261,6 +268,26 @@ func (s *Service) debouncePending(st *Store) bool {
 	s.deb.mu.Lock()
 	defer s.deb.mu.Unlock()
 	return s.deb.pending[st] != nil || s.deb.running[st] > 0
+}
+
+// fetchLevel fetches without the write locks and reports whether the clone
+// is then level with upstream, with nothing to integrate or push. A fetch
+// moves only the remote-tracking ref, which integration reads once, so it is
+// safe beside a locked write. On any doubt it reports false, and the caller
+// runs the locked sync, which fetches again and reports errors.
+func (st *Store) fetchLevel(ctx context.Context, remote, branch string) bool {
+	if st.ReadOnly && !st.Managed {
+		return false
+	}
+	if st.fetch(ctx, remote, branch) != nil {
+		return false
+	}
+	head := st.git.Head(ctx)
+	if head == "" || head != st.remoteHead(ctx, remote, branch) {
+		return false
+	}
+	st.note(true, false, nil)
+	return true
 }
 
 func (st *Store) fetchEvery() time.Duration {

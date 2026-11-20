@@ -47,7 +47,7 @@ func (s *Service) Next(ctx context.Context, c Caller, in NextIn) (*NextOut, erro
 	tried := map[string]bool{}
 	for attempt := 0; attempt < 8; attempt++ {
 		s.ix.catchUp()
-		cands := s.candidates(c, query, tried)
+		cands := s.candidates(c, query, tried, in.Peek)
 		if len(cands) == 0 {
 			if attempt == 0 {
 				return &NextOut{}, Errf(CodeNoCandidates, "nothing is ready: widen the filters, check ka_search is:blocked, or file work with ka_create", "no ready, unclaimed, unblocked ticket matches")
@@ -55,7 +55,7 @@ func (s *Service) Next(ctx context.Context, c Caller, in NextIn) (*NextOut, erro
 			return &NextOut{}, Errf(CodeNoCandidates, "every candidate was claimed concurrently; retry shortly", "no ticket could be claimed")
 		}
 		r := cands[0]
-		if in.Peek || r.Store.ReadOnly {
+		if in.Peek {
 			s.ix.mu.RLock()
 			out := &NextOut{Ticket: s.detail(r, nil), Remaining: len(cands) - 1}
 			s.ix.mu.RUnlock()
@@ -78,13 +78,15 @@ func (s *Service) Next(ctx context.Context, c Caller, in NextIn) (*NextOut, erro
 	return nil, Errf(CodeNoCandidates, "retry shortly", "could not claim a ticket after 8 attempts")
 }
 
-func (s *Service) candidates(c Caller, q *Query, skip map[string]bool) []*Rec {
+// candidates lists the ready tickets for ka_next, best first. Tickets in
+// read-only stores cannot be claimed, so only a peek includes them.
+func (s *Service) candidates(c Caller, q *Query, skip map[string]bool, peek bool) []*Rec {
 	s.ix.mu.RLock()
 	defer s.ix.mu.RUnlock()
 	v := s.view()
 	var out []*Rec
 	for _, r := range s.ix.tickets {
-		if skip[r.ID] || r.Invalid || r.Project.File.Archived || r.T.MovedTo != "" {
+		if skip[r.ID] || r.Invalid || r.Project.File.Archived || r.T.MovedTo != "" || (r.Store.ReadOnly && !peek) {
 			continue
 		}
 		if category(r.Project.Cfg, r.T.Status) != "unstarted" || r.T.Claim != nil || v.isBlocked(r) {
@@ -189,11 +191,14 @@ func (s *Service) Schema(c Caller, project string) (*SchemaOut, error) {
 
 // SyncOut is ka_sync's output.
 type SyncOut struct {
-	Stores    []SyncState       `json:"stores"`
-	Preserved []string          `json:"preserved,omitempty"` // written during this sync
-	Conflicts []InboxItem       `json:"conflicts,omitempty"` // recent preserved-conflict comments
-	Errors    []*Error          `json:"errors,omitempty"`
-	Renamed   map[string]string `json:"renamed,omitempty"`
+	Stores    []SyncState `json:"stores"`
+	Preserved []string    `json:"preserved,omitempty"` // written during this sync
+	// Unpreserved lists local changes that lost during this sync and could
+	// not be recorded as a comment; the commits stay under refs/ka/backup/.
+	Unpreserved []string          `json:"unpreserved,omitempty"`
+	Conflicts   []InboxItem       `json:"conflicts,omitempty"` // recent preserved-conflict comments
+	Errors      []*Error          `json:"errors,omitempty"`
+	Renamed     map[string]string `json:"renamed,omitempty"`
 }
 
 // Sync syncs every store (when force is set) and reports state.
@@ -204,12 +209,13 @@ func (s *Service) Sync(ctx context.Context, force bool) *SyncOut {
 		for _, st := range s.WS.Stores {
 			res, err := st.Sync(ctx, s.hooks(st))
 			if err != nil {
-				e := AsError(err)
+				e := *AsError(err)
 				e.Message = st.Name + ": " + e.Message
-				out.Errors = append(out.Errors, e)
+				out.Errors = append(out.Errors, &e)
 			}
 			if res != nil {
 				out.Preserved = append(out.Preserved, res.Preserved...)
+				out.Unpreserved = append(out.Unpreserved, res.Unpreserved...)
 				for k, v := range res.Renamed {
 					if out.Renamed == nil {
 						out.Renamed = map[string]string{}
@@ -224,8 +230,12 @@ func (s *Service) Sync(ctx context.Context, force bool) *SyncOut {
 		out.Stores = append(out.Stores, st.State(ctx))
 	}
 	s.syncStateEvents(out.Stores)
-	if len(out.Preserved) > 0 {
-		s.publish(Event{Type: EvConflictPreserved, At: s.now(), Data: map[string]any{"preserved": out.Preserved}})
+	if len(out.Preserved) > 0 || len(out.Unpreserved) > 0 {
+		data := map[string]any{"preserved": append([]string{}, out.Preserved...)}
+		if len(out.Unpreserved) > 0 {
+			data["unpreserved"] = out.Unpreserved
+		}
+		s.publish(Event{Type: EvConflictPreserved, At: s.now(), Data: data})
 	}
 	week := s.Now().Add(-7 * 24 * time.Hour).UTC().Format("2006-01-02T15:04:05Z")
 	s.ix.mu.RLock()
@@ -337,6 +347,7 @@ func (s *Service) TicketPath(id string) (string, *Store, error) {
 func (s *Service) ReplaceTicket(ctx context.Context, c Caller, id string, data []byte, ifMatch string) (*WriteOut, error) {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
+	s.ix.catchUp()
 	st, pi, err := s.storeOf(&id)
 	if err != nil {
 		return nil, err
@@ -375,9 +386,13 @@ func (s *Service) ReplaceTicket(ctx context.Context, c Caller, id string, data [
 	}
 	if nt.Status != old.Status {
 		t := stamp(&Op{Op: "transition", ID: old.ID, Status: nt.Status}, c, s.now())
-		if r2, err := s.do(ctx, st, t, true); err == nil {
-			res = r2
+		r2, err := s.do(ctx, st, t, true)
+		if err != nil {
+			e := *AsError(err)
+			e.Message = "the other edits were saved, but the status was not changed: " + e.Message
+			return nil, &e
 		}
+		res = r2
 	}
 	return s.writeOut(old.ID, res), nil
 }
@@ -392,15 +407,9 @@ func diffOp(a, b *kaspec.Ticket) *Op {
 			o.Set[k] = &v
 		}
 	}
-	set("title", a.Title, b.Title)
-	set("priority", a.Priority, b.Priority)
-	set("kind", a.Kind, b.Kind)
-	set("assignee", a.Assignee, b.Assignee)
-	set("owner", a.Owner, b.Owner)
-	set("parent", a.Parent, b.Parent)
-	set("duplicate_of", a.DuplicateOf, b.DuplicateOf)
-	set("milestone", a.Milestone, b.Milestone)
-	set("due", a.Due, b.Due)
+	for _, k := range setKeys {
+		set(k, *ticketScalar(a, k), *ticketScalar(b, k))
+	}
 	lists := func(k string, x, y []string) {
 		for _, v := range y {
 			if !slices.Contains(x, v) {
@@ -425,10 +434,9 @@ func diffOp(a, b *kaspec.Ticket) *Op {
 		bt = append(bt, it.Text)
 	}
 	lists("acceptance", at, bt)
-	for i, it := range b.Acceptance {
+	for _, it := range b.Acceptance {
 		j := slices.IndexFunc(a.Acceptance, func(x kaspec.AcceptanceItem) bool { return x.Text == it.Text })
 		if (j >= 0 && a.Acceptance[j].Done != it.Done) || (j < 0 && it.Done) {
-			_ = i
 			o.Check = append(o.Check, CheckItem{Text: it.Text, Done: it.Done})
 		}
 	}

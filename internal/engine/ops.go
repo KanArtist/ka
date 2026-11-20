@@ -10,6 +10,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/KanArtist/ka/pkg/kaspec"
 )
@@ -36,6 +37,9 @@ type Op struct {
 
 	Steal  bool   `json:"steal,omitempty"`  // claim
 	Status string `json:"status,omitempty"` // claim (start status), release, transition
+	// Takeover (claim) is the session of the same actor whose claim this
+	// one knowingly replaces: an agent that restarted with a new session.
+	Takeover string `json:"takeover,omitempty"`
 
 	Comment     *kaspec.Comment `json:"comment,omitempty"` // comment, transition (resolution)
 	CommentName string          `json:"comment_name,omitempty"`
@@ -46,6 +50,10 @@ type Op struct {
 	// (BlobSHA). It guards editor saves against lost updates; it is checked
 	// only on first application and never travels in Ka-Op.
 	IfMatch string `json:"-"`
+
+	// replayed marks an operation decoded from a commit (DecodeOp): apply is
+	// re-applying it on top of upstream, not applying it for the first time.
+	replayed bool
 }
 
 // CheckItem marks one acceptance item, by index or by text.
@@ -71,6 +79,7 @@ func DecodeOp(s string) (*Op, error) {
 	if err := json.Unmarshal([]byte(js), &o); err != nil {
 		return nil, fmt.Errorf("malformed Ka-Op: %v", err)
 	}
+	o.replayed = true
 	return &o, nil
 }
 
@@ -167,10 +176,14 @@ func apply(env applyEnv, o *Op) ([]change, string, error) {
 	case "update":
 		subject, err = applyUpdate(env, cfg, t, o)
 	case "claim":
-		if t.Claim != nil && t.Claim.By != o.Actor {
+		if t.Claim != nil && claimedAgainst(t.Claim, o) {
 			stale := claimStale(t.Claim, cfg, o.At)
 			if !(stale && o.Steal) {
-				e := Errf(CodeClaimLost, "pick another ticket (ka_next), or pass steal_stale once the claim is stale", "%s is claimed by %s since %s", o.ID, t.Claim.By, t.Claim.At).
+				holder := t.Claim.By
+				if t.Claim.By == o.Actor {
+					holder += " (another session, " + t.Claim.Session + ")"
+				}
+				e := Errf(CodeClaimLost, "pick another ticket (ka_next), or pass steal_stale once the claim is stale", "%s is claimed by %s since %s", o.ID, holder, t.Claim.At).
 					With("holder", t.Claim.By).With("since", t.Claim.At)
 				if stale {
 					e.Fix = "the claim is stale: retry with steal_stale=true to take it"
@@ -193,6 +206,9 @@ func apply(env applyEnv, o *Op) ([]change, string, error) {
 		}
 		if t.Claim.By != o.Actor && !o.Steal {
 			return nil, "", Errf(CodeNotYourClaim, "only the holder can release; pass force to override", "%s is claimed by %s", o.ID, t.Claim.By).With("holder", t.Claim.By)
+		}
+		if o.Status != "" && closedCategory(category(cfg, o.Status)) {
+			return nil, "", releaseCloses(o.ID, o.Status)
 		}
 		if t.Assignee == t.Claim.By {
 			t.Assignee = ""
@@ -373,34 +389,15 @@ func applyUpdate(env applyEnv, cfg *kaspec.Config, t *kaspec.Ticket, o *Op) (str
 		if o.Set[k] != nil {
 			v = *o.Set[k]
 		}
-		switch k {
-		case "title":
-			t.Title = v
-		case "slug":
-			if v != "" && !cfg.Slugs {
-				return "", slugsOff()
-			}
-			t.Slug = v
-		case "priority":
-			t.Priority = v
-		case "kind":
-			t.Kind = v
-		case "assignee":
-			t.Assignee = v
-		case "owner":
-			t.Owner = v
-		case "parent":
-			t.Parent = v
-		case "duplicate_of":
-			t.DuplicateOf = v
-		case "milestone":
-			t.Milestone = v
-		case "due":
-			t.Due = v
-		case "status":
+		switch f := ticketScalar(t, k); {
+		case k == "status":
 			return "", Errf(CodeInvalid, "use ka_transition to change status", "status cannot be set by update")
-		default:
+		case f == nil:
 			return "", Errf(CodeInvalid, "settable fields: "+strings.Join(setKeys, ", ")+"; custom fields go in fields", "%q cannot be set", k)
+		case k == "slug" && v != "" && !cfg.Slugs:
+			return "", slugsOff()
+		default:
+			*f = v
 		}
 		if v == "" {
 			parts = append(parts, "-"+k)
@@ -453,11 +450,67 @@ func applyUpdate(env applyEnv, cfg *kaspec.Config, t *kaspec.Ticket, o *Op) (str
 		t.Body = *o.Body
 		parts = append(parts, "description")
 	}
-	s := strings.Join(parts, ", ")
-	if len(s) > 120 {
-		s = s[:117] + "..."
+	return fmt.Sprintf("%s: %s", o.ID, subjectPart(strings.Join(parts, ", "), 120)), nil
+}
+
+// subjectPart makes text safe for a commit subject: one line, at most n
+// bytes, never cut inside a UTF-8 character.
+func subjectPart(s string, n int) string {
+	s = strings.Join(strings.Fields(strings.ReplaceAll(strings.ReplaceAll(s, "\r", " "), "\n", " ")), " ")
+	if len(s) <= n {
+		return s
 	}
-	return fmt.Sprintf("%s: %s", o.ID, s), nil
+	cut := n - 3
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + "..."
+}
+
+// ticketScalar points at the ticket field behind one of setKeys (nil for
+// any other key). Updates and editor diffs both go through it, so the
+// settable fields are listed once (setKeys).
+func ticketScalar(t *kaspec.Ticket, k string) *string {
+	switch k {
+	case "title":
+		return &t.Title
+	case "slug":
+		return &t.Slug
+	case "priority":
+		return &t.Priority
+	case "kind":
+		return &t.Kind
+	case "assignee":
+		return &t.Assignee
+	case "owner":
+		return &t.Owner
+	case "parent":
+		return &t.Parent
+	case "duplicate_of":
+		return &t.DuplicateOf
+	case "milestone":
+		return &t.Milestone
+	case "due":
+		return &t.Due
+	}
+	return nil
+}
+
+// claimedAgainst reports whether an existing claim stands in the way of a
+// claim operation: it is another actor's or, when the operation is being
+// replayed over upstream, the same actor's from another session that the
+// operation did not knowingly take over. Two sessions of one agent (the
+// same agent in two checkouts) race through ka_next like two agents do, and
+// the one whose push lost must lose the claim. A first-hand claim by the
+// same actor from a new session is allowed: an agent that restarted gets a
+// new session and continues its own ticket (Takeover records whose claim it
+// replaced, so a later replay of it still holds). Without a session on
+// either side, the actor alone decides, as before.
+func claimedAgainst(c *kaspec.Claim, o *Op) bool {
+	if c.By != o.Actor {
+		return true
+	}
+	return o.replayed && c.Session != "" && o.Session != "" && c.Session != o.Session && c.Session != o.Takeover
 }
 
 func listEdit(t *kaspec.Ticket, key, v string, add bool) error {

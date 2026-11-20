@@ -2,6 +2,8 @@ package engine
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -127,37 +129,41 @@ func (s *Service) commitFile(ctx context.Context, c Caller, st *Store, rel strin
 	if err != nil {
 		return err
 	}
+	if err := st.guard(); err != nil {
+		unlock()
+		return err
+	}
 	p := filepath.Join(st.Root, filepath.FromSlash(rel))
+	before := st.git.Head(ctx)
+	if fi, lerr := os.Lstat(p); lerr == nil && !fi.Mode().IsRegular() {
+		unlock()
+		return irregular(p) // never write through a link
+	}
 	if data == nil {
-		os.Remove(p)
-	} else {
-		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-			unlock()
-			return err
+		err = os.Remove(p)
+		if errors.Is(err, fs.ErrNotExist) {
+			err = nil
 		}
-		if err := os.WriteFile(p, data, 0o644); err != nil {
-			unlock()
-			return err
-		}
+	} else if err = os.MkdirAll(filepath.Dir(p), 0o755); err == nil {
+		err = os.WriteFile(p, data, 0o644)
 	}
-	if _, err := st.git.Run(ctx, "add", "-A", "--", st.repoPath(rel)); err != nil {
+	var sha string
+	if err == nil {
+		sha, err = st.commitPaths(ctx, c, subject, nil, []string{rel})
+	}
+	if err != nil {
+		st.rollback(ctx, []string{st.repoPath(rel)})
 		unlock()
 		return err
 	}
-	msg := subject + "\n\nKa-Actor: " + c.Actor + "\n"
-	if c.OnBehalfOf != "" {
-		msg += "Ka-On-Behalf-Of: " + c.OnBehalfOf + "\n"
-	}
-	msg += "Ka-Spec: 1\n"
-	if _, err := st.git.RunRaw(ctx, []byte(msg), "commit", "-q", "--no-verify", "-F", "-"); err != nil {
-		unlock()
-		if strings.Contains(err.Error(), "nothing to commit") || strings.Contains(err.Error(), "no changes added") {
-			return nil
-		}
-		return err
+	if sha != "" {
+		st.own(before, sha)
 	}
 	unlock()
-	s.ix.refresh(nil, nil)
+	if sha == "" {
+		return nil // nothing changed
+	}
+	s.ix.refresh(st, []string{rel})
 	s.publish(Event{Type: EvStoreChanged, At: s.now(), Store: st.Name, Actor: c.Actor, Data: map[string]string{"what": "boards", "path": rel}})
 	if _, err := s.pushStore(ctx, st); err != nil {
 		return Errf(CodeGit, "the change is committed locally; ka sync retries the push", "push %s: %v", st.Name, err)

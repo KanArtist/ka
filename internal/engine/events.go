@@ -302,10 +302,12 @@ func (h *EventHub) Since(seq uint64) (evs []Event, ok bool, more <-chan struct{}
 	if seq > h.seq || seq+1 < h.first {
 		return nil, false, h.wake
 	}
-	for i := 0; i < h.n; i++ {
-		e := h.ring[(h.head+i)%len(h.ring)]
-		if e.Seq > seq {
-			evs = append(evs, e)
+	// Sequence numbers are contiguous: ring[head] holds first, so the
+	// event after seq is (seq+1-first) slots further on.
+	if n := int(h.seq - seq); n > 0 {
+		evs = make([]Event, 0, n)
+		for i := int(seq + 1 - h.first); i < h.n; i++ {
+			evs = append(evs, h.ring[(h.head+i)%len(h.ring)])
 		}
 	}
 	return evs, true, h.wake
@@ -407,6 +409,9 @@ func (s *Service) syncEvents(st *Store, res *Result) {
 		switch {
 		case res.Pushed:
 			state.State = "synced"
+		case st.ReadOnly:
+			// Nothing local to publish: not level means behind.
+			state.State = "behind"
 		case res.PushError != "":
 			state.State, state.Detail = "ahead", res.PushError
 		default:
@@ -423,8 +428,12 @@ func (s *Service) syncEvents(st *Store, res *Result) {
 			evs = append(evs, Event{Type: EvSyncState, At: at, Store: st.Name, Data: state})
 		}
 	}
-	if len(res.Preserved) > 0 {
-		evs = append(evs, Event{Type: EvConflictPreserved, At: at, Store: st.Name, Data: map[string]any{"preserved": res.Preserved}})
+	if len(res.Preserved) > 0 || len(res.Unpreserved) > 0 {
+		data := map[string]any{"preserved": append([]string{}, res.Preserved...)}
+		if len(res.Unpreserved) > 0 {
+			data["unpreserved"] = res.Unpreserved
+		}
+		evs = append(evs, Event{Type: EvConflictPreserved, At: at, Store: st.Name, Data: data})
 	}
 	s.publish(evs...)
 }

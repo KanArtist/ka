@@ -87,13 +87,24 @@ by a relative path (`../org`) is read from that checkout.
 ## Moving a project between stores
 
 `ka project move KEY --to STORE [--dry-run]` re-homes a project (to split or combine stores,
-PRD §9.2). Both stores must be writable members of the workspace. It syncs both, then:
+PRD §9.2). Both stores must be writable members of the workspace. It takes both stores' write
+locks, syncs both under them (fetch and replay, no push), checks the move again against what the
+sync brought, and only then reads the project, so the copy is complete. Then:
 
 1. copies `projects/KEY/` into the target and commits (`Ka-Moved-From:` trailer);
 2. replaces the project in the source with a tombstone `project.yml` (`moved_to_store:` the
    target's URL) and commits (`Ka-Moved-To:`);
-3. pushes the target, then the source. If the target push fails the source is not pushed, so
-   nobody sees the tombstone without the copy.
+3. pushes the target, then the source. The source is pushed only once the target's push has
+   landed, so nobody sees the tombstone without the copy. If the target is not pushed (offline,
+   refused, `push: manual`, no remote, `--no-push`), the source is held back too, and
+   `push_error` says so: push the target first (`ka sync`), then the source.
+
+If a push is rejected because its remote moved meanwhile, the commits not yet pushed are taken
+back and the move is redone on top of upstream (up to three times), so tickets that arrived in
+the source in the meantime move too. If anything fails before the pushes (a write, a commit),
+both stores are put back as they were: the files ka touched, the branch and those index entries,
+and nothing else in the checkouts. Files that are links (or junctions) are never copied: a
+project that contains one is refused.
 
 IDs and paths inside the project do not change, so `blocked_by`, `parent` and links from other
 stores keep resolving. Readers skip tombstones (they never count as a second home); a tombstone
@@ -108,11 +119,17 @@ Also `POST /api/v1/projects/{key}/move`.
 project a new key, a new ID prefix, or both. Every ticket keeps its suffix (`KA-7QK3M` becomes
 `KAN-7QK3M`); its directory and `id` change, and every reference in every writable store follows:
 `parent`, `blocked_by`, `related` and the rest, mentions in descriptions, comments and docs, and
-`project:<key>` in saved boards and `default_project`. Each store gets one commit; the home store
-is pushed first. With `--keep-former-prefix` the old prefix is kept in `former_prefixes`, so old IDs
-in commit messages and notes keep resolving (reads and writes) during a transition; drop it from
-`project.yml` when no one needs it. Code repos' `.ka.yml` files that name the old key are not
-rewritten; the command reminds you. Also `POST /api/v1/projects/{key}/rename`.
+`project:<key>` in saved boards and `default_project`. Each store gets one commit, of exactly the
+files the rename changed; the home store is pushed first, and the others only after it (as for a
+move, a store that is not pushed holds back the rest, and `push_error` says so). Like a move, it
+locks and syncs every writable store before it reads anything, puts every store back if a write or
+commit fails, and is redone on top of upstream when a push loses a race, so tickets that arrived
+meanwhile are renamed too (the rewrite is idempotent). With `--keep-former-prefix` the old prefix
+is kept in `former_prefixes` (block or flow style), so old IDs in commit messages, notes and
+relation fields (`parent`, `blocked_by`, ...) keep resolving, for reads and writes, during a
+transition; IDs written with it are stored with the new prefix. Drop it from `project.yml` when no
+one needs it. Code repos' `.ka.yml` files that name the old key are not rewritten; the command
+reminds you. Also `POST /api/v1/projects/{key}/rename`.
 
 `ka store set-url NAME URL [--name NEW]` follows a store's repository to a new URL (a rename or a
 transfer): it moves the managed clone, unpushed commits and all, and updates its remote.
@@ -172,7 +189,9 @@ Every write is one typed operation: `create`, `update`, `claim`, `release`, `tra
 1. takes the clone's write lock (`gofrs/flock`: `flock` on Unix, `LockFileEx` on Windows, on
    `.git/ka.lock`);
 2. reads the ticket from disk and checks preconditions: it exists and was not moved; a claim
-   requires the ticket to be unclaimed, claimed by the same actor, or stale with `steal`;
+   requires the ticket to be unclaimed, claimed by the same actor, or stale with `steal` (see
+   [Claims and sessions](#claims-and-sessions)); a release cannot move a ticket to a closed
+   status (closing needs a summary: release, then `ka_transition`);
 3. validates the result against the project's vocabulary (statuses, kinds, closed labels,
    declared fields, existing references). Errors carry a code and a fix, and suggest the nearest
    valid value (`unknown_status: "doing" is not a status (fix: did you mean in_progress?)`);
@@ -185,6 +204,31 @@ synchronously, even when the store is set to `push: manual`. A claim that cannot
 status) requires a summary, which is committed as a `resolution` comment in the same commit, and
 reports the tickets it unblocked. Progress comments are throttled per agent and ticket
 (`comments.progress_min_interval`; `progress_throttled` says when to retry).
+
+Changes that are not operations (saved boards, `ka fix`, project move and rename) take the same
+write lock, refuse while the store is read-only, needs a newer ka, or has a merge, rebase or
+cherry-pick in progress, and commit only the paths they wrote, with the same `Ka-Actor`,
+`Ka-On-Behalf-Of`, `Ka-Session` and `Ka-Spec` trailers. Whatever else is staged or untracked in an
+attached checkout stays out of ka's commits.
+
+`ka fix` reads each ticket and comment once and commits one category at a time (`actors`,
+`timestamps`, `format`, `slugs`). It never rewrites a file that does not parse cleanly, since that
+would drop the values that failed to parse; such files are left byte for byte for `ka check` to
+report. The two defects it repairs are exceptions: an actor alias (`assignee: Bryan Sant`) is
+mapped to its handle in the text before parsing, and missing `created`/`updated` are filled from
+the commit that added the file. It never follows links.
+
+### Claims and sessions
+
+A claim records the actor and its session. Another actor's claim blocks a claim unless it is stale
+and the caller passes `steal`. The same actor's claim does not, with one exception: when a claim
+is *replayed* over upstream (it lost a push race) and upstream now holds a claim by the same actor
+under a different session, the replayed claim fails with `claim_lost`. That is two sessions of
+one agent (the same agent run in two checkouts) racing through `ka_next`; the loser moves on to
+the next ticket, as two different agents would. A first-hand claim by the same actor from a new
+session succeeds and takes the claim over: an agent that restarted gets a new session and must be
+able to continue its own ticket. The claim remembers whose session it took over, so a later replay
+of it still holds. When either side has no session, the actor alone decides.
 
 ## Sync and replay
 
@@ -202,6 +246,17 @@ rebases:
   preserved.
 - An operation that can no longer be applied (other than the caller's own, which returns its
   error) is preserved as a `system` comment on its ticket, with the operation's JSON.
+- Something that lost and cannot be recorded that way (an operation whose ticket no longer
+  exists, a conflicting edit to a file that is not a ticket) is reported in the result's
+  `unpreserved` list (and in `ka sync`'s output and the `sync.conflict_preserved` event); the
+  original commits stay under `refs/ka/backup/`.
+- Merge commits are linearized: the commits on both sides are replayed instead.
+
+A replay is all or nothing. Before it starts, the local branch is saved as
+`refs/ka/backup/<time>`; if any step fails, the branch goes back to where it was, so no local
+commit is lost and nothing half-replayed is pushed. A replay that has started finishes even if the
+caller goes away. The backup ref is deleted when everything replayed as it was, and only
+the newest 20 are kept.
 
 If the clone and upstream share no commit at all, `ka` stops with `git_error` and touches
 nothing. That happens when the remote URL now names a different repository, for example after
