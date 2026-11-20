@@ -78,6 +78,23 @@ To run one ("implement the GDPR initiative"):
 Plan new ones with the `ka/plan-initiative` and `ka/plan-epic` prompts;
 `ka_search` scopes with `initiative:<ID>` or `epic:<ID>`.
 
+Labels and containers are different things, and converting is a judgement
+call, never a bulk operation:
+
+- A label that names a body of work with an end ("NextGen UI", "inner-loop-1.0",
+  "phase-2", "m3", "Windows support") was a stand-in for an initiative. Convert
+  it with `ka_initiative_from_label` (`ka initiative from-label <LABEL>`): run
+  it with `dry_run` first and show the user the report.
+- A label that describes a property of a ticket ("flaky", "risky", "perf",
+  "security", "docs", an area such as "cli" or "engine") stays a label. So does
+  any label you are unsure about: ask the user.
+- Tickets labelled `epic` are epics that predate the kind: give each
+  `kind: epic` with `ka_update` and remove the label. An epic's parent must be
+  an initiative or nothing, so move or clear a different parent first.
+
+A store needs `ka store require 1.3.0` before its first initiative or epic.
+That locks out older ka clients, so ask the user before raising it.
+
 ## Identity
 
 Your actor name is `agent/<you>`, set by `KA_ACTOR` (the MCP server is
