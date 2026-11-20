@@ -124,8 +124,14 @@ func (ts *TokenStore) Count() int {
 
 // Lookup returns the actor of a valid token.
 func (ts *TokenStore) Lookup(tok string) (string, bool) {
+	t, ok := ts.find(tok)
+	return t.Actor, ok
+}
+
+// find returns the stored token matching tok.
+func (ts *TokenStore) find(tok string) (Token, bool) {
 	if ts == nil || !strings.HasPrefix(tok, "ka_") {
-		return "", false
+		return Token{}, false
 	}
 	sum := sha256.Sum256([]byte(tok))
 	h := hex.EncodeToString(sum[:])
@@ -134,10 +140,27 @@ func (ts *TokenStore) Lookup(tok string) (string, bool) {
 	ts.load()
 	for _, t := range ts.tokens {
 		if subtle.ConstantTimeCompare([]byte(t.Hash), []byte(h)) == 1 {
-			return t.Actor, true
+			return t, true
 		}
 	}
-	return "", false
+	return Token{}, false
+}
+
+// byID returns the stored token with an ID (for browser cookies, which name
+// the token they were issued for).
+func (ts *TokenStore) byID(id string) (Token, bool) {
+	if ts == nil {
+		return Token{}, false
+	}
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.load()
+	for _, t := range ts.tokens {
+		if t.ID == id {
+			return t, true
+		}
+	}
+	return Token{}, false
 }
 
 // List returns the stored tokens (hashes only).

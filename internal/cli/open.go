@@ -2,7 +2,9 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -17,11 +19,11 @@ import (
 )
 
 // cmdOpen opens the web UI (PRD §13.3): it starts the workspace's daemon if
-// none is running, then sends the browser to /auth, which trades the local
-// token for an HttpOnly cookie and redirects to the view.
+// none is running, then sends the browser to /auth with a one-time code,
+// which /auth trades for an HttpOnly cookie before redirecting to the view.
 func cmdOpen(ctx context.Context, x *IO, args []string) int {
 	fl, c := newFlags("open", "[ID] [--print]", x)
-	printOnly := fl.Bool("print", false, "print the URL instead of opening a browser")
+	printOnly := fl.Bool("print", false, "print the URL instead of opening a browser (it works once, within a minute)")
 	pos, err := parse(fl, args)
 	if err != nil {
 		return 2
@@ -43,7 +45,10 @@ func cmdOpen(ctx context.Context, x *IO, args []string) int {
 	if len(pos) == 1 {
 		next = "/ticket/" + url.PathEscape(kaspec.RefID(pos[0]))
 	}
-	u := rt.URL + "/auth?" + url.Values{"token": {rt.Token}, "next": {next}}.Encode()
+	u, err := signinURL(ctx, rt, next)
+	if err != nil {
+		return fail(x, c, err)
+	}
 	if *printOnly {
 		fmt.Fprintln(x.Out, u)
 		return 0
@@ -55,6 +60,30 @@ func cmdOpen(ctx context.Context, x *IO, args []string) int {
 	}
 	fmt.Fprintf(x.Out, "opened %s%s\n", rt.URL, next)
 	return 0
+}
+
+// signinURL asks the daemon for a one-time sign-in code and returns the
+// /auth URL that trades it for the browser cookie. The local token itself
+// never goes on a command line or into browser history; the code works once,
+// within a minute.
+func signinURL(ctx context.Context, rt *api.Runtime, next string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, rt.URL+"/auth/code", nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+rt.Token)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("asking the daemon for a sign-in code: %v", err)
+	}
+	defer resp.Body.Close()
+	var sc api.SigninCode
+	if resp.StatusCode != http.StatusOK || json.NewDecoder(resp.Body).Decode(&sc) != nil || sc.Code == "" {
+		return "", fmt.Errorf("asking the daemon for a sign-in code: HTTP %d (is the daemon older than this ka? restart it with `ka daemon stop`)", resp.StatusCode)
+	}
+	return rt.URL + "/auth?" + url.Values{"code": {sc.Code}, "next": {next}}.Encode(), nil
 }
 
 // startDaemon runs `ka daemon` in the background for the workspace and
@@ -77,10 +106,11 @@ func startDaemon(ctx context.Context, x *IO, c *common, ws *engine.Workspace) (*
 	if c.noPush {
 		args = append(args, "--no-push")
 	}
-	if err := os.MkdirAll(api.RuntimeDir(), 0o700); err != nil {
+	dir, err := api.MakeRuntimeDir()
+	if err != nil {
 		return nil, err
 	}
-	logPath := filepath.Join(api.RuntimeDir(), "daemon-"+api.WorkspaceHash(ws.Source)+".log")
+	logPath := filepath.Join(dir, "daemon-"+api.WorkspaceHash(ws.Source)+".log")
 	logf, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return nil, err

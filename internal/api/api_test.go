@@ -166,36 +166,7 @@ func TestSecurity(t *testing.T) {
 		t.Fatalf("healthz: %d %s", r.status, r.raw)
 	}
 
-	// The token exchange sets an HttpOnly, SameSite=Strict cookie and
-	// redirects only to local paths.
-	noRedirect := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	res, err = noRedirect.Get(c.base + "/auth?token=" + testToken + "&next=//evil.example/")
-	if err != nil {
-		t.Fatal(err)
-	}
-	res.Body.Close()
-	if res.StatusCode != 303 || res.Header.Get("Location") != "/" {
-		t.Fatalf("auth redirect: %d %q", res.StatusCode, res.Header.Get("Location"))
-	}
-	var cookie *http.Cookie
-	for _, ck := range res.Cookies() {
-		if ck.Name == CookieName {
-			cookie = ck
-		}
-	}
-	if cookie == nil || !cookie.HttpOnly || cookie.SameSite != http.SameSiteStrictMode {
-		t.Fatalf("cookie: %+v", cookie)
-	}
-	req, _ = http.NewRequest("GET", c.base+"/api/v1/workspace", nil)
-	req.AddCookie(cookie)
-	if res, err = http.DefaultClient.Do(req); err != nil || res.StatusCode != 200 {
-		t.Fatalf("cookie auth: %v %v", res.StatusCode, err)
-	}
-	res.Body.Close()
-	if res, _ = noRedirect.Get(c.base + "/auth?token=wrong"); res.StatusCode != 401 {
-		t.Fatalf("auth with a wrong token: %d", res.StatusCode)
-	}
-	res.Body.Close()
+	// Browser sign-in: TestBrowserSignin.
 }
 
 // The OpenAPI document validates against the official OpenAPI 3.1 schema

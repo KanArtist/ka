@@ -4,6 +4,8 @@ import (
 	"context"
 	"io"
 	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -109,10 +111,27 @@ func TestOpenPrintsAuthURL(t *testing.T) {
 	if err := api.WriteRuntime(rt); err != nil {
 		t.Fatal(err)
 	}
+	// The URL carries a one-time code, never the local token.
 	res := ka(t, dir, "open", "jk-12345", "--print")
-	want := rt.URL + "/auth?next=%2Fticket%2FJK-12345&token=tok"
-	if res.code != 0 || strings.TrimSpace(res.out) != want {
-		t.Fatalf("open: %+v, want %s", res, want)
+	u, err := url.Parse(strings.TrimSpace(res.out))
+	if res.code != 0 || err != nil || u.Path != "/auth" || u.Query().Get("next") != "/ticket/JK-12345" || len(u.Query().Get("code")) != 64 ||
+		u.Query().Has("token") || strings.Contains(res.out, rt.Token) {
+		t.Fatalf("open: %+v", res)
+	}
+	if u2 := strings.TrimSpace(ka(t, dir, "open", "--print").out); u2 == u.String() {
+		t.Fatal("ka open reused a code")
+	}
+	// The code works once.
+	noRedirect := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	for i, want := range []int{http.StatusSeeOther, http.StatusUnauthorized} {
+		resp, err := noRedirect.Get(u.String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != want {
+			t.Fatalf("use %d of the code: %d, want %d", i+1, resp.StatusCode, want)
+		}
 	}
 }
 

@@ -26,14 +26,20 @@ inside a store, `.ka.yml`, the user workspace). Only one daemon runs per workspa
 identifies the workspace by its source path, so daemons for different workspaces can run side by
 side. The file holds the version, PID, address, URL, workspace, and the random local token.
 Clients read it, then confirm with `GET /healthz` that the daemon is alive and serves the same
-workspace. The daemon removes the file when it stops.
+workspace. The daemon removes the file when it stops. With no home directory (no user cache
+directory), the file goes to `ka-<uid>` in the temporary directory instead; on Unix ka creates it
+with mode 0700 and refuses to use it if it is a symlink, belongs to another user, or is writable
+by group or others, since another user could have created it first. (On Windows the temporary
+directory is per user.)
 
 ## The web UI and `ka open`
 
 `ka open` opens the web UI in your browser, starting the workspace's daemon in the background if it
 is not running. Its log goes next to the runtime file. `ka open JK-7QK3M` goes straight to a
-ticket, and `--print` prints the URL instead of opening a browser. The browser lands on `/auth`,
-which turns the token into a cookie.
+ticket, and `--print` prints the URL instead of opening a browser. The URL carries a one-time
+sign-in code, not the token: `ka open` asks the daemon for it (`POST /auth/code` with the local
+token), and the browser lands on `/auth`, which trades it for a cookie. The code works once,
+within 60 seconds, so a printed URL must be opened right away.
 
 The UI is an Angular app in `web/`. Its production build is embedded in the binary, so the daemon
 serves it offline with no CDN. The UI's static files need no token, because they hold no workspace
@@ -44,10 +50,22 @@ per-response nonce. Its API types are generated from `openapi.json`.
 ## Security (PRD §15, local mode)
 
 - By default the daemon listens on loopback only. A non-loopback `--listen` is remote mode (below).
-- Every API request (`/api/v1/…`, `/mcp`) needs the token: `Authorization: Bearer
-  <token>`, or the `ka_token` cookie.
-- `GET /auth?token=…&next=/path` exchanges the token for an `HttpOnly`, `SameSite=Strict` cookie
-  and redirects to a local path. `ka open` will use it.
+- Every API request (`/api/v1/…`, `/mcp`, `/metrics`) needs the token as `Authorization: Bearer
+  <token>`. Browsers use the `ka_token` cookie instead, which is accepted only under `/api/` (the
+  REST API and the event stream: all the web UI uses), except `POST /api/v1/daemon/shutdown`.
+  `/mcp`, `/metrics` and `POST /auth/code` refuse it with 403.
+- The cookie does not hold the token. Cookies are not scoped by port, so every
+  `http://127.0.0.1:*` or `localhost:*` page you visit receives it; its value is an HMAC under a
+  key the daemon makes when it starts, so it cannot be used as a bearer token, and it stops working
+  when the daemon restarts. A bearer token sent as the cookie is refused.
+- `POST /auth/code` (local token, as a bearer token, only) returns `{"code", "expires_in"}`: a
+  one-time sign-in code valid for 60 seconds. At most 16 are outstanding (minting another drops
+  the oldest); the daemon keeps only their SHA-256 hashes.
+- `GET /auth?code=…&next=/path` consumes the code and sets an `HttpOnly`, `SameSite=Strict`,
+  `Path=/` cookie, then redirects to a local path. The local token itself is not accepted there,
+  so it never appears on a command line or in browser history. The request log records the path
+  only, never the query. The cookie cannot use the `__Host-` prefix: that requires `Secure`, which
+  browsers do not reliably honor over plain `http://127.0.0.1`.
 - The `Host` header must be `127.0.0.1`, `localhost` or `[::1]` with the daemon's port (DNS
   rebinding). A request with any other `Origin`, or with `Sec-Fetch-Site: cross-site`, is refused
   (CSRF).
@@ -75,7 +93,14 @@ ka daemon --listen 0.0.0.0:7711 --public-url https://ka.example.com
 - **Host and Origin.** With `--public-url`, only its host is accepted; browser requests must come
   from the same origin. Without it, any `Host` is accepted, and `Origin` must still match it.
 - **Browser sign-in.** `https://ka.example.com/auth?token=ka_…` sets the cookie (with `Secure`
-  behind TLS or `X-Forwarded-Proto: https`). Terminate TLS at a proxy; the daemon speaks HTTP.
+  behind TLS or `X-Forwarded-Proto: https`). Terminate TLS at a proxy; the daemon speaks HTTP. As
+  in local mode, the cookie is not the token: it names the token's ID with an HMAC bound to the
+  token's hash, acts as the token's actor on the REST API only, stops working when the token is
+  removed, and lasts until the daemon restarts. Proxied users need no cookie.
+- **MCP sessions belong to their principal.** A session started with one API token (or proxied
+  user, or the local token) refuses requests that carry its `Mcp-Session-Id` under any other
+  principal with 403, before they reach the MCP server, so one token holder cannot use or end
+  another's session.
 - The principal travels to handlers and the MCP server in `X-Ka-Principal`, which the daemon sets
   itself and strips from every incoming request.
 - The local runtime token still works on the machine itself (`ka open`, the `ka mcp` bridge).
@@ -91,8 +116,8 @@ ka daemon --listen 0.0.0.0:7711 --public-url https://ka.example.com
 
 ## Metrics and logs
 
-`GET /metrics` serves Prometheus metrics; it needs the same token as the API (in Prometheus,
-`authorization: {credentials_file: …}`):
+`GET /metrics` serves Prometheus metrics; it needs the same bearer token as the API (in
+Prometheus, `authorization: {credentials_file: …}`), and refuses the browser cookie:
 
 | Metric | Meaning |
 |---|---|
@@ -214,6 +239,12 @@ The daemon tracks every MCP session connected to it, directly or through the `ka
 each one it records the actor, the human it works for, the client (`clientInfo` name and version),
 when it connected and was last seen, its last method and tool call, the ticket that call was
 about (for `ka_next`, the ticket it got), the error code if the call failed, and a call count.
+
+A session's `id` is derived from its `Mcp-Session-Id` (the first 12 hex digits of its SHA-256):
+stable for the life of the session, but not the session ID itself, which would let anyone who can
+read presence use the session. The same derived ID is the session's `Ka-Session` commit trailer
+and the `session` of its claims and comments, which land in git (an explicit `X-Ka-Session`
+header still takes precedence, as before).
 
 Changes stream as `presence.changed` events with `state` `connected`, `active` or `disconnected`.
 A session leaves presence when it closes (the `ka mcp` bridge ends its HTTP session when the client

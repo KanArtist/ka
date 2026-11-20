@@ -57,9 +57,14 @@ trusted addresses.
 
 ## Clients
 
-- Browser: `https://ka.example.com/auth?token=ka_…` once, then bookmark `https://ka.example.com`.
+- Browser: `https://ka.example.com/auth?token=ka_…`, then bookmark `https://ka.example.com`. The
+  cookie it sets is not the token: it works only in the browser, only for the REST API and the
+  event stream, and only until the daemon restarts (sign in again after an upgrade or restart).
+  Removing the token signs its browsers out.
 - Agents (MCP over HTTP): endpoint `https://ka.example.com/mcp` with header
-  `Authorization: Bearer ka_…`; agents are recorded as acting on the token owner's behalf.
+  `Authorization: Bearer ka_…`; agents are recorded as acting on the token owner's behalf. An MCP
+  session belongs to the token (or proxied user) that started it; requests from anyone else with
+  its `Mcp-Session-Id` get 403.
 - Scripts: the REST API with the same header (`GET /api/v1/openapi.json`).
 
 ## Freshness
@@ -97,7 +102,7 @@ secret in `--webhook-secret-file`.
 ## Monitoring
 
 - `GET /healthz` (no token) for liveness.
-- `GET /metrics` (token) for Prometheus: request rates and latency, operations by result, sync
+- `GET /metrics` (bearer token; the browser cookie is refused) for Prometheus: request rates and latency, operations by result, sync
   state per store (`ka_store_sync{state="degraded"}` means fetches or pushes are failing and work
   is local only), tickets by category.
 - `ka daemon -v --log-format json` logs every request as JSON.

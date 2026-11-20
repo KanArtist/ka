@@ -3253,7 +3253,7 @@
     },
     "securitySchemes": {
       "cookie": {
-        "description": "Set by GET /auth?token=… (ka open).",
+        "description": "Set by GET /auth with a one-time code (ka open) or, in remote mode, an API token. Accepted only as a cookie, and only by the REST API and the event stream.",
         "in": "cookie",
         "name": "ka_token",
         "type": "apiKey"

@@ -3,6 +3,8 @@ package api
 import (
 	"context"
 	"net/http"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -70,6 +72,17 @@ func TestPresence(t *testing.T) {
 		t.Fatalf("presence: %s", res.raw)
 	}
 	sess := ss[0].(map[string]any)
+	// The session shows under a derived ID, not the Mcp-Session-Id, and the
+	// claim (and its Ka-Session trailer) carries the same one.
+	if pid := str(sess, "id"); pid != presence.PublicID(cs.ID()) || pid == cs.ID() || len(pid) != 12 || strings.Contains(string(res.raw), cs.ID()) {
+		t.Fatalf("session id %q for %q", pid, cs.ID())
+	}
+	if src := string(c.ok("GET", "/api/v1/tickets/"+id+"/source", nil).raw); !strings.Contains(src, presence.PublicID(cs.ID())) || strings.Contains(src, cs.ID()) {
+		t.Fatalf("claim session in the ticket file:\n%s", src)
+	}
+	if dataStr(last, "session", "id") != presence.PublicID(cs.ID()) {
+		t.Fatalf("event session id: %+v", last.data)
+	}
 	if str(sess, "actor") != "agent/claude-code" || str(sess, "client") != "Claude Code 2.1" || str(sess, "last_tool") != "ka_get" ||
 		str(sess, "last_ticket") != "JK-ZZZZZ" || str(sess, "last_error") != "not_found" || str(sess, "on_behalf_of") != "tester" {
 		t.Fatalf("session: %s", res.raw)
@@ -104,5 +117,42 @@ func TestPresenceSweep(t *testing.T) {
 	tr.Sweep(2 * time.Hour)
 	if len(tr.List()) != 0 {
 		t.Fatal("idle session not swept")
+	}
+}
+
+// In remote mode an MCP session belongs to the principal that created it:
+// another token holder (or the local token) cannot use or end it.
+func TestMCPSessionBoundToPrincipal(t *testing.T) {
+	testkit.GitEnv(t)
+	svc := testkit.Service(t, testkit.NewRemote(t, nil).Clone())
+	ts := NewTokenStore(filepath.Join(t.TempDir(), "tokens.json"))
+	bob, _, _ := ts.Create("bob", "")
+	alice, _, _ := ts.Create("alice", "")
+	c := serveWith(t, svc, Options{Remote: &Remote{Tokens: ts}, MCP: mcpserver.New(svc, mcpserver.Options{}).HTTPHandler()})
+
+	ctx := context.Background()
+	tr := &mcp.StreamableClientTransport{Endpoint: c.base + "/mcp", HTTPClient: &http.Client{Transport: bearer{bob}}}
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "bob-agent", Version: "1"}, nil).Connect(ctx, tr, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cs.Close()
+	list := map[string]any{"jsonrpc": "2.0", "id": 7, "method": "tools/list"}
+	for _, tok := range []string{alice, testToken} {
+		for _, method := range []string{"POST", "GET", "DELETE"} {
+			var body any
+			if method == "POST" {
+				body = list
+			}
+			r := c.do(method, "/mcp", body, "Authorization", "Bearer "+tok, "Mcp-Session-Id", cs.ID(),
+				"Accept", "application/json, text/event-stream", "Mcp-Protocol-Version", "2025-06-18")
+			if r.status != 403 {
+				t.Fatalf("%s /mcp with another principal's session: %d %s", method, r.status, r.raw)
+			}
+		}
+	}
+	// The owner's session is untouched.
+	if _, err := cs.ListTools(ctx, nil); err != nil {
+		t.Fatalf("owner after refused requests: %v", err)
 	}
 }

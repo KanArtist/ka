@@ -85,7 +85,7 @@ const nonceMarker = "KA_CSP_NONCE"
 
 // isUIPath reports whether a request is for the UI rather than the API.
 func isUIPath(p string) bool {
-	return !strings.HasPrefix(p, "/api/") && p != "/mcp" && p != "/healthz" && p != "/auth" && p != "/metrics"
+	return !strings.HasPrefix(p, "/api/") && p != "/mcp" && p != "/healthz" && p != "/auth" && p != "/auth/code" && p != "/metrics"
 }
 
 // serveUI serves static files, and index.html for every client-side route.

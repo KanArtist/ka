@@ -28,18 +28,42 @@ type Runtime struct {
 }
 
 // RuntimeDir is where runtime files live: $KA_RUNTIME_DIR, else
-// $XDG_RUNTIME_DIR/ka, else the user cache directory's ka/run.
+// $XDG_RUNTIME_DIR/ka, else the user cache directory's ka/run, else (with
+// no home directory) ka-<uid> in the temporary directory.
 func RuntimeDir() string {
+	d, _ := runtimeDir()
+	return d
+}
+
+// runtimeDir also reports whether the directory is the temporary-directory
+// fallback, whose name other users can predict and create first.
+func runtimeDir() (dir string, shared bool) {
 	if d := os.Getenv("KA_RUNTIME_DIR"); d != "" {
-		return d
+		return d, false
 	}
 	if d := os.Getenv("XDG_RUNTIME_DIR"); d != "" && runtime.GOOS != "windows" && runtime.GOOS != "darwin" {
-		return filepath.Join(d, "ka")
+		return filepath.Join(d, "ka"), false
 	}
 	if d, err := os.UserCacheDir(); err == nil {
-		return filepath.Join(d, "ka", "run")
+		return filepath.Join(d, "ka", "run"), false
 	}
-	return filepath.Join(os.TempDir(), fmt.Sprintf("ka-%d", os.Getuid()))
+	return filepath.Join(os.TempDir(), fmt.Sprintf("ka-%d", os.Getuid())), true
+}
+
+// MakeRuntimeDir creates RuntimeDir (mode 0700) and returns it. The
+// temporary-directory fallback must be a directory of the current user that
+// no one else can write to (on Unix; see checkPrivateDir).
+func MakeRuntimeDir() (string, error) {
+	dir, shared := runtimeDir()
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	if shared {
+		if err := checkPrivateDir(dir); err != nil {
+			return "", fmt.Errorf("runtime directory %s: %v; set $KA_RUNTIME_DIR to a private directory", dir, err)
+		}
+	}
+	return dir, nil
 }
 
 // WorkspaceHash identifies a workspace by its source path.
@@ -85,8 +109,8 @@ func NewToken() string {
 
 // WriteRuntime writes the runtime file atomically, readable only by the user.
 func WriteRuntime(r *Runtime) error {
-	dir := RuntimeDir()
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	dir, err := MakeRuntimeDir()
+	if err != nil {
 		return err
 	}
 	data, _ := json.MarshalIndent(r, "", "  ")

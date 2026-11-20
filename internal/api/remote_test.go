@@ -122,8 +122,27 @@ func TestRemoteMode(t *testing.T) {
 	// The browser sign-in takes an API token and sets a secure cookie behind TLS.
 	rec = send("GET", "/auth?token="+tok+"&next=/board", host, "203.0.113.5:4000", map[string]string{"X-Forwarded-Proto": "https"}, nil)
 	cookie := rec.Header().Get("Set-Cookie")
-	if rec.Code != http.StatusSeeOther || !strings.Contains(cookie, tok) || !strings.Contains(cookie, "Secure") || !strings.Contains(cookie, "HttpOnly") {
+	if rec.Code != http.StatusSeeOther || strings.Contains(cookie, tok) || !strings.Contains(cookie, "Secure") || !strings.Contains(cookie, "HttpOnly") {
 		t.Fatalf("auth: %d %q", rec.Code, cookie)
+	}
+	// The cookie acts as the token's actor on the API, but is no bearer
+	// token, and reaches neither /mcp nor shutdown.
+	ck := rec.Result().Cookies()[0]
+	if rec := send("GET", "/api/v1/workspace", host, "203.0.113.5:4000", map[string]string{"Cookie": ck.Name + "=" + ck.Value}, nil); !strings.Contains(rec.Body.String(), `"you":"bob"`) {
+		t.Fatalf("cookie as bob: %d %s", rec.Code, rec.Body)
+	}
+	if rec := send("GET", "/api/v1/workspace", host, "203.0.113.5:4000", map[string]string{"Authorization": "Bearer " + ck.Value}, nil); rec.Code != 401 {
+		t.Fatalf("cookie as bearer: %d", rec.Code)
+	}
+	if rec := send("POST", "/mcp", host, "203.0.113.5:4000", map[string]string{"Cookie": ck.Name + "=" + ck.Value}, map[string]any{}); rec.Code != 403 {
+		t.Fatalf("cookie on /mcp: %d", rec.Code)
+	}
+	// The local token is not taken by /auth, and API tokens cannot mint codes.
+	if rec := send("GET", "/auth?token="+testToken, host, "203.0.113.5:4000", nil, nil); rec.Code != 401 {
+		t.Fatalf("auth with the local token: %d", rec.Code)
+	}
+	if rec := send("POST", "/auth/code", host, "203.0.113.5:4000", map[string]string{"Authorization": "Bearer " + tok}, nil); rec.Code != 403 {
+		t.Fatalf("auth/code with an API token: %d", rec.Code)
 	}
 	// A removed token stops working.
 	list := ts.List()
@@ -132,6 +151,9 @@ func TestRemoteMode(t *testing.T) {
 	}
 	if rec := send("GET", "/api/v1/workspace", host, "203.0.113.5:4000", map[string]string{"Authorization": "Bearer " + tok}, nil); rec.Code != 401 {
 		t.Fatalf("removed token still works: %d", rec.Code)
+	}
+	if rec := send("GET", "/api/v1/workspace", host, "203.0.113.5:4000", map[string]string{"Cookie": ck.Name + "=" + ck.Value}, nil); rec.Code != 401 {
+		t.Fatalf("removed token's cookie still works: %d", rec.Code)
 	}
 }
 

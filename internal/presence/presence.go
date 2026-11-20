@@ -4,6 +4,8 @@
 package presence
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"sort"
 	"strings"
 	"sync"
@@ -33,9 +35,18 @@ func SessionID(id string) string {
 	return b.String()[:min(b.Len(), 128)]
 }
 
+// PublicID derives the ID shown for an MCP session (in presence, events and
+// the Ka-Session trailer) from its Mcp-Session-Id: the first 12 hex digits of
+// its SHA-256. It is stable for the life of the session, but does not reveal
+// the session ID, which works as a credential for the session.
+func PublicID(sessionID string) string {
+	sum := sha256.Sum256([]byte(sessionID))
+	return hex.EncodeToString(sum[:6])
+}
+
 // Session is one connected agent session.
 type Session struct {
-	ID         string `json:"id"`
+	ID         string `json:"id"` // PublicID of the MCP session ID
 	Actor      string `json:"actor"`
 	OnBehalfOf string `json:"on_behalf_of,omitempty"`
 	Client     string `json:"client,omitempty" doc:"clientInfo name and version."`
@@ -75,7 +86,9 @@ func New(sink engine.EventSink) *Tracker {
 
 func (t *Tracker) stamp() string { return t.Now().UTC().Format(time.RFC3339) }
 
-// Seen records a call. It reports whether the session is new.
+// Seen records a call of the session with MCP session ID id (kept only as
+// the map key; the published Session.ID is PublicID(id)). It reports whether
+// the session is new.
 func (t *Tracker) Seen(id string, who Session, c Call) bool {
 	if t == nil || id == "" {
 		return false
@@ -85,7 +98,7 @@ func (t *Tracker) Seen(id string, who Session, c Call) bool {
 	s, ok := t.sessions[id]
 	state := "active"
 	if !ok {
-		who.ID, who.Connected = id, now
+		who.ID, who.Connected = PublicID(id), now
 		if who.Transport == "" {
 			who.Transport = "mcp-http"
 		}

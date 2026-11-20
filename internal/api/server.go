@@ -5,6 +5,7 @@ package api
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -31,7 +32,8 @@ import (
 // DefaultAddr is where the daemon listens unless told otherwise.
 const DefaultAddr = "127.0.0.1:7711"
 
-// CookieName holds the local token in browsers.
+// CookieName is the browser sign-in cookie (see signin.go). Its value works
+// only as this cookie, never as a bearer token.
 const CookieName = "ka_token"
 
 // Options configures a Server.
@@ -76,6 +78,9 @@ type Server struct {
 
 	ui atomic.Pointer[uiSource]
 
+	cookieKey []byte      // keys browser cookies; new at every start
+	codes     signinCodes // one-time sign-in codes (POST /auth/code)
+
 	mu   sync.RWMutex
 	port int // the bound port, for Host and Origin checks
 	addr string
@@ -98,6 +103,10 @@ func New(svc *engine.Service, opts Options) *Server {
 	}
 	s := &Server{svc: svc, opts: opts, mux: http.NewServeMux(), log: opts.Logger, started: time.Now(), hub: opts.Events, heartbeat: opts.Heartbeat}
 	s.stop, s.stopStream = context.WithCancel(context.Background())
+	s.cookieKey = make([]byte, 32)
+	if _, err := rand.Read(s.cookieKey); err != nil {
+		panic(err)
+	}
 	if svc != nil {
 		s.wsHash = WorkspaceHash(svc.WS.Source)
 	}
@@ -110,6 +119,7 @@ func New(svc *engine.Service, opts Options) *Server {
 	}
 	s.mux.HandleFunc("GET /healthz", s.healthz)
 	s.mux.HandleFunc("GET /auth", s.auth)
+	s.mux.HandleFunc("POST /auth/code", s.authCode)
 	s.mux.HandleFunc("POST "+GitHubHookPath, s.githubHook)
 	s.mux.HandleFunc("GET /metrics", s.metrics)
 	return s
@@ -127,7 +137,7 @@ func Config(version string) huma.Config {
 	c.Components.Schemas = huma.NewMapRegistry("#/components/schemas/", schemaNamer)
 	c.Components.SecuritySchemes = map[string]*huma.SecurityScheme{
 		"token":  {Type: "http", Scheme: "bearer", Description: "The local token from the daemon's runtime file."},
-		"cookie": {Type: "apiKey", In: "cookie", Name: CookieName, Description: "Set by GET /auth?token=… (ka open)."},
+		"cookie": {Type: "apiKey", In: "cookie", Name: CookieName, Description: "Set by GET /auth with a one-time code (ka open) or, in remote mode, an API token. Accepted only as a cookie, and only by the REST API and the event stream."},
 	}
 	c.Security = []map[string][]string{{"token": {}}, {"cookie": {}}}
 	return c
@@ -208,7 +218,12 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) string {
 	switch r.URL.Path {
 	case "/healthz", "/auth", GitHubHookPath: // the webhook checks its own HMAC
 	default:
-		principal, ok := s.authenticate(r)
+		principal, viaCookie, ok := s.authenticate(r)
+		if ok && viaCookie && !cookieAllowed(r.URL.Path) {
+			writeProblem(w, newProblem(codeForbidden, "send Authorization: Bearer <token>; the browser cookie only reaches the REST API",
+				"the browser sign-in cookie is not accepted here"))
+			return routeRejected
+		}
 		if !ok {
 			w.Header().Set("WWW-Authenticate", `Bearer realm="ka"`)
 			fix := "send Authorization: Bearer <token> with the token from the daemon's runtime file, or open the UI with `ka open`"
@@ -279,44 +294,40 @@ func (s *Server) originAllowed(origin, reqHost string) bool {
 	return u.Scheme == "http" && s.hostAllowed(u.Host)
 }
 
-func bearerToken(r *http.Request) string {
-	if h := r.Header.Get("Authorization"); h != "" {
-		if t, ok := strings.CutPrefix(h, "Bearer "); ok {
-			return strings.TrimSpace(t)
-		}
-		return ""
-	}
-	if c, err := r.Cookie(CookieName); err == nil {
-		return c.Value
-	}
-	return ""
-}
-
-// authenticate checks a request's credentials. principal is the
-// authenticated actor in remote mode ("" for the local token, whose
-// requests act as the daemon's human).
-func (s *Server) authenticate(r *http.Request) (principal string, ok bool) {
-	tok := bearerToken(r)
-	if s.tokenOK(tok) {
-		return "", true
-	}
+// authenticate checks a request's credentials: a bearer token (the local
+// token or an API token) in Authorization, else a trusted proxy's user
+// header, else the browser cookie. principal is the authenticated actor in
+// remote mode ("" for the local token, whose requests act as the daemon's
+// human); viaCookie says only the browser cookie authenticated it.
+func (s *Server) authenticate(r *http.Request) (principal string, viaCookie, ok bool) {
 	rm := s.opts.Remote
-	if rm == nil {
-		return "", false
+	h := r.Header.Get("Authorization")
+	if tok, isBearer := strings.CutPrefix(h, "Bearer "); isBearer {
+		tok = strings.TrimSpace(tok)
+		if s.tokenOK(tok) {
+			return "", false, true
+		}
+		if rm != nil {
+			if a, ok := rm.Tokens.Lookup(tok); ok {
+				return a, false, true
+			}
+		}
 	}
-	if a, ok := rm.Tokens.Lookup(tok); ok {
-		return a, true
-	}
-	if len(rm.TrustedProxies) > 0 && rm.fromTrustedProxy(r) {
+	if rm != nil && len(rm.TrustedProxies) > 0 && rm.fromTrustedProxy(r) {
 		hdr := rm.ProxyUserHeader
 		if hdr == "" {
 			hdr = "X-Forwarded-User"
 		}
 		if u := strings.TrimSpace(r.Header.Get(hdr)); u != "" {
-			return u, true
+			return u, false, true
 		}
 	}
-	return "", false
+	if c, err := r.Cookie(CookieName); err == nil && h == "" {
+		if p, ok := s.cookieOK(c.Value); ok {
+			return p, true, true
+		}
+	}
+	return "", false, false
 }
 
 func (s *Server) tokenOK(tok string) bool {
@@ -326,28 +337,6 @@ func (s *Server) tokenOK(tok string) bool {
 func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(Health{Status: "ok", Version: s.opts.Version, PID: os.Getpid(), WorkspaceHash: s.wsHash})
-}
-
-// auth exchanges the local token for an HttpOnly cookie and redirects to
-// next (a path on this server). ka open sends the browser here.
-func (s *Server) auth(w http.ResponseWriter, r *http.Request) {
-	tok := r.URL.Query().Get("token")
-	valid := s.tokenOK(tok)
-	if !valid && s.opts.Remote != nil {
-		_, valid = s.opts.Remote.Tokens.Lookup(tok)
-	}
-	if !valid {
-		writeProblem(w, newProblem(codeUnauthorized, "run `ka open` again", "wrong or missing token"))
-		return
-	}
-	next := r.URL.Query().Get("next")
-	if !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") || strings.HasPrefix(next, "/\\") {
-		next = "/"
-	}
-	secure := r.TLS != nil || (s.opts.Remote != nil && strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https"))
-	http.SetCookie(w, &http.Cookie{Name: CookieName, Value: tok, Path: "/", HttpOnly: true, Secure: secure, SameSite: http.SameSiteStrictMode})
-	w.Header().Set("Cache-Control", "no-store")
-	http.Redirect(w, r, next, http.StatusSeeOther)
 }
 
 func writeProblem(w http.ResponseWriter, p *Problem) {

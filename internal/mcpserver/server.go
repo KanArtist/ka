@@ -109,7 +109,9 @@ func (s *Server) callerFor(ss *mcp.ServerSession, extra *mcp.RequestExtra) engin
 	}
 	session := s.session
 	if ss != nil && ss.ID() != "" {
-		session = presence.SessionID(ss.ID())
+		// The derived ID, as presence shows it: the Ka-Session trailer and
+		// claims land in git, and the raw ID would let a reader use the session.
+		session = presence.PublicID(ss.ID())
 	}
 	if extra != nil && extra.Header != nil {
 		if a := extra.Header.Get("X-Ka-Actor"); a != "" && s.opt.Actor == "" {
@@ -192,10 +194,117 @@ const SessionTimeout = 24 * time.Hour
 // The SDK's own DNS-rebinding check is off: the daemon checks Host (and
 // Origin) in front of it, and allows the --public-url host, which the SDK
 // would refuse when a reverse proxy connects over loopback.
+//
+// Each session belongs to the principal that created it (X-Ka-Principal,
+// which the daemon sets after authenticating and strips from clients; "" for
+// the local token). A request naming another principal's session is refused
+// with 403 before it reaches the SDK, so in remote mode one token holder
+// cannot use or end another's session.
 func (s *Server) HTTPHandler() http.Handler {
-	return mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return s.MCP },
+	h := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return s.MCP },
 		&mcp.StreamableHTTPOptions{DisableLocalhostProtection: true, SessionTimeout: SessionTimeout})
+	owners := &sessionOwners{m: map[string]*sessionOwner{}}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		principal := r.Header.Get("X-Ka-Principal")
+		id := r.Header.Get("Mcp-Session-Id")
+		if id == "" { // a new session: record its owner before the client sees its ID
+			h.ServeHTTP(&ownerWriter{ResponseWriter: w, record: func(id string) { owners.add(id, principal) }}, r)
+			return
+		}
+		if !owners.check(id, principal) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			io.WriteString(w, `{"jsonrpc":"2.0","id":null,"error":{"code":-32600,"message":"this MCP session belongs to another user"}}`+"\n")
+			return
+		}
+		h.ServeHTTP(w, r)
+		if r.Method == http.MethodDelete {
+			owners.drop(id)
+		}
+	})
 }
+
+// sessionOwners maps MCP session IDs to the principal that created them.
+type sessionOwners struct {
+	mu sync.Mutex
+	m  map[string]*sessionOwner
+}
+
+type sessionOwner struct {
+	principal string
+	seen      time.Time
+}
+
+func (o *sessionOwners) add(id, principal string) {
+	now := time.Now()
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	for k, v := range o.m { // sessions the SDK has ended for inactivity
+		if now.Sub(v.seen) > SessionTimeout+time.Hour {
+			delete(o.m, k)
+		}
+	}
+	o.m[id] = &sessionOwner{principal, now}
+}
+
+// check reports whether principal may use session id. An ID with no owner
+// is not a live session (or never was); the SDK answers it with 404.
+func (o *sessionOwners) check(id, principal string) bool {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	v, ok := o.m[id]
+	if !ok {
+		return true
+	}
+	if v.principal != principal {
+		return false
+	}
+	v.seen = time.Now()
+	return true
+}
+
+func (o *sessionOwners) drop(id string) {
+	o.mu.Lock()
+	delete(o.m, id)
+	o.mu.Unlock()
+}
+
+// ownerWriter records the session ID the SDK assigns, as the response
+// headers are written.
+type ownerWriter struct {
+	http.ResponseWriter
+	record func(id string)
+	done   bool
+}
+
+func (w *ownerWriter) WriteHeader(code int) {
+	if !w.done {
+		w.done = true
+		if id := w.Header().Get("Mcp-Session-Id"); id != "" && code < 300 {
+			w.record(id)
+		}
+	}
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *ownerWriter) Write(b []byte) (int, error) {
+	if !w.done {
+		w.WriteHeader(http.StatusOK)
+	}
+	return w.ResponseWriter.Write(b)
+}
+
+// Flush keeps the SDK's streamed responses streaming.
+func (w *ownerWriter) Flush() {
+	if !w.done {
+		w.WriteHeader(http.StatusOK)
+	}
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+func (w *ownerWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 // ---- schemas -------------------------------------------------------------------
 
