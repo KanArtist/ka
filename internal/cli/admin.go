@@ -330,7 +330,9 @@ func cmdDoctor(ctx context.Context, x *IO, args []string) int {
 			case drv != "" && (engine.MergeDriverCommand == "" || drv == engine.MergeDriverCommand):
 				add(st.Name, "ok", "merge driver", "registered")
 			case *fix && engine.MergeDriverCommand != "":
-				if err := engine.RegisterMergeDriver(ctx, g); err == nil {
+				if err := engine.RegisterMergeDriver(ctx, g); err != nil {
+					add(st.Name, "fail", "merge driver", "registering it: "+err.Error())
+				} else {
 					add(st.Name, "fixed", "merge driver", "registered "+engine.MergeDriverCommand)
 				}
 			case drv != "":
@@ -350,10 +352,11 @@ func cmdDoctor(ctx context.Context, x *IO, args []string) int {
 					content += "* text=auto eol=lf\n"
 				}
 				content += "ticket.md merge=ka\n"
-				os.WriteFile(filepath.Join(st.Root, ".gitattributes"), []byte(content), 0o644)
-				g.Run(ctx, "add", "--", filepath.Join(st.Root, ".gitattributes"))
-				g.RunRaw(ctx, []byte("ka doctor: route ticket.md through the ka merge driver\n"), "commit", "-q", "--no-verify", "-F", "-")
-				add(st.Name, "fixed", ".gitattributes", "added ticket.md merge=ka (committed)")
+				if err := fixAttributes(ctx, g, filepath.Join(st.Root, ".gitattributes"), content); err != nil {
+					add(st.Name, "fail", ".gitattributes", "adding ticket.md merge=ka: "+err.Error())
+				} else {
+					add(st.Name, "fixed", ".gitattributes", "added ticket.md merge=ka (committed)")
+				}
 			} else {
 				add(st.Name, "warn", ".gitattributes", "ticket.md is not routed to the merge driver; run ka doctor --fix")
 			}
@@ -373,24 +376,34 @@ func cmdDoctor(ctx context.Context, x *IO, args []string) int {
 			add(st.Name, "ok", "sync", stt.State)
 		}
 	}
-	if c.json {
-		return emit(x, c, fs, "")
-	}
-	bad := 0
+	bad := false
+	var b strings.Builder
 	for _, f := range fs {
 		where := ""
 		if f.Store != "" {
 			where = f.Store + ": "
 		}
-		fmt.Fprintf(x.Out, "%-5s %s%s: %s\n", f.Status, where, f.Check, f.Detail)
-		if f.Status == "fail" {
-			bad++
-		}
+		fmt.Fprintf(&b, "%-5s %s%s: %s\n", f.Status, where, f.Check, f.Detail)
+		bad = bad || f.Status == "fail"
 	}
-	if bad > 0 {
+	emit(x, c, fs, b.String())
+	if bad {
 		return 1
 	}
 	return 0
+}
+
+// fixAttributes writes .gitattributes and commits only that file, leaving
+// anything else the user staged out of the commit.
+func fixAttributes(ctx context.Context, g *gitx.Repo, path, content string) error {
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		return err
+	}
+	if _, err := g.Run(ctx, "add", "--", path); err != nil {
+		return err
+	}
+	_, err := g.RunRaw(ctx, []byte("ka doctor: route ticket.md through the ka merge driver\n"), "commit", "-q", "--no-verify", "--only", "-F", "-", "--", path)
+	return err
 }
 
 // ---- store management -------------------------------------------------------------
@@ -408,13 +421,15 @@ func cmdStore(ctx context.Context, x *IO, args []string) int {
 	fl, c := newFlags("store", "ls | add URL|PATH [--name N] [--branch B] | set-url NAME URL [--name NEW] | rm NAME", x)
 	name := fl.String("name", "", "store name")
 	branch := fl.String("branch", "", "branch (for orphan-branch stores)")
+	sub, args := subcommand(fl, args)
 	pos, err := parse(fl, args)
 	if err != nil {
 		return 2
 	}
-	if len(pos) == 0 || pos[0] == "ls" {
-		return cmdWorkspace(ctx, x, args[min(1, len(args)):])
+	if sub == "" || sub == "ls" {
+		return cmdWorkspace(ctx, x, args)
 	}
+	pos = append([]string{sub}, pos...)
 	path := c.workspace
 	if path == "" {
 		path = filepath.Join(engine.ConfigDir(), "workspace.yml")
@@ -525,9 +540,12 @@ func writeWorkspaceFile(wf *engine.WorkspaceFile) error {
 	if wf.Project != "" {
 		kv = append(kv, kaspec.KV{K: "project", V: wf.Project})
 	}
+	if wf.Offline {
+		kv = append(kv, kaspec.KV{K: "offline", V: kaspec.Raw("true")})
+	}
 	var stores []any
 	for _, s := range wf.Stores {
-		e := []kaspec.KV{{K: "name", V: s.Name}, {K: "url", V: s.URL}, {K: "path", V: s.Path}, {K: "branch", V: s.Branch}, {K: "push", V: s.Push}}
+		e := []kaspec.KV{{K: "name", V: s.Name}, {K: "url", V: s.URL}, {K: "path", V: s.Path}, {K: "branch", V: s.Branch}, {K: "push", V: s.Push}, {K: "fetch_interval", V: s.FetchInterval}}
 		stores = append(stores, e)
 	}
 	kv = append(kv, kaspec.KV{K: "stores", V: stores})
@@ -544,7 +562,33 @@ func writeWorkspaceFile(wf *engine.WorkspaceFile) error {
 	if err := os.MkdirAll(filepath.Dir(wf.Path), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(wf.Path, []byte(kaspec.EmitYAML(kv)), 0o644)
+	return writeFileAtomic(wf.Path, []byte(kaspec.EmitYAML(kv)), 0o644)
+}
+
+// writeFileAtomic replaces path with data through a temporary file in the
+// same directory, so a crash or full disk never leaves it half-written.
+func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
+	if real, err := filepath.EvalSymlinks(path); err == nil {
+		path = real // write through a symlinked dotfile
+	}
+	f, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(data)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = os.Chmod(f.Name(), mode)
+	}
+	if err == nil {
+		err = os.Rename(f.Name(), path)
+	}
+	if err != nil {
+		os.Remove(f.Name())
+	}
+	return err
 }
 
 func sortedKeys(m map[string]string) []string {

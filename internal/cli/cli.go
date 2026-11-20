@@ -140,6 +140,10 @@ type common struct {
 	workspace string
 	offline   bool
 	maps      mapFlag
+	// The service open built, reused when a command opens it again (an
+	// interactive prompt, then the write).
+	svc    *engine.Service
+	caller engine.Caller
 }
 
 func newFlags(name, args string, x *IO) (*flag.FlagSet, *common) {
@@ -159,8 +163,16 @@ func newFlags(name, args string, x *IO) (*flag.FlagSet, *common) {
 	return fl, c
 }
 
-// parse parses flags interleaved with positional arguments.
+// parse parses flags interleaved with positional arguments. Everything after
+// the first literal "--" is positional.
 func parse(fl *flag.FlagSet, args []string) ([]string, error) {
+	var tail []string
+	for i, a := range args {
+		if a == "--" {
+			args, tail = args[:i], args[i+1:]
+			break
+		}
+	}
 	var pos []string
 	for {
 		if err := fl.Parse(args); err != nil {
@@ -168,14 +180,34 @@ func parse(fl *flag.FlagSet, args []string) ([]string, error) {
 		}
 		rest := fl.Args()
 		if len(rest) == 0 {
-			return pos, nil
-		}
-		if rest[0] == "--" {
-			return append(pos, rest[1:]...), nil
+			return append(pos, tail...), nil
 		}
 		pos = append(pos, rest[0])
 		args = rest[1:]
 	}
+}
+
+// subcommand finds the first positional argument of args, skipping flags
+// (and the values of fl's non-boolean flags) before it, so flags may come
+// before the subcommand name. It returns the name ("" when there is none)
+// and args without it.
+func subcommand(fl *flag.FlagSet, args []string) (string, []string) {
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if a == "--" {
+			break
+		}
+		if len(a) < 2 || a[0] != '-' {
+			return a, append(args[:i:i], args[i+1:]...)
+		}
+		name, _, hasValue := strings.Cut(strings.TrimLeft(a, "-"), "=")
+		if f := fl.Lookup(name); f != nil && !hasValue {
+			if b, ok := f.Value.(interface{ IsBoolFlag() bool }); !ok || !b.IsBoolFlag() {
+				i++ // the flag's value
+			}
+		}
+	}
+	return "", args
 }
 
 type mapFlag map[string]string
@@ -198,6 +230,9 @@ func (m *multi) Set(v string) error { *m = append(*m, v); return nil }
 // ---- service -----------------------------------------------------------------
 
 func open(ctx context.Context, x *IO, c *common) (*engine.Service, engine.Caller, error) {
+	if c.svc != nil {
+		return c.svc, c.caller, nil
+	}
 	ws, err := engine.Open(ctx, engine.OpenOptions{Dir: x.Dir, Workspace: c.workspace, Map: c.maps, Offline: c.offline})
 	if err != nil {
 		return nil, engine.Caller{}, err
@@ -207,7 +242,8 @@ func open(ctx context.Context, x *IO, c *common) (*engine.Service, engine.Caller
 		return nil, engine.Caller{}, err
 	}
 	svc.NoPush = c.noPush || c.offline
-	return svc, svc.CallerFor(c.as, os.Getenv("KA_SESSION")), nil
+	c.svc, c.caller = svc, svc.CallerFor(c.as, os.Getenv("KA_SESSION"))
+	return c.svc, c.caller, nil
 }
 
 func fail(x *IO, c *common, err error) int {

@@ -152,8 +152,13 @@ func editInEditor(ctx context.Context, x *IO, c *common, svc *engine.Service, ca
 		return fail(x, c, err)
 	}
 	defer os.Remove(tmp.Name())
-	tmp.Write(orig)
-	tmp.Close()
+	_, err = tmp.Write(orig)
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		return fail(x, c, err)
+	}
 	editor := os.Getenv("VISUAL")
 	if editor == "" {
 		editor = os.Getenv("EDITOR")
@@ -165,13 +170,15 @@ func editInEditor(ctx context.Context, x *IO, c *common, svc *engine.Service, ca
 		}
 	}
 	for {
-		parts := strings.Fields(editor)
-		cmd := exec.Command(parts[0], append(parts[1:], tmp.Name())...)
+		cmd := editorCommand(editor, tmp.Name())
 		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 		if err := cmd.Run(); err != nil {
 			return fail(x, c, fmt.Errorf("editor: %v", err))
 		}
-		edited, _ := os.ReadFile(tmp.Name())
+		edited, err := os.ReadFile(tmp.Name())
+		if err != nil {
+			return fail(x, c, err)
+		}
 		if bytes.Equal(edited, orig) {
 			fmt.Fprintln(x.Out, "no changes")
 			return 0
@@ -191,6 +198,17 @@ func editInEditor(ctx context.Context, x *IO, c *common, svc *engine.Service, ca
 			return 1
 		}
 	}
+}
+
+// editorCommand runs $EDITOR on file. The whole value is tried as a program
+// first (a path with spaces, such as C:\Program Files\...); otherwise it is a
+// program and its arguments ("code -w").
+func editorCommand(editor, file string) *exec.Cmd {
+	if _, err := exec.LookPath(editor); err == nil {
+		return exec.Command(editor, file)
+	}
+	parts := strings.Fields(editor)
+	return exec.Command(parts[0], append(parts[1:], file)...)
 }
 
 func cmdClaim(ctx context.Context, x *IO, args []string) int {
@@ -504,7 +522,9 @@ func cmdInit(ctx context.Context, x *IO, args []string) int {
 	if *agents {
 		p := filepath.Join(o.Dir, "AGENTS.md")
 		if _, err := os.Stat(p); err != nil {
-			os.WriteFile(p, []byte("# Agents\n\n"+engine.AgentsMD(o.Project, prefixOr(o))), 0o644)
+			if err := os.WriteFile(p, []byte("# Agents\n\n"+engine.AgentsMD(o.Project, prefixOr(o))), 0o644); err != nil {
+				return fail(x, c, err)
+			}
 			created = append(created, "AGENTS.md")
 		}
 	}

@@ -2,10 +2,12 @@ package cli
 
 import (
 	"context"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -111,5 +113,92 @@ func TestOpenPrintsAuthURL(t *testing.T) {
 	want := rt.URL + "/auth?next=%2Fticket%2FJK-12345&token=tok"
 	if res.code != 0 || strings.TrimSpace(res.out) != want {
 		t.Fatalf("open: %+v, want %s", res, want)
+	}
+}
+
+type syncBuf struct {
+	mu sync.Mutex
+	b  strings.Builder
+}
+
+func (s *syncBuf) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncBuf) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
+}
+
+// ka watch QUERY refreshes the matching tickets when a ticket changes, and
+// finds a restarted daemon (new address and token) on its own.
+func TestWatchRefreshesAndRediscovers(t *testing.T) {
+	testkit.GitEnv(t)
+	t.Setenv("KA_RUNTIME_DIR", t.TempDir())
+	r := testkit.NewRemote(t, nil)
+	dir := r.Clone()
+	svc := testkit.Service(t, dir)
+	serve := func(tok string) (*engine.EventHub, context.CancelFunc) {
+		hub := engine.NewEventHub(100)
+		svc.SetEvents(hub)
+		ctx, cancel := context.WithCancel(context.Background())
+		srv := api.New(svc, api.Options{Token: tok, Version: "test", Events: hub})
+		ln, err := api.Listen("127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		go srv.Serve(ctx, ln)
+		rt := &api.Runtime{PID: os.Getpid(), Addr: ln.Addr().String(), URL: "http://" + ln.Addr().String(), Workspace: svc.WS.Source,
+			WorkspaceHash: api.WorkspaceHash(svc.WS.Source), Token: tok}
+		if err := api.WriteRuntime(rt); err != nil {
+			t.Fatal(err)
+		}
+		return hub, cancel
+	}
+	until := func(d time.Duration, publish func(), cond func() bool) bool {
+		for end := time.Now().Add(d); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
+			publish()
+			if cond() {
+				return true
+			}
+		}
+		return false
+	}
+
+	hubA, stopA := serve("a")
+	defer stopA()
+	ctx, cancel := context.WithCancel(context.Background())
+	out := &syncBuf{}
+	done := make(chan int)
+	go func() {
+		done <- Run(ctx, &IO{In: strings.NewReader(""), Out: out, Err: io.Discard, Dir: dir}, []string{"watch", "--history", "0", "--json", "Later"})
+	}()
+
+	created, err := svc.Create(ctx, svc.CallerFor("", ""), []engine.CreateIn{{Title: "Later work"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := created.Created[0].ID
+	// Well inside the old 3 s poll: the create event triggers the refresh.
+	if !until(2500*time.Millisecond, func() { hubA.Publish(engine.Event{Type: "ticket.updated", Ticket: id}) },
+		func() bool { return strings.Contains(out.String(), `"type":"ticket.updated"`) }) {
+		t.Fatalf("no event for the newly matching ticket:\n%s", out)
+	}
+
+	stopA()
+	hubB, stopB := serve("b")
+	defer stopB()
+	if !until(10*time.Second, func() { hubB.Publish(engine.Event{Type: "ticket.moved", Ticket: id}) },
+		func() bool { return strings.Contains(out.String(), `"type":"ticket.moved"`) }) {
+		t.Fatalf("did not reconnect to the new daemon:\n%s", out)
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("ka watch did not exit")
 	}
 }

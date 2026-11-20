@@ -66,7 +66,7 @@ func TestOnlyDetectedAgentsAndSkills(t *testing.T) {
 		t.Fatalf("agents: %v", agents)
 	}
 	want := "claude mcp add -s user -e KA_ACTOR=agent/claude --transport stdio ka -- /usr/local/bin/ka mcp"
-	if len(*calls) != 2 || (*calls)[1] != want {
+	if len(*calls) != 1 || (*calls)[0] != want {
 		t.Fatalf("claude calls: %q", *calls)
 	}
 	m := readJSON(t, filepath.Join(o.Home, ".gemini", "config", "mcp_config.json"))
@@ -139,5 +139,65 @@ func TestDryRunAndUnknown(t *testing.T) {
 	}
 	if _, err := Run(context.Background(), Options{Only: []string{"nope"}}, "S"); err == nil {
 		t.Fatal("unknown agent accepted")
+	}
+}
+
+func TestCLIAgentWithoutBinaryIsSkipped(t *testing.T) {
+	o, calls := fakeOpts(t)
+	os.MkdirAll(filepath.Join(o.Home, ".codex"), 0o755)
+	res, err := Run(context.Background(), o, "S")
+	if err != nil || len(*calls) != 0 || res[0].Agent != "codex" || res[0].Status != "skipped" || !strings.Contains(res[0].Detail, "not on PATH") {
+		t.Fatalf("%+v %v %q", res, err, *calls)
+	}
+	// Named explicitly, it is a failure.
+	o.Only = []string{"codex"}
+	if res, _ := Run(context.Background(), o, "S"); res[0].Status != "failed" {
+		t.Fatalf("%+v", res[0])
+	}
+}
+
+func TestCLIAddRemovesOnlyWhenAddFails(t *testing.T) {
+	o, _ := fakeOpts(t, "codex")
+	var calls []string
+	o.Run = func(_ context.Context, name string, args ...string) error {
+		calls = append(calls, args[1])
+		if args[1] == "add" && len(calls) == 1 {
+			return errors.New("already exists")
+		}
+		return nil
+	}
+	res, err := Run(context.Background(), o, "S")
+	if err != nil || res[0].Status != "configured" || strings.Join(calls, ",") != "add,remove,add" {
+		t.Fatalf("%+v %v %q", res, err, calls)
+	}
+}
+
+func TestMergeJSONPreservesNumbersAndSymlinks(t *testing.T) {
+	dir := t.TempDir()
+	real := filepath.Join(dir, "real.json")
+	os.WriteFile(real, []byte(`{"big": 9007199254740993, "mcpServers": {}}`), 0o644)
+	link := filepath.Join(dir, "mcp.json")
+	if err := os.Symlink(real, link); err != nil {
+		t.Skip("no symlinks:", err)
+	}
+	if err := mergeJSON(link, false, []string{"mcpServers", "ka"}, map[string]any{"command": "ka"}); err != nil {
+		t.Fatal(err)
+	}
+	if fi, err := os.Lstat(link); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("link replaced: %v %v", fi, err)
+	}
+	b, _ := os.ReadFile(real)
+	if !strings.Contains(string(b), "9007199254740993") || !strings.Contains(string(b), `"command": "ka"`) {
+		t.Fatalf("real file: %s", b)
+	}
+	if ents, _ := os.ReadDir(dir); len(ents) != 2 {
+		t.Fatalf("temp file left behind: %v", ents)
+	}
+	os.WriteFile(real, []byte(`{"mcpServers": []}`), 0o644)
+	if err := mergeJSON(real, false, []string{"mcpServers", "ka"}, "x"); err == nil || !strings.Contains(err.Error(), "not an object") {
+		t.Fatalf("non-object intermediate: %v", err)
+	}
+	if b, _ := os.ReadFile(real); string(b) != `{"mcpServers": []}` {
+		t.Fatalf("rewrote: %s", b)
 	}
 }

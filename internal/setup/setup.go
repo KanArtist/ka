@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -88,6 +89,9 @@ type agent struct {
 	id, name string
 	bins     []string // any of these on PATH means it is installed
 	dirs     []string // or any of these config dirs (relative to home) exists
+	// cli is the binary mcp runs, for agents configured through their CLI;
+	// without it on PATH the agent is skipped.
+	cli string
 	// skills are extra user skill dirs (relative to home) for agents that
 	// don't read ~/.agents/skills.
 	skills []string
@@ -105,72 +109,83 @@ func Agents() []string {
 
 func agents() []agent {
 	return []agent{
-		{id: "claude", name: "Claude Code", bins: []string{"claude"}, dirs: []string{".claude"}, skills: []string{".claude/skills"},
-			mcp: func(ctx context.Context, o *Options, actor string) (string, error) {
-				_ = o.run(ctx, "claude", "mcp", "remove", "-s", "user", "ka")
-				// An option between -e and the name, or the name parses as another env pair.
-				return "claude mcp add -s user", o.run(ctx, "claude", "mcp", "add", "-s", "user", "-e", "KA_ACTOR="+actor, "--transport", "stdio", "ka", "--", o.Ka, "mcp")
-			}},
-		{id: "codex", name: "Codex", bins: []string{"codex"}, dirs: []string{".codex"},
-			mcp: func(ctx context.Context, o *Options, actor string) (string, error) {
-				_ = o.run(ctx, "codex", "mcp", "remove", "ka")
-				return "codex mcp add", o.run(ctx, "codex", "mcp", "add", "ka", "--env", "KA_ACTOR="+actor, "--", o.Ka, "mcp")
-			}},
+		{id: "claude", name: "Claude Code", bins: []string{"claude"}, dirs: []string{".claude"}, skills: []string{".claude/skills"}, cli: "claude",
+			// An option between -e and the name, or the name parses as another env pair.
+			mcp: cliMCP("claude", "claude mcp add -s user", []string{"mcp", "remove", "-s", "user", "ka"},
+				func(o *Options, actor string) []string {
+					return []string{"mcp", "add", "-s", "user", "-e", "KA_ACTOR=" + actor, "--transport", "stdio", "ka", "--", o.Ka, "mcp"}
+				})},
+		{id: "codex", name: "Codex", bins: []string{"codex"}, dirs: []string{".codex"}, cli: "codex",
+			mcp: cliMCP("codex", "codex mcp add", []string{"mcp", "remove", "ka"},
+				func(o *Options, actor string) []string {
+					return []string{"mcp", "add", "ka", "--env", "KA_ACTOR=" + actor, "--", o.Ka, "mcp"}
+				})},
 		{id: "cursor", name: "Cursor", bins: []string{"cursor-agent", "cursor"}, dirs: []string{".cursor"},
-			mcp: func(ctx context.Context, o *Options, actor string) (string, error) {
-				p := filepath.Join(o.home(), ".cursor", "mcp.json")
-				return p, mergeJSON(p, o.DryRun, []string{"mcpServers", "ka"}, map[string]any{"type": "stdio", "command": o.Ka, "args": []string{"mcp"}, "env": map[string]string{"KA_ACTOR": actor}})
-			}},
+			mcp: jsonMCP(func(o *Options) string { return filepath.Join(o.home(), ".cursor", "mcp.json") },
+				"mcpServers", map[string]any{"type": "stdio"})},
 		{id: "agy", name: "Antigravity", bins: []string{"agy"}, dirs: []string{".gemini/config"}, skills: []string{".gemini/config/skills"},
-			mcp: func(ctx context.Context, o *Options, actor string) (string, error) {
-				p := filepath.Join(o.home(), ".gemini", "config", "mcp_config.json")
-				return p, mergeJSON(p, o.DryRun, []string{"mcpServers", "ka"}, map[string]any{"command": o.Ka, "args": []string{"mcp"}, "env": map[string]string{"KA_ACTOR": actor}})
-			}},
+			mcp: jsonMCP(func(o *Options) string { return filepath.Join(o.home(), ".gemini", "config", "mcp_config.json") },
+				"mcpServers", nil)},
 		{id: "copilot", name: "GitHub Copilot CLI", bins: []string{"copilot"}, dirs: []string{".copilot"},
-			mcp: func(ctx context.Context, o *Options, actor string) (string, error) {
+			mcp: jsonMCP(func(o *Options) string {
 				dir := os.Getenv("COPILOT_HOME")
 				if dir == "" {
 					dir = filepath.Join(o.home(), ".copilot")
 				}
-				p := filepath.Join(dir, "mcp-config.json")
-				return p, mergeJSON(p, o.DryRun, []string{"mcpServers", "ka"}, map[string]any{"type": "local", "command": o.Ka, "args": []string{"mcp"}, "env": map[string]string{"KA_ACTOR": actor}, "tools": []string{"*"}})
-			}},
-		{id: "vscode", name: "VS Code (Copilot)", bins: []string{"code"},
+				return filepath.Join(dir, "mcp-config.json")
+			}, "mcpServers", map[string]any{"type": "local", "tools": []string{"*"}})},
+		{id: "vscode", name: "VS Code (Copilot)", bins: []string{"code"}, cli: "code",
 			mcp: func(ctx context.Context, o *Options, actor string) (string, error) {
 				cfg, _ := json.Marshal(map[string]any{"name": "ka", "type": "stdio", "command": o.Ka, "args": []string{"mcp"}, "env": map[string]string{"KA_ACTOR": actor}})
 				return "code --add-mcp", o.run(ctx, "code", "--add-mcp", string(cfg))
 			}},
-		{id: "grok", name: "Grok Build", bins: []string{"grok"}, dirs: []string{".grok"},
-			mcp: func(ctx context.Context, o *Options, actor string) (string, error) {
-				_ = o.run(ctx, "grok", "mcp", "remove", "ka")
-				return "grok mcp add", o.run(ctx, "grok", "mcp", "add", "ka", "-e", "KA_ACTOR="+actor, "--", o.Ka, "mcp")
-			}},
+		{id: "grok", name: "Grok Build", bins: []string{"grok"}, dirs: []string{".grok"}, cli: "grok",
+			mcp: cliMCP("grok", "grok mcp add", []string{"mcp", "remove", "ka"},
+				func(o *Options, actor string) []string {
+					return []string{"mcp", "add", "ka", "-e", "KA_ACTOR=" + actor, "--", o.Ka, "mcp"}
+				})},
 		{id: "muse", name: "Muse Code", bins: []string{"muse"}, dirs: []string{".config/muse"},
-			mcp: func(ctx context.Context, o *Options, actor string) (string, error) {
-				p := filepath.Join(xdgConfig(o), "muse", "settings.json")
-				// optional: a failing server must not abort the agent's run.
-				return p, mergeJSON(p, o.DryRun, []string{"mcp_servers", "ka"}, map[string]any{"transport": "stdio", "command": o.Ka, "args": []string{"mcp"}, "env": map[string]string{"KA_ACTOR": actor}, "mode": "optional"},
-					jsonDefault{"schema_version", 1})
-			}},
+			// optional: a failing server must not abort the agent's run.
+			mcp: jsonMCP(func(o *Options) string { return filepath.Join(xdgConfig(o), "muse", "settings.json") },
+				"mcp_servers", map[string]any{"transport": "stdio", "mode": "optional"}, jsonDefault{"schema_version", 1})},
 		{id: "amp", name: "Amp", bins: []string{"amp"}, dirs: []string{".config/amp"},
-			mcp: func(ctx context.Context, o *Options, actor string) (string, error) {
-				p := filepath.Join(xdgConfig(o), "amp", "settings.json")
-				return p, mergeJSON(p, o.DryRun, []string{"amp.mcpServers", "ka"}, map[string]any{"command": o.Ka, "args": []string{"mcp"}, "env": map[string]string{"KA_ACTOR": actor}})
-			}},
+			mcp: jsonMCP(func(o *Options) string { return filepath.Join(xdgConfig(o), "amp", "settings.json") },
+				"amp.mcpServers", nil)},
 		{id: "devin", name: "Devin", bins: []string{"devin"}, dirs: []string{".config/devin"},
-			mcp: func(ctx context.Context, o *Options, actor string) (string, error) {
+			mcp: jsonMCP(func(o *Options) string {
 				dir := filepath.Join(xdgConfig(o), "devin")
 				if runtime.GOOS == "windows" && os.Getenv("APPDATA") != "" && o.Home == "" {
 					dir = filepath.Join(os.Getenv("APPDATA"), "devin")
 				}
-				p := filepath.Join(dir, "mcp_config.json")
-				return p, mergeJSON(p, o.DryRun, []string{"mcpServers", "ka"}, map[string]any{"command": o.Ka, "args": []string{"mcp"}, "env": map[string]string{"KA_ACTOR": actor}})
-			}},
+				return filepath.Join(dir, "mcp_config.json")
+			}, "mcpServers", nil)},
 		{id: "junie", name: "Junie", bins: []string{"junie"}, dirs: []string{".junie"},
-			mcp: func(ctx context.Context, o *Options, actor string) (string, error) {
-				p := filepath.Join(o.home(), ".junie", "mcp", "mcp.json")
-				return p, mergeJSON(p, o.DryRun, []string{"mcpServers", "ka"}, map[string]any{"command": o.Ka, "args": []string{"mcp"}, "env": map[string]string{"KA_ACTOR": actor}})
-			}},
+			mcp: jsonMCP(func(o *Options) string { return filepath.Join(o.home(), ".junie", "mcp", "mcp.json") },
+				"mcpServers", nil)},
+	}
+}
+
+// cliMCP configures an agent through its own CLI. It adds first and only
+// removes ka's old entry (then adds again) when that fails, so a failing add
+// does not lose a working entry.
+func cliMCP(bin, where string, remove []string, add func(o *Options, actor string) []string) func(context.Context, *Options, string) (string, error) {
+	return func(ctx context.Context, o *Options, actor string) (string, error) {
+		if err := o.run(ctx, bin, add(o, actor)...); err == nil {
+			return where, nil
+		}
+		_ = o.run(ctx, bin, remove...)
+		return where, o.run(ctx, bin, add(o, actor)...)
+	}
+}
+
+// jsonMCP configures an agent by merging the ka server, with extra fields,
+// under key in the JSON file at path.
+func jsonMCP(path func(o *Options) string, key string, extra map[string]any, defaults ...jsonDefault) func(context.Context, *Options, string) (string, error) {
+	return func(ctx context.Context, o *Options, actor string) (string, error) {
+		v := map[string]any{"command": o.Ka, "args": []string{"mcp"}, "env": map[string]string{"KA_ACTOR": actor}}
+		maps.Copy(v, extra)
+		p := path(o)
+		return p, mergeJSON(p, o.DryRun, []string{key, "ka"}, v, defaults...)
 	}
 }
 
@@ -224,6 +239,15 @@ func Run(ctx context.Context, o Options, skill string) ([]Result, error) {
 			skillDirs[filepath.Join(o.home(), filepath.FromSlash(d))] = true
 		}
 		actor := "agent/" + a.id
+		if a.cli != "" && !o.lookPath(a.cli) {
+			// Found by its config dir only: there is no CLI to configure it with.
+			status := "skipped"
+			if only[a.id] {
+				status = "failed"
+			}
+			res = append(res, Result{a.id, a.name, status, a.cli + " is not on PATH; install it or add it to PATH, then run ka setup again"})
+			continue
+		}
 		if o.DryRun {
 			res = append(res, Result{a.id, a.name, "planned", "register the ka MCP server as " + actor})
 			continue
@@ -271,8 +295,14 @@ func mergeJSON(p string, dryRun bool, path []string, value any, defaults ...json
 	case err != nil:
 		return err
 	case len(bytes.TrimSpace(b)) > 0:
-		if err := json.Unmarshal(b, &doc); err != nil {
+		// UseNumber keeps integers above 2^53 as written.
+		dec := json.NewDecoder(bytes.NewReader(b))
+		dec.UseNumber()
+		if err := dec.Decode(&doc); err != nil {
 			return fmt.Errorf("%s is not plain JSON (%v); add the ka server by hand", p, err)
+		}
+		if dec.More() {
+			return fmt.Errorf("%s has more than one JSON value; add the ka server by hand", p)
 		}
 	}
 	for _, d := range defaults {
@@ -282,23 +312,34 @@ func mergeJSON(p string, dryRun bool, path []string, value any, defaults ...json
 	}
 	m := doc
 	for _, k := range path[:len(path)-1] {
-		next, ok := m[k].(map[string]any)
-		if !ok {
-			next = map[string]any{}
-			m[k] = next
+		switch next := m[k].(type) {
+		case map[string]any:
+			m = next
+		case nil:
+			n := map[string]any{}
+			m[k] = n
+			m = n
+		default:
+			return fmt.Errorf("%s: %q is not an object; add the ka server by hand", p, k)
 		}
-		m = next
 	}
 	m[path[len(path)-1]] = value
 	if dryRun {
 		return nil
 	}
-	out, _ := json.MarshalIndent(doc, "", "  ")
+	out, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		return err
+	}
 	return writeFile(p, append(out, '\n'))
 }
 
-// writeFile writes atomically, creating parent directories.
+// writeFile writes atomically, creating parent directories. A symlinked file
+// (stow, chezmoi) is written through: its target is replaced, not the link.
 func writeFile(p string, data []byte) error {
+	if real, err := filepath.EvalSymlinks(p); err == nil {
+		p = real
+	}
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return err
 	}
@@ -306,9 +347,23 @@ func writeFile(p string, data []byte) error {
 	if fi, err := os.Stat(p); err == nil {
 		mode = fi.Mode().Perm() // keep a private config private
 	}
-	tmp := p + ".ka-tmp"
-	if err := os.WriteFile(tmp, data, mode); err != nil {
+	f, err := os.CreateTemp(filepath.Dir(p), "."+filepath.Base(p)+".ka-*")
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, p)
+	tmp := f.Name()
+	_, err = f.Write(data)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = os.Chmod(tmp, mode)
+	}
+	if err == nil {
+		err = os.Rename(tmp, p)
+	}
+	if err != nil {
+		os.Remove(tmp)
+	}
+	return err
 }

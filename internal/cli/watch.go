@@ -61,14 +61,32 @@ func cmdWatch(ctx context.Context, x *IO, args []string) int {
 		if err := w.refreshMatch(ctx, q); err != nil {
 			return fail(x, c, err)
 		}
+		// Refresh the matching tickets when tickets change, at most twice a
+		// second, rather than polling the query.
+		refresh := make(chan struct{}, 1)
+		w.changed = func() {
+			select {
+			case refresh <- struct{}{}:
+			default:
+			}
+		}
 		go func() {
 			for {
 				select {
 				case <-ctx.Done():
 					return
-				case <-time.After(3 * time.Second):
-					w.refreshMatch(ctx, q)
+				case <-refresh:
 				}
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(500 * time.Millisecond):
+				}
+				select {
+				case <-refresh:
+				default:
+				}
+				w.refreshMatch(ctx, q)
 			}
 		}()
 	}
@@ -79,6 +97,8 @@ func cmdWatch(ctx context.Context, x *IO, args []string) int {
 	if !c.json {
 		fmt.Fprintln(x.Err, w.dim("watching "+rt.URL+" (Ctrl-C to stop)"))
 	}
+	const maxBackoff = 30 * time.Second
+	backoff := time.Second
 	for ctx.Err() == nil {
 		n, err := w.stream(ctx, last)
 		if n > last {
@@ -87,12 +107,28 @@ func cmdWatch(ctx context.Context, x *IO, args []string) int {
 		if ctx.Err() != nil {
 			break
 		}
-		if err != nil {
-			fmt.Fprintln(x.Err, w.dim("disconnected ("+err.Error()+"); reconnecting…"))
+		if err == io.EOF {
+			backoff = time.Second // it was connected
 		}
+		fmt.Fprintln(x.Err, w.dim("disconnected ("+err.Error()+"); reconnecting…"))
 		select {
 		case <-ctx.Done():
-		case <-time.After(time.Second):
+		case <-time.After(backoff):
+		}
+		backoff = min(backoff*2, maxBackoff)
+		// A restarted daemon has a new address and token: find it again.
+		if r := api.Discover(ctx, ws.Source); r != nil {
+			if cur := w.runtime(); r.URL != cur.URL || r.Token != cur.Token {
+				w.setRuntime(r)
+				last = 0 // its event IDs start over
+				backoff = time.Second
+				if !c.json {
+					fmt.Fprintln(x.Err, w.dim("watching "+r.URL))
+				}
+				if w.changed != nil {
+					w.changed()
+				}
+			}
 		}
 	}
 	return 0
@@ -107,14 +143,28 @@ type watcher struct {
 	all            bool
 	mu             sync.Mutex
 	match          map[string]bool // nil: no query
+	changed        func()          // tickets changed: refresh match (nil: no query)
 	titles         map[string]string
 	lastDay        string
 }
 
+func (w *watcher) runtime() *api.Runtime {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.rt
+}
+
+func (w *watcher) setRuntime(rt *api.Runtime) {
+	w.mu.Lock()
+	w.rt = rt
+	w.mu.Unlock()
+}
+
 // get fetches JSON and returns the response's event sequence (Ka-Event-Seq).
 func (w *watcher) get(ctx context.Context, path string, out any) (uint64, error) {
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, w.rt.URL+path, nil)
-	req.Header.Set("Authorization", "Bearer "+w.rt.Token)
+	rt := w.runtime()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, rt.URL+path, nil)
+	req.Header.Set("Authorization", "Bearer "+rt.Token)
 	resp, err := w.client.Do(req)
 	if err != nil {
 		return 0, err
@@ -179,8 +229,9 @@ func (w *watcher) stream(ctx context.Context, since uint64) (uint64, error) {
 	if since > 0 {
 		path += "?last_event_id=" + strconv.FormatUint(since, 10)
 	}
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, w.rt.URL+path, nil)
-	req.Header.Set("Authorization", "Bearer "+w.rt.Token)
+	rt := w.runtime()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, rt.URL+path, nil)
+	req.Header.Set("Authorization", "Bearer "+rt.Token)
 	req.Header.Set("Accept", "text/event-stream")
 	resp, err := w.client.Do(req)
 	if err != nil {
@@ -207,6 +258,9 @@ func (w *watcher) stream(ctx context.Context, since uint64) (uint64, error) {
 			if json.Unmarshal([]byte(data.String()), &e) == nil {
 				if e.ID > last {
 					last = e.ID
+				}
+				if w.changed != nil && (e.Ticket != "" || e.Type == "reset") {
+					w.changed()
 				}
 				if w.wanted(e) {
 					w.print(e)

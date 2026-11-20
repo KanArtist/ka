@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"log/slog"
@@ -21,12 +22,10 @@ import (
 )
 
 func cmdDaemon(ctx context.Context, x *IO, args []string) int {
-	sub := "run"
-	if len(args) > 0 && args[0] != "" && args[0][0] != '-' {
-		sub, args = args[0], args[1:]
-	}
+	fl, _, _ := daemonRunFlags(x) // run has the most flags: the subcommand is found past any of them
+	sub, args := subcommand(fl, args)
 	switch sub {
-	case "run":
+	case "run", "":
 		return daemonRun(ctx, x, args)
 	case "status":
 		return daemonStatus(ctx, x, args)
@@ -39,22 +38,33 @@ func cmdDaemon(ctx context.Context, x *IO, args []string) int {
 	return 2
 }
 
-func daemonRun(ctx context.Context, x *IO, args []string) int {
+type daemonRunOpts struct {
+	listen, publicURL, proxyHeader, logFormat, hookSecretFile *string
+	proxies                                                   multi
+	verbose                                                   *bool
+}
+
+func daemonRunFlags(x *IO) (*flag.FlagSet, *common, *daemonRunOpts) {
 	fl, c := newFlags("daemon", "[run] [--listen ADDR] [--public-url URL] [--trusted-proxy CIDR]... [-v]", x)
-	listen := fl.String("listen", api.DefaultAddr, "address to listen on; a non-loopback address is remote mode and needs API tokens or --trusted-proxy")
-	publicURL := fl.String("public-url", "", "remote mode: the URL clients use (https://ka.example.com); only its host is accepted")
-	var proxies multi
-	fl.Var(&proxies, "trusted-proxy", "remote mode: a reverse proxy (CIDR or IP) trusted to assert the user in --proxy-user-header (repeatable)")
-	proxyHeader := fl.String("proxy-user-header", "X-Forwarded-User", "the header a trusted proxy sets to the user's handle or email")
-	verbose := fl.Bool("v", false, "log every request")
-	logFormat := fl.String("log-format", "text", "log format: text or json")
-	hookSecretFile := fl.String("webhook-secret-file", "", "verify GitHub webhooks (POST /api/v1/hooks/github) with the secret in this file ($KA_WEBHOOK_SECRET also works)")
+	o := &daemonRunOpts{}
+	o.listen = fl.String("listen", api.DefaultAddr, "address to listen on; a non-loopback address is remote mode and needs API tokens or --trusted-proxy")
+	o.publicURL = fl.String("public-url", "", "remote mode: the URL clients use (https://ka.example.com); only its host is accepted")
+	fl.Var(&o.proxies, "trusted-proxy", "remote mode: a reverse proxy (CIDR or IP) trusted to assert the user in --proxy-user-header (repeatable)")
+	o.proxyHeader = fl.String("proxy-user-header", "X-Forwarded-User", "the header a trusted proxy sets to the user's handle or email")
+	o.verbose = fl.Bool("v", false, "log every request")
+	o.logFormat = fl.String("log-format", "text", "log format: text or json")
+	o.hookSecretFile = fl.String("webhook-secret-file", "", "verify GitHub webhooks (POST /api/v1/hooks/github) with the secret in this file ($KA_WEBHOOK_SECRET also works)")
+	return fl, c, o
+}
+
+func daemonRun(ctx context.Context, x *IO, args []string) int {
+	fl, c, o := daemonRunFlags(x)
 	if _, err := parse(fl, args); err != nil {
 		return 2
 	}
 	hookSecret := os.Getenv("KA_WEBHOOK_SECRET")
-	if *hookSecretFile != "" {
-		b, err := os.ReadFile(*hookSecretFile)
+	if *o.hookSecretFile != "" {
+		b, err := os.ReadFile(*o.hookSecretFile)
 		if err != nil {
 			return fail(x, c, err)
 		}
@@ -70,38 +80,41 @@ func daemonRun(ctx context.Context, x *IO, args []string) int {
 			"a daemon for this workspace is already running at %s (pid %d)", r.URL, r.PID))
 	}
 	level := slog.LevelInfo
-	if *verbose {
+	if *o.verbose {
 		level = slog.LevelDebug
 	}
 	var handler slog.Handler = slog.NewTextHandler(x.Err, &slog.HandlerOptions{Level: level})
-	if *logFormat == "json" {
+	if *o.logFormat == "json" {
 		handler = slog.NewJSONHandler(x.Err, &slog.HandlerOptions{Level: level})
 	}
 	log := slog.New(handler)
 	var remote *api.Remote
 	var ln net.Listener
-	if !loopbackAddr(*listen) || *publicURL != "" || len(proxies) > 0 {
-		cidrs, err := api.ParseCIDRs(proxies)
+	if !loopbackAddr(*o.listen) || *o.publicURL != "" || len(o.proxies) > 0 {
+		cidrs, err := api.ParseCIDRs(o.proxies)
 		if err != nil {
 			return fail(x, c, err)
 		}
-		remote = &api.Remote{Tokens: api.NewTokenStore(api.TokensPath()), TrustedProxies: cidrs, ProxyUserHeader: *proxyHeader}
-		if *publicURL != "" {
-			u, err := url.Parse(*publicURL)
+		remote = &api.Remote{Tokens: api.NewTokenStore(api.TokensPath()), TrustedProxies: cidrs, ProxyUserHeader: *o.proxyHeader}
+		if *o.publicURL != "" {
+			u, err := url.Parse(*o.publicURL)
 			if err != nil || u.Host == "" {
-				return fail(x, c, engine.Errf(engine.CodeInvalid, "pass a URL such as https://ka.example.com", "--public-url %q is not a URL", *publicURL))
+				return fail(x, c, engine.Errf(engine.CodeInvalid, "pass a URL such as https://ka.example.com", "--public-url %q is not a URL", *o.publicURL))
 			}
 			remote.Hosts = []string{u.Hostname(), u.Host}
 		}
 		if !remote.Configured() {
 			return fail(x, c, engine.Errf(engine.CodeInvalid, "create a token with `ka token create --actor NAME` (stored hashed in "+api.TokensPath()+"), or pass --trusted-proxy",
-				"refusing remote mode on %s without authentication", *listen))
+				"refusing remote mode on %s without authentication", *o.listen))
 		}
-		if ln, err = api.ListenRemote(*listen); err != nil {
+		if err := remote.Validate(); err != nil { // before the port is bound
+			return fail(x, c, err)
+		}
+		if ln, err = api.ListenRemote(*o.listen); err != nil {
 			return fail(x, c, err)
 		}
 		log.Info("remote mode", "tokens", remote.Tokens.Count(), "trusted_proxies", len(cidrs), "hosts", remote.Hosts)
-	} else if ln, err = api.Listen(*listen); err != nil {
+	} else if ln, err = api.Listen(*o.listen); err != nil {
 		return fail(x, c, err)
 	}
 	ctx, cancel := context.WithCancel(ctx)
@@ -132,7 +145,10 @@ func daemonRun(ctx context.Context, x *IO, args []string) int {
 	if h, p, err := net.SplitHostPort(addr); err == nil && net.ParseIP(h) != nil && net.ParseIP(h).IsUnspecified() {
 		local = net.JoinHostPort("127.0.0.1", p) // local clients use loopback
 	}
-	rt := &api.Runtime{Version: Version, PID: os.Getpid(), Addr: addr, URL: "http://" + local, Workspace: svc.WS.Source,
+	// Addr is what Probe dials: the loopback address for a wildcard listener,
+	// which the server accepts as a Host in every mode (0.0.0.0 is refused
+	// with --public-url, and cannot be dialled on Windows).
+	rt := &api.Runtime{Version: Version, PID: os.Getpid(), Addr: local, URL: "http://" + local, Workspace: svc.WS.Source,
 		WorkspaceHash: api.WorkspaceHash(svc.WS.Source), Token: srv.Token(), Started: time.Now().UTC().Format(time.RFC3339)}
 	if err := api.WriteRuntime(rt); err != nil {
 		ln.Close()
@@ -170,10 +186,7 @@ func daemonStatus(ctx context.Context, x *IO, args []string) int {
 		return fail(x, c, err)
 	}
 	if r == nil {
-		if c.json {
-			return emit(x, c, map[string]any{"running": false, "workspace": ws.Source}, "")
-		}
-		fmt.Fprintf(x.Out, "no daemon is running for %s\n", ws.Source)
+		emit(x, c, map[string]any{"running": false, "workspace": ws.Source}, "no daemon is running for "+ws.Source)
 		return 1
 	}
 	pub := *r
@@ -246,13 +259,10 @@ func loopbackAddr(addr string) bool {
 
 // ka token: API tokens for remote mode (PRD §15), stored hashed outside git.
 func cmdToken(ctx context.Context, x *IO, args []string) int {
-	sub := ""
-	if len(args) > 0 {
-		sub, args = args[0], args[1:]
-	}
-	fl, c := newFlags("token "+sub, "create --actor NAME [--note TEXT] | ls | rm ID", x)
+	fl, c := newFlags("token", "create --actor NAME [--note TEXT] | ls | rm ID", x)
 	actor := fl.String("actor", "", "who the token acts as (a human handle; agents using it act on that person's behalf)")
 	note := fl.String("note", "", "what the token is for")
+	sub, args := subcommand(fl, args)
 	pos, err := parse(fl, args)
 	if err != nil {
 		return 2

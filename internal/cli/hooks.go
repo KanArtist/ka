@@ -4,10 +4,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io/fs"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/KanArtist/ka/pkg/kaspec"
@@ -18,6 +19,9 @@ import (
 
 const hookMarker = "# installed by ka hooks install"
 
+// backupSuffix names a foreign hook that ka hooks install --force replaced.
+const backupSuffix = ".ka-backup"
+
 const preCommit = `#!/bin/sh
 ` + hookMarker + ` (remove with ka hooks uninstall)
 # Formats staged tickets and comments, then validates the staged stores.
@@ -27,16 +31,13 @@ exec ka check --staged
 `
 
 func cmdHooks(ctx context.Context, x *IO, args []string) int {
-	sub := ""
-	if len(args) > 0 {
-		sub, args = args[0], args[1:]
-	}
-	fl, _ := newFlags("hooks "+sub, "install [--force] | uninstall | status", x)
-	force := fl.Bool("force", false, "replace an existing pre-commit hook that ka did not install")
+	fl, _ := newFlags("hooks", "install [--force] | uninstall | status", x)
+	force := fl.Bool("force", false, "replace an existing pre-commit hook that ka did not install (it is kept as pre-commit.ka-backup)")
+	sub, args := subcommand(fl, args)
 	if _, err := parse(fl, args); err != nil {
 		return 2
 	}
-	hook, err := hookPath(ctx, x.Dir)
+	hook, shared, err := hookPath(ctx, x.Dir)
 	if err != nil {
 		fmt.Fprintln(x.Err, "ka:", err)
 		return 1
@@ -45,13 +46,29 @@ func cmdHooks(ctx context.Context, x *IO, args []string) int {
 	ours := readErr == nil && bytes.Contains(cur, []byte(hookMarker))
 	switch sub {
 	case "install":
+		if shared != "" && !*force {
+			fmt.Fprintf(x.Err, "ka: core.hooksPath is set in your %s git config, so %s would run for every repository using it\nfix: set a hooks path for this repository (git config core.hooksPath .git/hooks), or pass --force to install there anyway\n", shared, hook)
+			return 1
+		}
 		if readErr == nil && !ours && !*force {
-			fmt.Fprintf(x.Err, "ka: %s already exists and was not installed by ka\nfix: add `ka fmt --staged && ka check --staged` to it, or pass --force to replace it\n", hook)
+			fmt.Fprintf(x.Err, "ka: %s already exists and was not installed by ka\nfix: add `ka fmt --staged && ka check --staged` to it, or pass --force to replace it (it is kept as %s)\n", hook, filepath.Base(hook)+backupSuffix)
 			return 1
 		}
 		if err := os.MkdirAll(filepath.Dir(hook), 0o755); err != nil {
 			fmt.Fprintln(x.Err, "ka:", err)
 			return 1
+		}
+		if readErr == nil && !ours {
+			backup := hook + backupSuffix
+			if _, err := os.Lstat(backup); err == nil {
+				fmt.Fprintf(x.Err, "ka: %s already exists; move it away, then run this again\n", backup)
+				return 1
+			}
+			if err := os.Rename(hook, backup); err != nil {
+				fmt.Fprintln(x.Err, "ka:", err)
+				return 1
+			}
+			fmt.Fprintf(x.Out, "moved the existing hook to %s\n", backup)
 		}
 		if err := os.WriteFile(hook, []byte(preCommit), 0o755); err != nil {
 			fmt.Fprintln(x.Err, "ka:", err)
@@ -76,6 +93,9 @@ func cmdHooks(ctx context.Context, x *IO, args []string) int {
 		switch {
 		case ours:
 			fmt.Fprintf(x.Out, "installed: %s\n", hook)
+			if shared != "" {
+				fmt.Fprintf(x.Out, "note: core.hooksPath comes from your %s git config; the hook runs for every repository using it\n", shared)
+			}
 		case readErr == nil:
 			fmt.Fprintf(x.Out, "another pre-commit hook is installed: %s\n", hook)
 		default:
@@ -89,25 +109,22 @@ func cmdHooks(ctx context.Context, x *IO, args []string) int {
 }
 
 // hookPath is the repository's pre-commit hook, honoring core.hooksPath.
-func hookPath(ctx context.Context, dir string) (string, error) {
-	top, err := gitOut(ctx, dir, "rev-parse", "--show-toplevel")
-	if err != nil {
-		return "", fmt.Errorf("not in a git repository")
+// shared is the config scope (global, system) of a core.hooksPath that is
+// not this repository's own: a hook there runs for other repositories too.
+func hookPath(ctx context.Context, dir string) (hook, shared string, err error) {
+	hp, err := gitOut(ctx, dir, "rev-parse", "--git-path", "hooks")
+	if err != nil || hp == "" {
+		return "", "", fmt.Errorf("not in a git repository")
 	}
-	if hp, err := gitOut(ctx, dir, "config", "core.hooksPath"); err == nil && hp != "" {
-		if !filepath.IsAbs(hp) {
-			hp = filepath.Join(top, hp)
+	if !filepath.IsAbs(hp) {
+		hp = filepath.Join(dir, hp)
+	}
+	if scope, err := gitOut(ctx, dir, "config", "--show-scope", "--get", "core.hooksPath"); err == nil {
+		if s, _, _ := strings.Cut(scope, "\t"); s == "global" || s == "system" {
+			shared = s
 		}
-		return filepath.Join(hp, "pre-commit"), nil
 	}
-	gd, err := gitOut(ctx, dir, "rev-parse", "--git-common-dir")
-	if err != nil {
-		return "", err
-	}
-	if !filepath.IsAbs(gd) {
-		gd = filepath.Join(dir, gd)
-	}
-	return filepath.Join(gd, "hooks", "pre-commit"), nil
+	return filepath.Join(hp, "pre-commit"), shared, nil
 }
 
 func gitOut(ctx context.Context, dir string, args ...string) (string, error) {
@@ -117,46 +134,64 @@ func gitOut(ctx context.Context, dir string, args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), err
 }
 
-// stagedStores exports the index (what the commit will contain) to a
-// temporary directory and returns a workspace over the stores in it. Keys
-// are the stores' real directories, so local config parents resolve, and
-// labels are their paths in the repository.
+// stagedStores exports the stores in the index (what the commit will
+// contain) to a temporary directory and returns a workspace over them. Only
+// the store subtrees are exported, not the whole repository. Keys are the
+// stores' real directories, so local config parents resolve, and labels are
+// their paths in the repository.
 func stagedStores(ctx context.Context, dir string, maps mapFlag) (*kaspec.Workspace, func(), error) {
 	top, err := gitOut(ctx, dir, "rev-parse", "--show-toplevel")
 	if err != nil {
 		return nil, nil, fmt.Errorf("--staged needs a git repository")
 	}
-	tmp, err := os.MkdirTemp("", "ka-staged-")
+	list, err := gitOut(ctx, top, "ls-files", "-z", "--", ".ka/store.yml", "*/.ka/store.yml")
+	if err != nil {
+		return nil, nil, fmt.Errorf("git ls-files: %v", err)
+	}
+	var roots []string // repository-relative, slash-separated; "." is the top
+	for _, f := range strings.Split(list, "\x00") {
+		if f == "" || slices.Contains(strings.Split(f, "/"), "node_modules") {
+			continue
+		}
+		roots = append(roots, path.Dir(path.Dir(f)))
+	}
+	ws := newKaspecWorkspace(nil, maps)
+	if len(roots) == 0 {
+		return ws, func() {}, nil
+	}
+	base, err := os.UserCacheDir()
+	if err != nil {
+		base = os.TempDir()
+	}
+	base = filepath.Join(base, "ka")
+	if err := os.MkdirAll(base, 0o700); err != nil {
+		return nil, nil, err
+	}
+	tmp, err := os.MkdirTemp(base, "staged-")
 	if err != nil {
 		return nil, nil, err
 	}
 	cleanup := func() { os.RemoveAll(tmp) }
-	cmd := exec.CommandContext(ctx, "git", "checkout-index", "-a", "-f", "--prefix="+filepath.ToSlash(tmp)+"/")
+	files, err := gitOut(ctx, top, append([]string{"ls-files", "-z", "--"}, roots...)...)
+	if err != nil {
+		cleanup()
+		return nil, nil, fmt.Errorf("git ls-files: %v", err)
+	}
+	cmd := exec.CommandContext(ctx, "git", "checkout-index", "-f", "-z", "--stdin", "--prefix="+filepath.ToSlash(tmp)+"/")
 	cmd.Dir = top
+	cmd.Stdin = strings.NewReader(files)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		cleanup()
 		return nil, nil, fmt.Errorf("git checkout-index: %v: %s", err, out)
 	}
-	ws := newKaspecWorkspace(nil, maps)
-	filepath.WalkDir(tmp, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		if d.IsDir() && (d.Name() == "node_modules" || d.Name() == ".git") {
-			return filepath.SkipDir
-		}
-		if d.IsDir() || d.Name() != "store.yml" || filepath.Base(filepath.Dir(p)) != ".ka" {
-			return nil
-		}
-		root := filepath.Dir(filepath.Dir(p))
-		rel, _ := filepath.Rel(tmp, root)
-		label := filepath.ToSlash(rel)
+	for _, rel := range roots {
+		label := rel
 		if label == "." {
 			label = ""
 		}
-		ws.Add(os.DirFS(root), filepath.Join(top, rel), label)
-		return nil
-	})
+		root := filepath.Join(tmp, filepath.FromSlash(rel))
+		ws.Add(os.DirFS(root), filepath.Join(top, filepath.FromSlash(rel)), label)
+	}
 	return ws, cleanup, nil
 }
 

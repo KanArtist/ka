@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/KanArtist/ka/internal/testkit"
 	"github.com/KanArtist/ka/pkg/kaspec"
 )
 
@@ -294,4 +295,55 @@ func TestMigrateRealCorpus(t *testing.T) {
 		t.Fatalf("re-run on the real corpus changed files: %+v", rep2)
 	}
 	t.Logf("migrated %d tickets, %d files", len(rep.corpus.Tickets), rep.created)
+}
+
+// --commit commits the migration's files only: never something else the
+// user staged or left untracked in the store.
+func TestMigrateCommitsOnlyItsFiles(t *testing.T) {
+	testkit.GitEnv(t)
+	v0, out := fixtureV0(t), t.TempDir()
+	jk := filepath.Join(out, "jk")
+	testkit.Git(t, out, "init", "-q", jk)
+	write(t, filepath.Join(jk, "staged.txt"), "mine\n")
+	testkit.Git(t, jk, "add", "staged.txt")
+	write(t, filepath.Join(jk, "untracked.txt"), "mine\n")
+	commit := func() *report {
+		t.Helper()
+		archiveProject["gy"] = "gy-java"
+		archivedProjects["gy-java"] = true
+		splitStore["gy-java"] = "gy"
+		t.Cleanup(func() {
+			delete(archiveProject, "gy")
+			delete(archivedProjects, "gy-java")
+			delete(splitStore, "gy-java")
+		})
+		rep, err := run(options{V0: v0, Out: out, Layout: "split", OrgURL: "../org", Commit: true, Now: time.Date(2026, 11, 7, 0, 0, 0, 0, time.UTC)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return rep
+	}
+	if rep := commit(); len(rep.commits) != 1 || rep.commits[0] != "jk" {
+		t.Fatalf("commits: %v", rep.commits)
+	}
+	files := testkit.Git(t, jk, "ls-tree", "-r", "--name-only", "HEAD")
+	if strings.Contains(files, "staged.txt") || strings.Contains(files, "untracked.txt") || !strings.Contains(files, "ticket.md") {
+		t.Fatalf("committed:\n%s", files)
+	}
+	if st := testkit.Git(t, jk, "status", "--porcelain"); !strings.Contains(st, "A  staged.txt") || !strings.Contains(st, "?? untracked.txt") {
+		t.Fatalf("status after commit:\n%s", st)
+	}
+	// A ticket deleted from v0 is committed as a deletion.
+	_, t2 := findTicket(t, out, "JK-1002", "")
+	os.Remove(filepath.Join(v0, "projects/jk/tickets/JK-1002-second.md"))
+	if rep := commit(); len(rep.commits) != 1 {
+		t.Fatalf("second commits: %v", rep.commits)
+	}
+	if files := testkit.Git(t, jk, "ls-tree", "-r", "--name-only", "HEAD"); strings.Contains(files, t2.ID) || strings.Contains(files, "staged.txt") {
+		t.Fatalf("after deletion:\n%s", files)
+	}
+	// Nothing changed: no commit.
+	if rep := commit(); len(rep.commits) != 0 {
+		t.Fatalf("empty re-run committed: %v", rep.commits)
+	}
 }

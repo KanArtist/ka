@@ -89,12 +89,15 @@ func Detail(d *engine.Detail, o DetailOptions) string {
 		if full := detail(d, o); EstimateTokens(full) <= o.MaxTokens {
 			return full
 		}
-		// Largest description prefix that fits (binary search on bytes).
+		// Largest description prefix that fits (binary search on bytes). The
+		// parts are split at newlines, so their estimates add up: only the
+		// description is measured again per step.
+		fixed := EstimateTokens(detailHead(d)) + EstimateTokens(detailTail(d, o))
 		lo, hi := min(o.MinBody, len(d.Body)), len(d.Body)
 		for lo < hi {
 			mid := (lo + hi + 1) / 2
 			o.BodyLimit = mid
-			if EstimateTokens(detail(d, o)) <= o.MaxTokens {
+			if fixed+EstimateTokens(detailBody(d, o)) <= o.MaxTokens {
 				lo = mid
 			} else {
 				hi = mid - 1
@@ -106,6 +109,11 @@ func Detail(d *engine.Detail, o DetailOptions) string {
 }
 
 func detail(d *engine.Detail, o DetailOptions) string {
+	return detailHead(d) + detailBody(d, o) + detailTail(d, o)
+}
+
+// detailHead renders everything before the description; it ends in a newline.
+func detailHead(d *engine.Detail) string {
 	var b strings.Builder
 	b.WriteString(SummaryLine(d.Summary) + "\n")
 	var meta []string
@@ -150,6 +158,12 @@ func detail(d *engine.Detail, o DetailOptions) string {
 			fmt.Fprintf(&b, "  %d [%s] %s\n", i, mark, a.Text)
 		}
 	}
+	return b.String()
+}
+
+// detailBody renders the (clipped) description; it ends in a newline.
+func detailBody(d *engine.Detail, o DetailOptions) string {
+	var b strings.Builder
 	body := d.Body
 	if o.BodyLimit > 0 && len(body) > o.BodyLimit {
 		body = clipBytes(body, o.BodyLimit)
@@ -163,6 +177,12 @@ func detail(d *engine.Detail, o DetailOptions) string {
 		}
 		b.WriteString(body + "\n")
 	}
+	return b.String()
+}
+
+// detailTail renders the comments after the description.
+func detailTail(d *engine.Detail, o DetailOptions) string {
+	var b strings.Builder
 	comments := func(title string, cs []engine.CommentOut) {
 		if len(cs) == 0 {
 			return
@@ -424,8 +444,8 @@ func Sync(s *engine.SyncOut) string {
 	for _, e := range s.Errors {
 		b.WriteString("error: " + e.Error() + "\n")
 	}
-	for k, v := range s.Renamed {
-		fmt.Fprintf(&b, "renamed %s → %s (ID collision)\n", k, v)
+	for _, k := range sortedFieldNames(s.Renamed) {
+		fmt.Fprintf(&b, "renamed %s → %s (ID collision)\n", k, s.Renamed[k])
 	}
 	if len(s.Preserved) > 0 {
 		fmt.Fprintf(&b, "%d conflicting edit(s) preserved as comments\n", len(s.Preserved))

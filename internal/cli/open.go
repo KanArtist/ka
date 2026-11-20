@@ -71,6 +71,12 @@ func startDaemon(ctx context.Context, x *IO, c *common, ws *engine.Workspace) (*
 	for k, v := range c.maps {
 		args = append(args, "--map", k+"="+v)
 	}
+	if c.offline {
+		args = append(args, "--offline")
+	}
+	if c.noPush {
+		args = append(args, "--no-push")
+	}
 	if err := os.MkdirAll(api.RuntimeDir(), 0o700); err != nil {
 		return nil, err
 	}
@@ -98,6 +104,9 @@ func startDaemon(ctx context.Context, x *IO, c *common, ws *engine.Workspace) (*
 		select {
 		case err := <-exited:
 			return nil, fmt.Errorf("ka daemon exited (%v); see %s", err, logPath)
+		case <-ctx.Done():
+			cmd.Process.Release() // it keeps starting; a later ka open finds it
+			return nil, ctx.Err()
 		case <-time.After(100 * time.Millisecond):
 		}
 	}

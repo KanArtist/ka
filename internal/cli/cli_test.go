@@ -452,3 +452,182 @@ func TestStoreSetURL(t *testing.T) {
 		t.Fatal("unknown store accepted")
 	}
 }
+
+// Everything after the first -- is positional; flags may still come before it.
+func TestParseDoubleDash(t *testing.T) {
+	for _, tc := range []struct {
+		args    []string
+		pos, m  string
+		wantErr bool
+	}{
+		{[]string{"JK-1", "-m", "hi", "--", "-x", "-y"}, "JK-1 -x -y", "hi", false},
+		{[]string{"--", "fix", "-m", "handling"}, "fix -m handling", "", false},
+		{[]string{"a", "-m", "T", "b"}, "a b", "T", false},
+		{[]string{"a", "--", "--"}, "a --", "", false},
+		{[]string{"-y"}, "", "", true},
+	} {
+		fl, _ := newFlags("t", "", &IO{Err: io.Discard})
+		m := fl.String("m", "", "")
+		pos, err := parse(fl, tc.args)
+		if (err != nil) != tc.wantErr || strings.Join(pos, " ") != tc.pos || *m != tc.m {
+			t.Errorf("parse(%q) = %q, -m %q, %v", tc.args, pos, *m, err)
+		}
+	}
+}
+
+func TestSubcommandAfterFlags(t *testing.T) {
+	fl, _ := newFlags("t", "", &IO{Err: io.Discard})
+	fl.String("actor", "", "")
+	for _, tc := range []struct {
+		args      []string
+		sub, rest string
+	}{
+		{[]string{"ls"}, "ls", ""},
+		{[]string{"--json", "ls"}, "ls", "--json"},
+		{[]string{"--workspace", "F", "ls", "x"}, "ls", "--workspace F x"},
+		{[]string{"--actor=bob", "create"}, "create", "--actor=bob"},
+		{[]string{"-json"}, "", "-json"},
+		{[]string{"--", "ls"}, "", "-- ls"},
+	} {
+		sub, rest := subcommand(fl, tc.args)
+		if sub != tc.sub || strings.Join(rest, " ") != tc.rest {
+			t.Errorf("subcommand(%q) = %q %q", tc.args, sub, rest)
+		}
+	}
+}
+
+// Common flags before a subcommand name work, and --json does not change the
+// exit code.
+func TestSubcommandFlagsAndExitCodes(t *testing.T) {
+	testkit.GitEnv(t)
+	t.Setenv("KA_RUNTIME_DIR", t.TempDir())
+	dir := filepath.Join(t.TempDir(), "tickets")
+	ka(t, dir, "init", "--project", "demo", dir)
+	testkit.Git(t, dir, "add", "-A")
+	testkit.Git(t, dir, "commit", "-qm", "init")
+
+	if r := ka(t, dir, "token", "--json", "ls"); r.code != 0 || strings.TrimSpace(r.out) != "null" && !strings.HasPrefix(strings.TrimSpace(r.out), "[") {
+		t.Fatalf("token --json ls: %+v", r)
+	}
+	if r := ka(t, dir, "store", "--json", "ls"); r.code != 0 || !strings.Contains(r.out, `"stores"`) {
+		t.Fatalf("store --json ls: %+v", r)
+	}
+	if r := ka(t, dir, "hooks", "--force", "install"); r.code != 0 || !strings.Contains(r.out, "installed") {
+		t.Fatalf("hooks --force install: %+v", r)
+	}
+	text, js := ka(t, dir, "daemon", "status"), ka(t, dir, "daemon", "--json", "status")
+	if text.code != 1 || js.code != 1 || !strings.Contains(js.out, `"running": false`) {
+		t.Fatalf("daemon status: text %+v json %+v", text, js)
+	}
+	// A detached HEAD is a failure in both forms.
+	testkit.Git(t, dir, "checkout", "-q", "--detach")
+	text, js = ka(t, dir, "doctor"), ka(t, dir, "doctor", "--json")
+	var fs []finding
+	if text.code != 1 || js.code != 1 || json.Unmarshal([]byte(js.out), &fs) != nil || len(fs) == 0 {
+		t.Fatalf("doctor: text %+v json %+v", text, js)
+	}
+}
+
+// doctor --fix commits .gitattributes alone, not what the user staged.
+func TestDoctorFixCommitsOnlyAttributes(t *testing.T) {
+	testkit.GitEnv(t)
+	dir := filepath.Join(t.TempDir(), "tickets")
+	ka(t, dir, "init", "--project", "demo", dir)
+	os.WriteFile(filepath.Join(dir, ".gitattributes"), []byte("* text=auto eol=lf\n"), 0o644)
+	testkit.Git(t, dir, "add", "-A")
+	testkit.Git(t, dir, "commit", "-qm", "init")
+	os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("mine\n"), 0o644)
+	testkit.Git(t, dir, "add", "notes.txt")
+	if r := ka(t, dir, "doctor", "--fix"); !strings.Contains(r.out, "fixed .gitattributes") && !strings.Contains(r.out, ".gitattributes: added") {
+		t.Fatalf("doctor --fix: %+v", r)
+	}
+	if files := testkit.Git(t, dir, "show", "--name-only", "--format=", "HEAD"); files != ".gitattributes" {
+		t.Fatalf("committed %q", files)
+	}
+	if st := testkit.Git(t, dir, "status", "--porcelain"); st != "A  notes.txt" {
+		t.Fatalf("status %q", st)
+	}
+}
+
+// ka hooks install honours a relative core.hooksPath, refuses a global one
+// without --force, and keeps a foreign hook it replaces.
+func TestHooksPath(t *testing.T) {
+	home := testkit.GitEnv(t)
+	dir := filepath.Join(t.TempDir(), "tickets")
+	ka(t, dir, "init", "--project", "demo", dir)
+	testkit.Git(t, dir, "config", "core.hooksPath", "myhooks")
+	if r := ka(t, filepath.Join(dir, "projects"), "hooks", "install"); r.code != 0 || !strings.Contains(r.out, filepath.Join(dir, "myhooks", "pre-commit")) {
+		t.Fatalf("relative hooksPath: %+v", r)
+	}
+	testkit.Git(t, dir, "config", "--unset", "core.hooksPath")
+	testkit.Git(t, dir, "config", "--global", "core.hooksPath", "~/githooks")
+	hook := filepath.Join(home, "githooks", "pre-commit")
+	if r := ka(t, dir, "hooks", "install"); r.code != 1 || !strings.Contains(r.err, "global") {
+		t.Fatalf("global hooksPath: %+v", r)
+	}
+	if r := ka(t, dir, "hooks", "status"); !strings.Contains(r.out, "not installed") {
+		t.Fatalf("status: %+v", r)
+	}
+	os.MkdirAll(filepath.Dir(hook), 0o755)
+	os.WriteFile(hook, []byte("#!/bin/sh\necho mine\n"), 0o755)
+	if r := ka(t, dir, "hooks", "install", "--force"); r.code != 0 || !strings.Contains(r.out, "ka-backup") {
+		t.Fatalf("--force: %+v", r)
+	}
+	if b, err := os.ReadFile(hook + ".ka-backup"); err != nil || string(b) != "#!/bin/sh\necho mine\n" {
+		t.Fatalf("backup: %q %v", b, err)
+	}
+	if b, _ := os.ReadFile(hook); !strings.Contains(string(b), hookMarker) {
+		t.Fatalf("hook: %s", b)
+	}
+	if r := ka(t, dir, "hooks", "status"); !strings.Contains(r.out, "global") {
+		t.Fatalf("status: %+v", r)
+	}
+}
+
+// check --staged finds a store in a subdirectory of a code repository.
+func TestCheckStagedSubdirStore(t *testing.T) {
+	testkit.GitEnv(t)
+	top := t.TempDir()
+	testkit.Git(t, top, "init", "-q")
+	os.WriteFile(filepath.Join(top, "main.go"), []byte("package main\n"), 0o644)
+	dir := filepath.Join(top, "tickets")
+	ka(t, dir, "init", "--project", "demo", dir)
+	p := filepath.Join(dir, "projects", "demo", "tickets", "DEMO-7QK3M", "ticket.md")
+	os.MkdirAll(filepath.Dir(p), 0o755)
+	os.WriteFile(p, []byte("---\nid: DEMO-7QK3M\ntitle: Hand written\nstatus: ready\nkind: nonsense\ncreated: 2026-11-07T12:00:00Z\nupdated: 2026-11-07T12:00:00Z\n---\n"), 0o644)
+	testkit.Git(t, top, "add", "-A")
+	if r := ka(t, top, "check", "--staged"); r.code != 1 || !strings.Contains(r.out, "unknown_kind") || !strings.Contains(r.out, "tickets/projects/demo/tickets/DEMO-7QK3M/ticket.md") {
+		t.Fatalf("check --staged: %+v", r)
+	}
+}
+
+// store add keeps settings the writer used to drop.
+func TestStoreAddKeepsSettings(t *testing.T) {
+	testkit.GitEnv(t)
+	r := testkit.NewRemote(t, nil)
+	ws := filepath.Join(t.TempDir(), "workspace.yml")
+	os.WriteFile(ws, []byte("offline: true\nstores:\n  - name: one\n    url: https://example.com/one.git\n    fetch_interval: 30s\n"), 0o644)
+	if res := ka(t, t.TempDir(), "store", "--workspace", ws, "add", r.Path, "--name", "team"); res.code != 0 {
+		t.Fatalf("store add: %+v", res)
+	}
+	b, _ := os.ReadFile(ws)
+	if s := string(b); !strings.Contains(s, "offline: true") || !strings.Contains(s, "fetch_interval: 30s") || !strings.Contains(s, "name: team") {
+		t.Fatalf("workspace.yml:\n%s", s)
+	}
+	if ents, _ := os.ReadDir(filepath.Dir(ws)); len(ents) != 1 {
+		t.Fatalf("temp file left: %v", ents)
+	}
+}
+
+func TestEditorCommand(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "my editors")
+	os.MkdirAll(dir, 0o755)
+	ed := filepath.Join(dir, "ed it")
+	os.WriteFile(ed, []byte("#!/bin/sh\n"), 0o755)
+	if cmd := editorCommand(ed, "f.md"); cmd.Path != ed || len(cmd.Args) != 2 || cmd.Args[1] != "f.md" {
+		t.Fatalf("path with spaces: %q %q", cmd.Path, cmd.Args)
+	}
+	if cmd := editorCommand("code -w", "f.md"); strings.Join(cmd.Args, " ") != "code -w f.md" {
+		t.Fatalf("with args: %q", cmd.Args)
+	}
+}
