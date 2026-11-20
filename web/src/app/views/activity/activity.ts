@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, signal, untracked } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { Api, KaEvent } from '../../api/api';
 import { Actions } from '../../actions';
@@ -6,7 +6,7 @@ import { Live } from '../../live';
 import { Actor, isAgent } from '../../ui/actor';
 import { ProjectPipe } from '../../ui/project';
 import { Clock, ago, exact } from '../../ui/time';
-import { Kind, Line, describe, kindOf } from './describe';
+import { Kind, Line, compactionSummary, describe, kindOf } from './describe';
 
 interface Item {
   key: string;
@@ -14,6 +14,8 @@ interface Item {
   kind: Kind;
   line: Line;
   fresh: boolean; // arrived live while this view was open
+  /** store.compacted: the summary file to read (a file name in the store's history/). */
+  summary?: string;
 }
 
 interface Group {
@@ -26,6 +28,8 @@ interface Group {
   day: string;
   /** A collapsed bulk edit: the per-ticket groups it stands for, newest first. */
   bulk?: Group[];
+  /** A store.compacted entry: where the older history went. */
+  compacted?: boolean;
 }
 
 const KINDS: { id: Kind; label: string }[] = [
@@ -101,17 +105,19 @@ export class Activity {
     let cur: Group | undefined;
     for (const it of this.items()) {
       const e = it.e;
-      if (hidden.has(it.kind)) continue;
+      // A compaction changes what history exists at all: it always shows.
+      if (hidden.has(it.kind) && e.type !== 'store.compacted') continue;
       if (project && e.project && e.project !== project) continue;
       const actor = e.actor || 'someone';
       if (who === 'agents' && !isAgent(actor)) continue;
       if (who === 'people' && isAgent(actor)) continue;
-      const near = cur && Date.parse(cur.items[0].e.at) - Date.parse(e.at) <= GROUP_WINDOW_MS;
+      const compacted = e.type === 'store.compacted';
+      const near = !compacted && cur && !cur.compacted && Date.parse(cur.items[0].e.at) - Date.parse(e.at) <= GROUP_WINDOW_MS;
       if (cur && near && cur.actor === actor && cur.ticket === e.ticket && (e.ticket || cur.store === e.store)) {
         cur.items.unshift(it);
         continue;
       }
-      cur = { key: it.key, actor, ticket: e.ticket, store: e.store, latest: e.at, items: [it], day: dayLabel(e.at) };
+      cur = { key: it.key, actor, ticket: e.ticket, store: e.store, latest: e.at, items: [it], day: dayLabel(e.at), compacted };
       groups.push(cur);
     }
     for (const g of groups) g.items = dropRedundant(g.items);
@@ -142,10 +148,20 @@ export class Activity {
   constructor() {
     inject(Actions).showsProject(() => this.project());
     void this.load();
+    // A compaction replaced every commit: the loaded history names commits
+    // that are gone, so start it over.
+    let seen = this.live.historyEpoch();
+    effect(() => {
+      const n = this.live.historyEpoch();
+      if (n === seen) return;
+      seen = n;
+      untracked(() => void this.load());
+    });
   }
 
   private item(e: KaEvent, key: string, live: boolean): Item {
-    return { key, e, kind: kindOf(e)!, line: describe(e), fresh: live && Date.now() - this.mountedAt > 500 };
+    const summary = e.type === 'store.compacted' ? compactionSummary(e) : undefined;
+    return { key, e, kind: kindOf(e)!, line: describe(e), fresh: live && Date.now() - this.mountedAt > 500, summary };
   }
 
   private async load(before?: string): Promise<void> {
@@ -267,6 +283,8 @@ function signature(g: Group): string {
 }
 
 function fuzzyKey(e: KaEvent): string {
+  // A compaction is one root commit, however it was reported.
+  if (e.type === 'store.compacted' && e.data?.root) return `compacted|${e.store ?? ''}|${e.data.root}`;
   // History times come from the commit; live times from the index refresh.
   // Same type, ticket and actor within the same 10 seconds is the same event.
   return `${e.type}|${e.ticket ?? ''}|${e.actor ?? ''}|${Math.floor(Date.parse(e.at) / 10_000)}`;

@@ -36,7 +36,7 @@ const MAX_TICKETS = 40;
         aria-expanded="true"
         aria-controls="palette-list"
         [attr.aria-activedescendant]="items().length ? 'pi-' + active() : null"
-        placeholder="Jump to a ticket by ID or title, or type a command"
+        placeholder="Jump to a ticket by ID or title, type a command, or initiative: / epic:"
         [value]="query()"
         (input)="query.set(q.value); active.set(0)"
         (keydown)="key($event)"
@@ -186,7 +186,26 @@ export class Palette {
           this.actions.creating.set({});
         },
       },
+      {
+        key: 'c:new-initiative',
+        kind: 'command',
+        label: 'Create an initiative',
+        run: () => {
+          this.close.emit();
+          this.actions.creating.set({ kind: 'initiative' });
+        },
+      },
+      {
+        key: 'c:from-label',
+        kind: 'command',
+        label: 'Convert a label to an initiative…',
+        run: () => {
+          this.close.emit();
+          this.actions.fromLabel.set({});
+        },
+      },
       { key: 'c:activity', kind: 'command', label: 'Go to Activity', hint: 'G A', run: go('/activity') },
+      { key: 'c:initiatives', kind: 'command', label: 'Go to Initiatives', hint: 'G N', run: go('/initiatives') },
       { key: 'c:board', kind: 'command', label: 'Go to Board', hint: 'G B', run: go('/board') },
       { key: 'c:table', kind: 'command', label: 'Go to Table', hint: 'G T', run: go('/table') },
       { key: 'c:docs', kind: 'command', label: 'Go to Docs', hint: 'G D', run: go('/docs') },
@@ -216,6 +235,8 @@ export class Palette {
   });
 
   protected readonly items = computed<Item[]>(() => {
+    const scoped = this.scoped();
+    if (scoped) return scoped;
     const q = this.query().trim().toLowerCase();
     const cmds = this.commands().filter((c) => !q || c.label.toLowerCase().includes(q));
     if (!q) return [...cmds, ...this.recent()];
@@ -224,6 +245,47 @@ export class Palette {
 
   constructor() {
     effect(() => this.input().nativeElement.focus());
+  }
+
+  /**
+   * Query terms for initiatives and epics: "initiative:" or "epic:" lists
+   * those containers (by ID or title) and filters the board to the one
+   * picked; "is:" offers is:initiative, is:epic and is:container.
+   */
+  private readonly scoped = computed<Item[] | null>(() => {
+    const raw = this.query().trim();
+    const m = /^(initiative|epic):(.*)$/i.exec(raw);
+    if (m) {
+      const kind = m[1].toLowerCase();
+      const words = m[2].toLowerCase().split(/\s+/).filter(Boolean);
+      const out: Item[] = [];
+      for (const t of this.live.tickets().values()) {
+        if (t.kind !== kind) continue;
+        const hay = `${t.id} ${t.title}`.toLowerCase();
+        if (!words.every((w) => hay.includes(w))) continue;
+        out.push({ key: 'k:' + t.id, kind: 'ticket', label: t.title, ticket: t, run: () => this.filterBoard(`${kind}:${t.id}`) });
+      }
+      out.sort((a, b) => Number(this.live.isClosed(a.ticket!)) - Number(this.live.isClosed(b.ticket!)) || a.label.localeCompare(b.label));
+      return out.slice(0, MAX_TICKETS);
+    }
+    if (/^is:/i.test(raw)) {
+      const terms = [
+        ['is:initiative', 'Board: every initiative'],
+        ['is:epic', 'Board: every epic'],
+        ['is:container', 'Board: every initiative and epic'],
+        ['is:ready', 'Board: work that is ready to claim'],
+        ['is:blocked', 'Board: blocked work'],
+      ];
+      return terms
+        .filter(([term]) => term.startsWith(raw.toLowerCase()))
+        .map(([term, label]) => ({ key: 'q:' + term, kind: 'command' as const, label, hint: term, run: () => this.filterBoard(term) }));
+    }
+    return null;
+  });
+
+  private filterBoard(q: string): void {
+    this.close.emit();
+    void this.router.navigate(['/board'], { queryParams: { q, board: null } });
   }
 
   /** With no query, the most recently updated open tickets. */

@@ -32,7 +32,7 @@
       @if (newDay(i, groups())) {
         <li class="day" aria-hidden="false"><h2>{{ g.day }}</h2></li>
       }
-      <li class="group" [class.agent]="isAgent(g.actor)" [class.stripe]="i % 2 === 1">
+      <li class="group" [class.agent]="isAgent(g.actor)" [class.stripe]="i % 2 === 1" [class.compacted]="g.compacted">
         <div class="who">
           <ka-actor [actor]="g.actor" [size]="20" />
         </div>
@@ -53,6 +53,8 @@
               <span class="id">{{ g.ticket }}</span>
               <span class="title">{{ title(g) }}</span>
             </a>
+          } @else if (g.compacted) {
+            <span class="ticket plain"><span class="mark" aria-hidden="true"></span><span class="id">{{ g.store }}</span><span class="title">History compacted</span></span>
           } @else if (g.store) {
             <span class="ticket plain"><span class="id">{{ g.store }}</span></span>
           }
@@ -62,6 +64,12 @@
                 <span class="verb">{{ it.line.verb }}</span>
                 @if (it.line.quote) {
                   <q class="quote">{{ it.line.quote }}</q>
+                }
+                @if (it.e.type === 'store.compacted') {
+                  <span class="compact-note">
+                    Commits before this one are gone from git.
+                    <a routerLink="/health" [queryParams]="it.summary ? { store: it.e.store, summary: it.summary } : { store: it.e.store }">{{ it.summary ? 'Read the summary of what came before' : 'See the store’s history summaries' }}</a>
+                  </span>
                 }
               </li>
             }

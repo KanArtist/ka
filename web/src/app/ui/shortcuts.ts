@@ -9,6 +9,7 @@ const GROUPS: { title: string; keys: [string, string][] }[] = [
       ['c', 'Create a ticket'],
       ['f', 'Filter the board or table'],
       ['g a · g b · g t', 'Activity · Board · Table'],
+      ['g n', 'Initiatives'],
       ['g d · g g · g i', 'Docs · Agents · Inbox'],
       ['g h · g s', 'Sync & health · Settings'],
       ['Esc', 'Close the ticket panel'],

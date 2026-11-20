@@ -8,8 +8,10 @@ import { Avatar, actorName, isAgent } from '../../ui/actor';
 import { KindPipe, StatusPipe, categoryLabel, fieldLabel, kindLabel, statusLabel } from '../../ui/labels';
 import { Menu, MenuOption } from '../../ui/menu';
 import { Clock, ago, exact } from '../../ui/time';
+import { Ancestry, Hierarchy, isContainer } from '../../hierarchy';
+import { ProgressBar } from '../../ui/progress';
 
-type Group = 'none' | 'status' | 'project' | 'assignee' | 'priority' | 'kind' | 'parent';
+type Group = 'none' | 'status' | 'project' | 'assignee' | 'priority' | 'kind' | 'parent' | 'initiative' | 'epic';
 
 interface Col {
   key: string; // id, title, status, ..., or fields.<name>
@@ -23,6 +25,8 @@ interface Section {
   key: string;
   label: string;
   cat?: string;
+  /** Initiative and epic groups: the container heading the group. */
+  container?: Summary;
   rows: Summary[];
   total: number;
 }
@@ -39,6 +43,8 @@ const BASE_COLS: Col[] = [
   { key: 'acceptance', label: 'Acceptance', width: '96px' },
   { key: 'project', label: 'Project', width: '96px' },
   { key: 'parent', label: 'Parent', width: '104px' },
+  { key: 'initiative', label: 'Initiative', width: '180px' },
+  { key: 'epic', label: 'Epic', width: '180px' },
   { key: 'owner', label: 'Owner', width: '130px' },
   { key: 'created', label: 'Created', width: '84px' },
   { key: 'updated', label: 'Updated', width: '84px' },
@@ -56,7 +62,7 @@ const STORE_KEY = 'ka.table';
  */
 @Component({
   selector: 'ka-table',
-  imports: [Avatar, QueryBar, Menu, StatusPipe, KindPipe],
+  imports: [Avatar, QueryBar, Menu, StatusPipe, KindPipe, ProgressBar],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './table.html',
   styleUrl: './table.css',
@@ -67,6 +73,11 @@ export class Table {
   private actions = inject(Actions);
   private router = inject(Router);
   private clock = inject(Clock);
+  private hier = inject(Hierarchy);
+  /** Container id -> progress over the work below it (one walk per ticket change). */
+  protected readonly progress = this.hier.progress;
+  protected readonly ancestry = this.hier.ancestry;
+  protected readonly isContainer = isContainer;
   private host = viewChild.required<ElementRef<HTMLElement>>('host');
 
   protected readonly now = this.clock.now;
@@ -114,9 +125,13 @@ export class Table {
     const g = this.group();
     const rows = this.rows();
     if (g === 'none') return [{ key: '', label: '', rows, total: rows.length }];
+    const anc = this.ancestry();
+    const all = this.live.tickets();
     const map = new Map<string, Summary[]>();
     for (const t of rows) {
-      const k = groupKey(t, g);
+      // Grouped by initiative (or epic), each one heads its group rather than being a row.
+      if ((g === 'initiative' || g === 'epic') && t.kind === g) continue;
+      const k = groupKey(t, g, anc);
       let l = map.get(k);
       if (!l) map.set(k, (l = []));
       l.push(t);
@@ -128,6 +143,7 @@ export class Table {
         key: k,
         label: this.groupLabel(k, g),
         cat: g === 'status' ? this.statusCat(k) : undefined,
+        container: (g === 'initiative' || g === 'epic') && k ? all.get(k) : undefined,
         rows: l,
         total: l.length,
       }));
@@ -151,6 +167,9 @@ export class Table {
         return t.claim?.by ?? '';
       case 'labels':
         return (t.labels ?? []).join(', ');
+      case 'initiative':
+      case 'epic':
+        return this.ancestry().get(t.id)?.[key] ?? '';
       default:
         return (t as any)[key] ?? '';
     }
@@ -180,12 +199,20 @@ export class Table {
       return (k) => (names.indexOf(k) + 1 || 99);
     }
     if (g === 'priority') return (k) => (PRIORITY_ORDER.indexOf(k) + 1 || 99);
+    if (g === 'initiative' || g === 'epic') {
+      // Open containers first, then closed ones, then "No initiative".
+      const all = this.live.tickets();
+      return (k) => {
+        const c = k ? all.get(k) : undefined;
+        return k === '' ? 99 : c && this.live.isClosed(c) ? 1 : 0;
+      };
+    }
     return (k) => (k === '' ? 99 : 0);
   }
 
   private groupLabel(k: string, g: Group): string {
-    if (k === '') return { status: '', project: '', assignee: 'Unassigned', priority: 'No priority', kind: 'No kind', parent: 'No parent', none: '' }[g];
-    if (g === 'parent') {
+    if (k === '') return { status: '', project: '', assignee: 'Unassigned', priority: 'No priority', kind: 'No kind', parent: 'No parent', initiative: 'No initiative', epic: 'No epic', none: '' }[g];
+    if (g === 'parent' || g === 'initiative' || g === 'epic') {
       const p = this.live.tickets().get(k);
       return p ? `${k} ${p.title}` : k;
     }
@@ -339,8 +366,12 @@ export class Table {
   protected trackRow = (_: number, t: Summary) => t.id;
 }
 
-function groupKey(t: Summary, g: Group): string {
+function groupKey(t: Summary, g: Group, anc: ReadonlyMap<string, Ancestry>): string {
   switch (g) {
+    case 'initiative':
+      return anc.get(t.id)?.initiative ?? '';
+    case 'epic':
+      return anc.get(t.id)?.epic ?? '';
     case 'assignee':
       return t.assignee ?? '';
     case 'parent':

@@ -312,3 +312,33 @@ select {
   justify-content: flex-end;
   gap: 8px;
 }
+
+/* ---- initiative and epic lanes ---- */
+.lane.container {
+  gap: 10px;
+  font-weight: 500;
+}
+.lane-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  text-decoration: none;
+  color: var(--text-strong);
+  font-weight: 600;
+  max-width: 60ch;
+}
+.lane-link:hover .lane-title {
+  text-decoration: underline;
+  text-decoration-color: var(--faint);
+  text-underline-offset: 3px;
+}
+.lane-title {
+  font-family: var(--content);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lane-status {
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}

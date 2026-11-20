@@ -206,3 +206,40 @@ select {
   color: var(--muted);
   padding: 24px 8px;
 }
+
+/* ---- initiatives and epics ---- */
+.ghead:has(ka-progress) {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ctitle {
+  font-family: var(--content);
+  max-width: 50ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.container-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.container-title .title {
+  min-width: 0;
+  font-weight: 600;
+}
+.container-title ka-progress {
+  flex: none;
+}
+.ckind {
+  flex: none;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 0 4px;
+  line-height: 15px;
+}

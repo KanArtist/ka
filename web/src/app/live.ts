@@ -1,5 +1,6 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { setActors } from './ui/actor';
+import { Toasts } from './ui/toast';
 import { Api, ActorOut, BoardOut, InboxOut, KaEvent, SchemaOut, SearchOut, Session, StoreOut, Summary, WorkspaceOut } from './api/api';
 
 const EVENT_TYPES = [
@@ -14,6 +15,7 @@ const EVENT_TYPES = [
   'sync.state',
   'sync.conflict_preserved',
   'store.changed',
+  'store.compacted',
   'presence.changed',
   'reset',
 ];
@@ -34,6 +36,7 @@ export type Connection = 'connecting' | 'live' | 'reconnecting';
 @Injectable({ providedIn: 'root' })
 export class Live {
   private api = inject(Api);
+  private toasts = inject(Toasts);
   private source?: EventSource;
   private lastSeq = 0;
   /** The newest event in `events`, so a replay after a resync does not list it twice. */
@@ -58,6 +61,15 @@ export class Live {
   readonly ticketTick = signal(0);
   /** Bumped when a question is opened or answered (is:question matches change without a ticket change). */
   readonly questionTick = signal(0);
+  /**
+   * Bumped when a store's commit history may have been rewritten: a
+   * store.compacted event (compacted here or adopted from upstream), or a
+   * store.changed, which is all the daemon reports when another process on
+   * the same clone (ka compact from a terminal) compacts it. Every SHA from
+   * before is then gone, so views that show history (activity, timelines,
+   * summaries) refetch it.
+   */
+  readonly historyEpoch = signal(0);
   /** The ID of the last ticket an event touched, with the actor and event ID, for highlights. */
   readonly touched = signal<{ id: string; actor?: string; at: number; seq: number } | null>(null);
 
@@ -202,10 +214,24 @@ export class Live {
           break;
         }
         void this.resync();
+        if (fresh) this.historyEpoch.update((n) => n + 1);
         return;
       case 'reset':
         void this.resync();
         return;
+      case 'store.compacted':
+        // The tree is unchanged, but an adopted history reloaded the index
+        // and every SHA changed: start over, like a reset, and keep the
+        // event for the Activity view. A replay of it was handled already.
+        if (!fresh) break;
+        void this.resync();
+        this.historyEpoch.update((n) => n + 1);
+        this.toasts.show(
+          e.data?.adopted ? `Store ${e.store} adopted a compacted history` : `Store ${e.store}'s history was compacted`,
+          'info',
+          'Links to older commits no longer resolve; Sync & health has the summary of what came before.',
+        );
+        break;
       case 'ticket.created':
       case 'ticket.updated':
       case 'ticket.moved':

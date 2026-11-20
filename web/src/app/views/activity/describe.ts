@@ -42,6 +42,7 @@ export function kindOf(e: KaEvent): Kind | null {
     case 'sync.state':
     case 'sync.conflict_preserved':
     case 'store.changed':
+    case 'store.compacted':
       return 'sync';
     case 'presence.changed':
       return 'sessions';
@@ -79,6 +80,13 @@ export function describe(e: KaEvent): Line {
       return { verb: `kept ${d.preserved?.length ?? 1} conflicting edit(s) as comments`, tone: 'warn' };
     case 'store.changed':
       return { verb: `changed the configuration of ${e.store}` };
+    case 'store.compacted':
+      return {
+        verb: d.adopted ? `${e.store} took in a compacted history` : `compacted the history of ${e.store}`,
+        // History entries carry the root commit's subject: "Compact history: N commits up to <date>".
+        quote: e.text || undefined,
+        tone: 'warn',
+      };
     case 'presence.changed':
       if (d.state === 'connected') return { verb: `connected${d.session?.client ? ` from ${humanize(d.session.client)}` : ''}` };
       return { verb: 'disconnected' };
@@ -161,4 +169,16 @@ function firstLines(body: string | undefined): string | undefined {
   if (!body) return undefined;
   const t = body.trim().replace(/\s+/g, ' ');
   return t.length > 240 ? t.slice(0, 237) + '…' : t;
+}
+
+/** The summary file names a store.compacted event points at (store-relative paths become file names). */
+export function compactionSummary(e: KaEvent): string {
+  const d = e.data ?? {};
+  const path: string = d.summary || (d.summaries?.length ? d.summaries[d.summaries.length - 1] : '') || '';
+  return path.split('/').pop() ?? '';
+}
+
+/** The Sync & health link that opens a store's history summary. */
+export function summaryLink(store: string | undefined, file: string): { path: string; query: Record<string, string> } {
+  return { path: '/health', query: file ? { store: store ?? '', summary: file } : { store: store ?? '' } };
 }

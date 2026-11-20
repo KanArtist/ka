@@ -10,7 +10,9 @@ import { followInternalLink, renderMarkdown } from '../../ui/markdown';
 import { Menu, MenuOption } from '../../ui/menu';
 import { Clock, ago, exact } from '../../ui/time';
 import { Toasts } from '../../ui/toast';
-import { describe } from '../activity/describe';
+import { compactionSummary, describe } from '../activity/describe';
+import { Hierarchy, isContainer } from '../../hierarchy';
+import { ContainerPanel } from './container';
 
 interface Entry {
   key: string;
@@ -22,6 +24,9 @@ interface Entry {
   html?: string;
   commit?: string;
   store?: string;
+  /** store.compacted: the history ended here; the summary file to read. */
+  compacted?: boolean;
+  summary?: string;
 }
 
 type MenuKind = 'status' | 'priority' | 'kind' | 'assignee' | 'labels';
@@ -44,7 +49,7 @@ interface CommitView {
  */
 @Component({
   selector: 'ka-peek',
-  imports: [RouterLink, Actor, Menu, KeysPipe, StatusPipe, KindPipe, FieldPipe],
+  imports: [RouterLink, Actor, Menu, KeysPipe, StatusPipe, KindPipe, FieldPipe, ContainerPanel],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './peek.html',
   styleUrl: './peek.css',
@@ -74,6 +79,8 @@ export class Peek {
   protected readonly openCommit = signal<string>('');
   protected readonly commit = signal<CommitView | null>(null);
   protected readonly commitError = signal('');
+  /** The open commit is not in git any more: its history was compacted. */
+  protected readonly commitGone = signal(false);
   protected readonly diff = computed(() => {
     const c = this.commit();
     return c ? diffLines(c.diff) : [];
@@ -115,6 +122,11 @@ export class Peek {
         continue;
       }
       const line = describe(e);
+      if (e.type === 'store.compacted') {
+        // The root commit holds the whole tree: no diff to show, but the summary says what came before.
+        out.push({ key: `${e.commit}:${e.type}`, at: e.at, actor: e.actor || 'someone', verb: line.verb, tone: line.tone, store: e.store, compacted: true, summary: compactionSummary(e) });
+        continue;
+      }
       out.push({ key: `${e.commit}:${e.type}`, at: e.at, actor: e.actor || 'someone', verb: line.verb, tone: line.tone, commit: e.commit, store: e.store });
     }
     for (const c of d.comments ?? []) {
@@ -130,6 +142,11 @@ export class Peek {
     });
   });
 
+  // ---- initiatives and epics ----
+  private hier = inject(Hierarchy);
+  /** Initiative › epic › parent above this ticket, from the tickets on hand. */
+  protected readonly crumbs = computed(() => this.hier.chain(this.id()));
+  protected readonly container = computed(() => isContainer(this.detail()?.kind));
   private reloadTimer?: ReturnType<typeof setTimeout>;
   /** Sequence of load() and toggleCommit() calls: only the latest one lands. */
   private loadSeq = 0;
@@ -215,6 +232,17 @@ export class Peek {
       }
     });
     inject(DestroyRef).onDestroy(() => clearTimeout(this.reloadTimer));
+    // After a compaction every commit SHA changed: reload the timeline.
+    let compactions = this.live.historyEpoch();
+    effect(() => {
+      const n = this.live.historyEpoch();
+      if (n === compactions) return;
+      compactions = n;
+      untracked(() => {
+        this.openCommit.set('');
+        void this.load(this.id());
+      });
+    });
   }
 
   private async load(id: string): Promise<void> {
@@ -250,12 +278,16 @@ export class Peek {
     this.openCommit.set(e.key);
     this.commit.set(null);
     this.commitError.set('');
+    this.commitGone.set(false);
     try {
       const q = e.store ? `?store=${encodeURIComponent(e.store)}` : '';
       const r = await this.api.get<CommitView>(`/commits/${e.commit}${q}`);
       if (n === this.commitSeq) this.commit.set(r.body);
     } catch (err: any) {
-      if (n === this.commitSeq) this.commitError.set(err?.message ?? String(err));
+      if (n !== this.commitSeq) return;
+      // Commits from before a history compaction are simply gone.
+      if (err instanceof ApiError && err.status === 404) this.commitGone.set(true);
+      else this.commitError.set(err?.message ?? String(err));
     }
   }
 
@@ -409,7 +441,7 @@ export class Peek {
   @HostListener('document:keydown', ['$event'])
   protected onKey(e: KeyboardEvent): void {
     if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented || this.menu() || this.editingBody() || this.editingTitle()) return;
-    if (this.actions.closing() || this.actions.creating() || isTyping(e) || document.querySelector('ka-palette, ka-shortcuts')) return;
+    if (this.actions.dialogOpen() || isTyping(e) || document.querySelector('ka-palette, ka-shortcuts')) return;
     const map: Record<string, () => void> = {
       s: () => this.openMenu('status', this.statusBtn()?.nativeElement),
       p: () => this.openMenu('priority', this.priorityBtn()?.nativeElement),

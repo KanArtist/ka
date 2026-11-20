@@ -7,6 +7,7 @@ import { Prefs } from './prefs';
 import { ActorPipe, Avatar } from './ui/actor';
 import { KeysPipe } from './ui/keys';
 import { CloseDialog, CreateDialog } from './ui/dialogs';
+import { FromLabelDialog } from './ui/from-label';
 import { Palette } from './ui/palette';
 import { Shortcuts } from './ui/shortcuts';
 import { ToastStack } from './ui/toast';
@@ -14,7 +15,7 @@ import { Peek } from './views/peek/peek';
 
 @Component({
   selector: 'app-root',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, Palette, Avatar, Peek, ToastStack, CloseDialog, CreateDialog, Shortcuts, KeysPipe, ActorPipe],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, Palette, Avatar, Peek, ToastStack, CloseDialog, CreateDialog, FromLabelDialog, Shortcuts, KeysPipe, ActorPipe],
   templateUrl: './app.html',
   styleUrl: './app.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -93,7 +94,7 @@ export class App {
       this.palette.update((v) => !v);
       return;
     }
-    if (this.palette() || isTyping(e) || this.actions.closing() || this.actions.creating() || e.defaultPrevented) return;
+    if (this.palette() || isTyping(e) || this.actions.dialogOpen() || e.defaultPrevented) return;
     if (this.help()) {
       if (e.key === 'Escape' || e.key === '?') {
         e.preventDefault();
@@ -123,7 +124,7 @@ export class App {
     }
     if (this.pendingG) {
       this.pendingG = false;
-      const to: Record<string, string> = { a: '/activity', b: '/board', t: '/table', d: '/docs', h: '/health', s: '/settings', g: '/agents', i: '/inbox' };
+      const to: Record<string, string> = { a: '/activity', b: '/board', n: '/initiatives', t: '/table', d: '/docs', h: '/health', s: '/settings', g: '/agents', i: '/inbox' };
       if (to[e.key]) {
         e.preventDefault();
         void this.router.navigate([to[e.key]]);

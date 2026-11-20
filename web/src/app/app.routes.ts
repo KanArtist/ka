@@ -8,6 +8,7 @@ export const routes: Routes = [
   { path: 'activity', component: Activity },
   { path: 'board', component: Board },
   { path: 'table', loadComponent: () => import('./views/table/table').then((m) => m.Table) },
+  { path: 'initiatives', loadComponent: () => import('./views/initiatives/initiatives').then((m) => m.Initiatives) },
   { path: 'docs', loadComponent: () => import('./views/docs/docs').then((m) => m.Docs) },
   { path: 'health', loadComponent: () => import('./views/health/health').then((m) => m.Health) },
   { path: 'settings', loadComponent: () => import('./views/settings/settings').then((m) => m.Settings) },

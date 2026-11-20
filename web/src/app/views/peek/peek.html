@@ -30,6 +30,22 @@
       }
     </div>
   } @else if (detail(); as d) {
+    @if (crumbs().length) {
+      <nav class="crumbs" aria-label="Above this ticket">
+        <ol>
+          @for (c of crumbs(); track c.id) {
+            <li>
+              <a [routerLink]="[]" [queryParams]="{ peek: c.id }" queryParamsHandling="merge" [title]="c.ref + ' ' + c.title">
+                @if (c.kind === 'initiative' || c.kind === 'epic') {
+                  <span class="ckind">{{ c.kind | kind }}</span>
+                }
+                <span class="dot" [attr.data-cat]="relCat(c.id) || null"></span><span class="ctitle">{{ c.title }}</span>
+              </a>
+            </li>
+          }
+        </ol>
+      </nav>
+    }
     @if (editingTitle()) {
       <input
         #titleIn
@@ -47,6 +63,11 @@
 
     <div class="cols">
       <div class="main">
+        @if (container()) {
+          @defer (on immediate) {
+            <ka-container [ticket]="d" [writable]="writable()" [kinds]="projectInfo()?.kinds ?? []" />
+          }
+        }
         @if (editingBody()) {
           <div class="body-editor">
             <textarea
@@ -109,7 +130,7 @@
           </section>
         }
 
-        @if (d.parent_ref || d.children?.length || d.blocked_by?.length || d.blocks?.length) {
+        @if (d.parent_ref || (d.children?.length && !container()) || d.blocked_by?.length || d.blocks?.length) {
           <section>
             <h2>Relations</h2>
             <dl class="rels">
@@ -133,7 +154,7 @@
                   }
                 </dd>
               }
-              @if (d.children?.length) {
+              @if (d.children?.length && !container()) {
                 <dt>Children</dt>
                 <dd>
                   @for (r of d.children; track r.id) {
@@ -154,13 +175,18 @@
                   <ka-actor [actor]="e.actor" [size]="18" />
                   <span class="verb" [attr.data-tone]="e.tone || null">{{ e.verb }}</span>
                   <span class="spacer"></span>
-                  @if (e.commit) {
+                  @if (e.compacted) {
+                    <a class="sha" routerLink="/health" [queryParams]="e.summary ? { store: e.store, summary: e.summary } : { store: e.store }">summary</a>
+                  } @else if (e.commit) {
                     <button type="button" class="sha" (click)="toggleCommit(e)" [attr.aria-expanded]="openCommit() === e.key" title="Show the change">{{ e.commit }}</button>
                   }
                   <time [attr.datetime]="e.at" [title]="exact(e.at)">{{ ago(e.at, now()) }}</time>
                 </div>
                 @if (e.html) {
                   <div class="md small" [innerHTML]="e.html"></div>
+                }
+                @if (e.compacted) {
+                  <p class="compact-note">The history before this point was compacted; the ticket's earlier changes are summarized, not listed.</p>
                 }
                 @if (e.comment?.options?.length) {
                   <ol class="options">
@@ -178,6 +204,11 @@
                       @if (c.truncated) {
                         <p class="muted">The diff is longer than this; see the commit in git.</p>
                       }
+                    } @else if (commitGone()) {
+                      <p class="muted">
+                        This commit is no longer in git: the store's history was compacted after it. What that history held is kept as a summary in
+                        <a routerLink="/health" [queryParams]="{ store: e.store || null }">Sync &amp; health</a>.
+                      </p>
                     } @else if (commitError()) {
                       <p class="muted">{{ commitError() }}</p>
                     } @else {

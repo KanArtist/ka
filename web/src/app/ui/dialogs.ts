@@ -1,7 +1,10 @@
 import { ChangeDetectionStrategy, Component, ElementRef, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
 import { Router } from '@angular/router';
 import { Actions } from '../actions';
+import { ApiError } from '../api/api';
+import { allowedParents, isContainer } from '../hierarchy';
 import { Live } from '../live';
+import { Menu, MenuOption } from './menu';
 import { ActorPipe } from './actor';
 import { KeysPipe } from './keys';
 import { KindPipe, ResolutionPipe, StatusPipe } from './labels';
@@ -182,13 +185,13 @@ export class CloseDialog {
 /** c: a new ticket from anywhere. It opens in the peek once created. */
 @Component({
   selector: 'ka-create-dialog',
-  imports: [KeysPipe, StatusPipe, ActorPipe, KindPipe],
+  imports: [KeysPipe, StatusPipe, ActorPipe, KindPipe, Menu],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (actions.creating()) {
       <div class="scrim" (click)="cancel()">
         <form (click)="$event.stopPropagation()" (submit)="$event.preventDefault(); submit()" (keydown)="key($event)" role="dialog" aria-modal="true" aria-labelledby="create-title">
-          <h2 id="create-title">New ticket</h2>
+          <h2 id="create-title">{{ kind() === 'initiative' ? 'New initiative' : kind() === 'epic' ? 'New epic' : 'New ticket' }}</h2>
           <input #title class="field title-input" type="text" placeholder="Title" aria-label="Title" [value]="titleText()" (input)="titleText.set(title.value)" maxlength="300" />
           <textarea #body class="field" rows="6" placeholder="Description (markdown)" aria-label="Description" [value]="bodyText()" (input)="bodyText.set(body.value)"></textarea>
           <div class="row">
@@ -227,8 +230,53 @@ export class CloseDialog {
               </select>
             </label>
           </div>
-          @if (error()) {
-            <p class="error-text flush">{{ error() }}</p>
+          <div class="row">
+            <label class="parent-field">
+              <span id="parent-label">Parent</span>
+              <button
+                #parentBtn
+                type="button"
+                class="field parent-btn"
+                aria-labelledby="parent-label"
+                aria-haspopup="dialog"
+                [attr.aria-describedby]="parentNote() ? 'parent-note' : null"
+                [disabled]="parentRule() === 'none'"
+                (click)="parentMenu.set(true)"
+              >
+                @if (parentTicket(); as p) {
+                  <span class="dot" [attr.data-cat]="live.category(p)"></span>
+                  @if (p.kind === 'initiative' || p.kind === 'epic') {
+                    <span class="pkind">{{ p.kind | kind }}</span>
+                  }
+                  <span class="id">{{ p.id }}</span>
+                  <span class="ptitle">{{ p.title }}</span>
+                } @else if (parent()) {
+                  <span class="id">{{ parent() }}</span>
+                } @else {
+                  <span class="muted">{{ parentRule() === 'none' ? 'None: an initiative is top level' : 'None' }}</span>
+                }
+              </button>
+            </label>
+          </div>
+          @if (parentNote()) {
+            <p id="parent-note" class="muted flush note">{{ parentNote() }}</p>
+          }
+          @if (problem(); as pr) {
+            <div class="problem" role="alert">
+              <p class="error-text flush">{{ pr.message }}</p>
+              @if (pr.fix) {
+                <p class="muted flush">{{ pr.fix }}</p>
+              }
+              @if (pr.code === 'containers_unguarded' && storeOf()) {
+                <p class="muted flush">
+                  Initiatives and epics need every client of <strong>{{ storeOf() }}</strong> on ka 1.3.0 or newer. Once they are, raise the store's requirement (the same as
+                  <code>ka store require 1.3.0 --store {{ storeOf() }}</code>), then create again.
+                </p>
+                <div>
+                  <button type="button" class="btn small" (click)="requireContainers()" [disabled]="busy()">Require ka 1.3.0 in {{ storeOf() }}…</button>
+                </div>
+              }
+            </div>
           }
           <div class="actions">
             <span class="muted spacer">Committed as <span [title]="live.you()">{{ live.you() | actor }}</span>.</span>
@@ -238,8 +286,76 @@ export class CloseDialog {
         </form>
       </div>
     }
+    @if (parentMenu() && actions.creating()) {
+      <ka-menu
+        [options]="parentOptions()"
+        [selected]="parent()"
+        [anchor]="parentBtn()?.nativeElement ?? null"
+        [limit]="60"
+        [width]="420"
+        [label]="parentRule() === 'initiative' ? 'Choose an initiative' : 'Choose a parent'"
+        [placeholder]="parentRule() === 'initiative' ? 'Find an initiative…' : 'Find a ticket, epic or initiative…'"
+        (pickValue)="parent.set($event); parentNote.set('')"
+        (close)="closeParentMenu()"
+      />
+    }
   `,
-  styles: dialogStyles,
+  styles:
+    dialogStyles +
+    `
+    /* The menu opens over the dialog. */
+    ka-menu {
+      position: relative;
+      z-index: 55;
+    }
+    .parent-btn {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      height: 30px;
+      padding: 0 9px;
+      text-align: left;
+      min-width: 0;
+    }
+    .parent-btn:disabled {
+      opacity: 0.7;
+      cursor: default;
+    }
+    .ptitle {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-family: var(--content);
+    }
+    .pkind {
+      font-size: var(--fs-xs);
+      font-weight: 600;
+      border: 1px solid var(--line);
+      border-radius: var(--r-sm);
+      padding: 0 4px;
+      line-height: 15px;
+      color: var(--muted);
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex: none;
+    }
+    .note {
+      margin-top: -6px;
+      font-size: var(--fs-sm);
+    }
+    .problem {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 8px 10px;
+      border-radius: var(--r-md);
+      background: color-mix(in srgb, var(--st-blocked) 9%, transparent);
+    }
+  `,
 })
 export class CreateDialog {
   protected actions = inject(Actions);
@@ -254,7 +370,39 @@ export class CreateDialog {
   protected readonly kind = signal('');
   protected readonly priority = signal('');
   protected readonly busy = signal(false);
-  protected readonly error = signal('');
+  protected readonly problem = signal<{ message: string; fix?: string; code?: string } | null>(null);
+
+  // ---- parent (spec §4.5: initiative > epic > ticket) ----
+  protected readonly parent = signal('');
+  protected readonly parentNote = signal('');
+  protected readonly parentMenu = signal(false);
+  protected readonly parentBtn = viewChild<ElementRef<HTMLButtonElement>>('parentBtn');
+  protected readonly parentRule = computed(() => allowedParents(this.kind()));
+  protected readonly parentTicket = computed(() => this.live.tickets().get(this.parent()));
+  /**
+   * Valid parents for the chosen kind: initiatives for an epic; for work,
+   * initiatives and epics, then open tickets (this project's first). Open
+   * before closed; the menu shows the first matches and narrows as you type.
+   */
+  protected readonly parentOptions = computed<MenuOption[]>(() => {
+    if (!this.parentMenu()) return [];
+    const rule = this.parentRule();
+    const project = this.project();
+    const rank = (k: string | undefined, p: string) => (k === 'initiative' ? 0 : k === 'epic' ? 1 : p === project ? 2 : 3);
+    const items: [number, MenuOption][] = [];
+    for (const t of this.live.tickets().values()) {
+      const closed = this.live.isClosed(t);
+      if (rule === 'initiative' && t.kind !== 'initiative') continue;
+      if (rule === 'any' && !isContainer(t.kind) && closed) continue;
+      const r = rank(t.kind, t.project) + (closed ? 10 : 0);
+      const kind = t.kind === 'initiative' ? 'Initiative: ' : t.kind === 'epic' ? 'Epic: ' : '';
+      items.push([r, { value: t.id, label: kind + t.title, hint: t.id, cat: this.live.category(t) }]);
+    }
+    items.sort((a, b) => a[0] - b[0] || a[1].label.localeCompare(b[1].label));
+    return [{ value: '', label: 'No parent' }, ...items.map(([, o]) => o)];
+  });
+  /** The store of the chosen project (for containers_unguarded). */
+  protected readonly storeOf = computed(() => this.info()?.store ?? '');
 
   protected readonly projects = computed(() => (this.live.schema()?.projects ?? []).filter((p) => !p.read_only && !p.archived));
   protected readonly info = computed(() => this.projects().find((p) => p.key === this.project()));
@@ -280,11 +428,45 @@ export class CreateDialog {
         this.bodyText.set(d.body ?? '');
         this.kind.set(d.kind ?? '');
         this.priority.set(d.priority ?? '');
-        this.error.set('');
+        this.parent.set(d.parent ?? '');
+        this.parentNote.set('');
+        this.parentMenu.set(false);
+        this.problem.set(null);
         this.pickProject(key, d.status);
         setTimeout(() => this.titleEl()?.nativeElement.focus());
       });
     });
+    // A kind change can leave the parent breaking the nesting rules: say so and clear it.
+    effect(() => {
+      const rule = this.parentRule();
+      untracked(() => {
+        const p = this.parent();
+        if (!p) return;
+        const pk = this.live.tickets().get(p)?.kind;
+        if (rule === 'none') {
+          this.parent.set('');
+          this.parentNote.set('An initiative has no parent, so the parent was cleared.');
+        } else if (rule === 'initiative' && pk !== undefined && pk !== 'initiative') {
+          this.parent.set('');
+          this.parentNote.set("An epic's parent must be an initiative, so the parent was cleared.");
+        }
+      });
+    });
+  }
+
+  protected closeParentMenu(): void {
+    this.parentMenu.set(false);
+    setTimeout(() => this.parentBtn()?.nativeElement.focus());
+  }
+
+  protected async requireContainers(): Promise<void> {
+    const store = this.storeOf();
+    if (!store) return;
+    if (!confirm(`Raise ${store}'s requires_ka to 1.3.0?\n\nClients older than ka 1.3.0 will refuse the store until they upgrade. Do this only once everyone using it runs 1.3.0. It is one commit to .ka/store.yml, pushed like other changes.`)) return;
+    this.busy.set(true);
+    const ok = await this.actions.requireKa(store, '1.3.0');
+    this.busy.set(false);
+    if (ok) this.problem.set(null);
   }
 
   protected pickProject(key: string, status?: string): void {
@@ -295,6 +477,7 @@ export class CreateDialog {
   }
 
   protected key(e: KeyboardEvent): void {
+    if (this.parentMenu()) return; // the menu has the keys
     if (e.key === 'Escape') {
       e.preventDefault();
       e.stopPropagation();
@@ -308,22 +491,28 @@ export class CreateDialog {
   protected async submit(): Promise<void> {
     if (!this.titleText().trim() || this.busy()) return;
     this.busy.set(true);
-    this.error.set('');
+    this.problem.set(null);
     const d = this.actions.creating() ?? {};
-    const id = await this.actions.create({
-      project: this.project(),
-      title: this.titleText().trim(),
-      body: this.bodyText().trim() || undefined,
-      status: this.status() || undefined,
-      kind: this.kind() || undefined,
-      priority: this.priority() || undefined,
-      parent: d.parent,
-      labels: d.labels,
-      assignee: d.assignee,
-    });
+    let id = '';
+    try {
+      id = await this.actions.createOrThrow({
+        project: this.project(),
+        title: this.titleText().trim(),
+        body: this.bodyText().trim() || undefined,
+        status: this.status() || undefined,
+        kind: this.kind() || undefined,
+        priority: this.priority() || undefined,
+        parent: this.parent() || undefined,
+        labels: d.labels,
+        assignee: d.assignee,
+      });
+    } catch (e) {
+      const err = e instanceof ApiError ? e : null;
+      this.problem.set({ message: err?.message ?? String((e as any)?.message ?? e), fix: err?.fix || undefined, code: err?.code });
+    }
     this.busy.set(false);
     if (!id) {
-      this.error.set('The ticket was not created; see the message below.');
+      if (!this.problem()) this.problem.set({ message: 'The ticket was not created.' });
       return;
     }
     localStorage.setItem('ka.create.project', this.project());

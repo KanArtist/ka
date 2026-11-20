@@ -25,7 +25,7 @@ export interface MenuOption {
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="scrim" (click)="close.emit()" (contextmenu)="$event.preventDefault(); close.emit()"></div>
-    <div class="menu" role="dialog" [attr.aria-label]="label()" [style.top.px]="pos().top" [style.left.px]="pos().left" [style.bottom.px]="pos().bottom">
+    <div class="menu" role="dialog" [attr.aria-label]="label()" [style.width.px]="width()" [style.top.px]="pos().top" [style.left.px]="pos().left" [style.bottom.px]="pos().bottom">
       <input
         #q
         class="q"
@@ -68,6 +68,9 @@ export interface MenuOption {
           </li>
         } @empty {
           <li class="none">No matches</li>
+        }
+        @if (hiddenCount()) {
+          <li class="none more" role="presentation">{{ hiddenCount() }} more; type to narrow</li>
         }
       </ul>
     </div>
@@ -123,6 +126,9 @@ export interface MenuOption {
       color: var(--muted);
       cursor: default;
     }
+    li.more {
+      font-size: var(--fs-sm);
+    }
     .check {
       width: 12px;
       color: var(--text-strong);
@@ -168,6 +174,10 @@ export class Menu {
   readonly anchor = input<HTMLElement | null>(null);
   readonly label = input('Choose');
   readonly placeholder = input('Filter…');
+  /** The popover's width in pixels. */
+  readonly width = input(248);
+  /** Show at most this many matches (0: all); typing narrows the rest. */
+  readonly limit = input(0);
   readonly pickValue = output<string>();
   readonly close = output<void>();
 
@@ -176,15 +186,22 @@ export class Menu {
   protected readonly active = signal(0);
   protected readonly pos = signal<{ top?: number; left: number; bottom?: number }>({ top: 0, left: 0 });
 
-  protected readonly shown = computed<MenuOption[]>(() => {
+  private readonly matching = computed<MenuOption[]>(() => {
     const q = this.query().trim().toLowerCase();
     const all = this.options();
-    const out = q ? all.filter((o) => o.label.toLowerCase().includes(q) || o.value.toLowerCase().includes(q)) : all;
+    const out = q ? all.filter((o) => o.label.toLowerCase().includes(q) || o.value.toLowerCase().includes(q) || !!o.hint?.toLowerCase().includes(q)) : all;
     if (q && this.allowCustom() && !all.some((o) => o.value.toLowerCase() === q)) {
       return [...out, { value: this.query().trim(), label: `Add “${this.query().trim()}”` }];
     }
     return out;
   });
+  /** The options shown: the matches, up to limit (0: all). */
+  protected readonly shown = computed<MenuOption[]>(() => {
+    const m = this.matching();
+    const n = this.limit();
+    return n > 0 && m.length > n ? m.slice(0, n) : m;
+  });
+  protected readonly hiddenCount = computed(() => this.matching().length - this.shown().length);
 
   constructor() {
     afterNextRender(() => {
@@ -201,7 +218,7 @@ export class Menu {
     const a = this.anchor();
     if (!a) return;
     const r = a.getBoundingClientRect();
-    const left = Math.max(8, Math.min(r.left, window.innerWidth - 256));
+    const left = Math.max(8, Math.min(r.left, window.innerWidth - this.width() - 8));
     if (window.innerHeight - r.bottom < 300 && r.top > window.innerHeight - r.bottom) {
       this.pos.set({ left, bottom: window.innerHeight - r.top + 4 });
     } else {

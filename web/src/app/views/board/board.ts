@@ -20,8 +20,11 @@ import { Query, QueryBar } from '../../query';
 import { Avatar, actorName, isAgent } from '../../ui/actor';
 import { KindPipe, StatusPipe, statusLabel } from '../../ui/labels';
 import { Clock, ago, exact } from '../../ui/time';
+import { Ancestry, Hierarchy, Progress, asksForContainers, isContainer } from '../../hierarchy';
+import { ProgressBar } from '../../ui/progress';
 
-type Lane = 'none' | 'project' | 'assignee' | 'priority' | 'parent';
+type Lane = 'none' | 'project' | 'assignee' | 'priority' | 'parent' | 'initiative' | 'epic';
+const LANES: readonly Lane[] = ['project', 'assignee', 'priority', 'parent', 'initiative', 'epic'];
 
 interface Column {
   status: string;
@@ -36,6 +39,9 @@ interface Row {
   agent?: boolean;
   columns: Column[];
   count: number;
+  /** Initiative and epic lanes: the container heading the lane. */
+  container?: Summary;
+  progress?: Progress;
 }
 
 /** Cards shown per column before "N more". */
@@ -55,7 +61,7 @@ const MARK_MS = 3200;
  */
 @Component({
   selector: 'ka-board',
-  imports: [RouterLink, Avatar, QueryBar, StatusPipe, KindPipe],
+  imports: [RouterLink, Avatar, QueryBar, StatusPipe, KindPipe, ProgressBar],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './board.html',
   styleUrl: './board.css',
@@ -71,6 +77,7 @@ export class Board {
   protected readonly lane = signal<Lane>('none');
   private query = inject(Query);
   private router = inject(Router);
+  private hier = inject(Hierarchy);
 
   // ---- saved boards (boards/*.yml) ----
   /** The selected saved board, store/key (?board=). */
@@ -177,12 +184,23 @@ export class Board {
     if (await this.actions.deleteBoard(b.store, b.name)) this.pickBoard('');
   }
 
+  /**
+   * Columns are for work: initiatives and epics stay off the board unless
+   * the query asks for them (is:container, is:epic, kind:initiative, …),
+   * and never show as cards in lanes made of their own kind, where they
+   * head the lane instead.
+   */
+  protected readonly showContainers = computed(() => asksForContainers(this.query.text()));
+
   private readonly tickets = computed(() => {
     const project = this.project();
     const match = this.query.matches();
+    const lane = this.lane();
+    const containers = this.showContainers();
     const out: Summary[] = [];
     for (const t of this.live.tickets().values()) {
       if (project && t.project !== project) continue;
+      if (isContainer(t.kind) && (!containers || t.kind === lane)) continue;
       if (!match(t)) continue;
       out.push(t);
     }
@@ -193,14 +211,17 @@ export class Board {
     const statuses = this.statuses();
     const lane = this.lane();
     const now = this.now();
+    const anc = this.hier.ancestry();
+    const all = this.live.tickets();
     const groups = new Map<string, Summary[]>();
     for (const t of this.tickets()) {
-      const k = laneKey(t, lane);
+      const k = laneKey(t, lane, anc);
       let g = groups.get(k);
       if (!g) groups.set(k, (g = []));
       g.push(t);
     }
-    const keys = [...groups.keys()].sort((a, b) => laneOrder(a, lane) - laneOrder(b, lane) || a.localeCompare(b));
+    const order = lane === 'initiative' || lane === 'epic' ? this.containerOrder(all) : (k: string) => laneOrder(k, lane);
+    const keys = [...groups.keys()].sort((a, b) => order(a) - order(b) || a.localeCompare(b));
     // An empty triage column is noise; every other column stays, so the
     // workflow reads left to right.
     const visible = statuses.filter((s) => s.category !== 'triage' || this.tickets().some((t) => t.status === s.name));
@@ -221,9 +242,29 @@ export class Board {
         }
         return { status: s.name, category: s.category, cards, hidden };
       });
-      return { key, label: this.laneLabel(key, lane), agent: lane === 'assignee' && isAgent(key), columns, count: list.length };
+      const container = (lane === 'initiative' || lane === 'epic') && key ? all.get(key) : undefined;
+      return {
+        key,
+        label: this.laneLabel(key, lane),
+        agent: lane === 'assignee' && isAgent(key),
+        columns,
+        count: list.length,
+        container,
+        progress: container ? (this.hier.progress().get(key) ?? EMPTY_PROGRESS) : undefined,
+      };
     });
   });
+
+  /** Container lanes: open ones first, then by priority and reference; "No initiative" last. */
+  private containerOrder(all: ReadonlyMap<string, Summary>): (k: string) => number {
+    return (k) => {
+      if (k === '') return 1000;
+      const c = all.get(k);
+      if (!c) return 900;
+      const p = PRIORITY_ORDER.indexOf(c.priority ?? '');
+      return (this.live.isClosed(c) ? 100 : 0) + (p < 0 ? 9 : p);
+    };
+  }
 
   protected readonly columnTotals = computed(() => {
     const totals = new Map<string, number>();
@@ -324,7 +365,7 @@ export class Board {
     const p = this.live.schema()?.projects?.find((x) => x.key === t.project);
     if (!p?.statuses?.some((s) => s.name === status)) return false;
     const lane = this.lane();
-    const cur = laneKey(t, lane);
+    const cur = laneKey(t, lane, this.hier.ancestry());
     if (cur === row.key) return true;
     return lane === 'priority' || lane === 'assignee' || lane === 'none';
   }
@@ -371,7 +412,7 @@ export class Board {
   private async move(t: Summary, status: string, lane?: string): Promise<void> {
     const l = this.lane();
     const field = l === 'priority' ? 'priority' : l === 'assignee' ? 'assignee' : '';
-    const laneChange = field && lane !== undefined && lane !== laneKey(t, l);
+    const laneChange = field && lane !== undefined && lane !== laneKey(t, l, this.hier.ancestry());
     if (status === t.status && !laneChange) return;
     // Two optimistic patches, so a failed lane change undoes only the lane.
     const undoStatus = status !== t.status ? this.live.patchTicket(t.id, { status }) : () => {};
@@ -436,7 +477,11 @@ export class Board {
   private laneLabel(key: string, lane: Lane): string {
     if (lane === 'none') return '';
     if (key === '') {
-      return { project: 'No project', assignee: 'Unassigned', priority: 'No priority', parent: 'No parent', none: '' }[lane];
+      return { project: 'No project', assignee: 'Unassigned', priority: 'No priority', parent: 'No parent', initiative: 'No initiative', epic: 'No epic', none: '' }[lane];
+    }
+    if (lane === 'initiative' || lane === 'epic') {
+      const c = this.live.tickets().get(key);
+      return c ? c.title : key;
     }
     if (lane === 'parent') {
       const p = this.live.tickets().get(key);
@@ -451,15 +496,21 @@ export class Board {
 }
 
 function laneOf(s: string | undefined): Lane {
-  return (['project', 'assignee', 'priority', 'parent'] as const).find((l) => l === s) ?? 'none';
+  return LANES.find((l) => l === s) ?? 'none';
 }
+
+const EMPTY_PROGRESS: Progress = { total: 0, done: 0, canceled: 0, in_progress: 0, blocked: 0, ready: 0 };
 
 function slug(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 64);
 }
 
-function laneKey(t: Summary, lane: Lane): string {
+function laneKey(t: Summary, lane: Lane, anc: ReadonlyMap<string, Ancestry>): string {
   switch (lane) {
+    case 'initiative':
+      return anc.get(t.id)?.initiative ?? '';
+    case 'epic':
+      return anc.get(t.id)?.epic ?? '';
     case 'project':
       return t.project;
     case 'assignee':

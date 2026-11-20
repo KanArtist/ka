@@ -471,3 +471,59 @@ button.box:disabled {
   background: var(--raised);
   color: var(--text-strong);
 }
+
+/* ---- initiatives and epics ---- */
+.crumbs ol {
+  list-style: none;
+  margin: 10px 0 -4px;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
+  font-size: var(--fs-sm);
+}
+.crumbs li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.crumbs li + li::before {
+  content: '›';
+  color: var(--faint);
+}
+.crumbs a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  text-decoration: none;
+  max-width: 28ch;
+}
+.crumbs a:hover {
+  color: var(--text-strong);
+}
+.ctitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ckind {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 0 4px;
+  line-height: 15px;
+  flex: none;
+}
+.compact-note {
+  margin: 2px 0 0 24px;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+a.sha {
+  text-decoration: none;
+}

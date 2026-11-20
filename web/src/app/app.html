@@ -34,6 +34,10 @@
         <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2.5" width="12" height="11" rx="1.5" /><path d="M2 6h12M2 9.5h12M6 6v7.5" /></svg>
         Table
       </a>
+      <a routerLink="/initiatives" routerLinkActive="on" class="nav">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 2.5v11" /><path d="M3 3h8.5l-2 2.5 2 2.5H3" /></svg>
+        Initiatives
+      </a>
       <a routerLink="/docs" routerLinkActive="on" class="nav">
         <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1.8h5.5L12.5 5v9.2H4z" /><path d="M9.5 1.8V5h3M6 8h4.5M6 10.5h4.5" /></svg>
         Docs
@@ -122,5 +126,9 @@
   }
   <ka-close-dialog />
   <ka-create-dialog />
+  <!-- Loaded on first use. -->
+  @defer (when actions.fromLabel()) {
+    <ka-from-label-dialog />
+  }
   <ka-toasts />
 }

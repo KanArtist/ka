@@ -282,3 +282,24 @@ button.ticket.bulk:hover .count {
 .who ka-actor {
   max-width: 100%;
 }
+
+/* A compaction: the line where the older history ends. */
+.group.compacted {
+  border-left-color: var(--ink-human);
+  background: var(--ink-human-wash);
+}
+.group.compacted .mark {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border: 1.5px solid var(--ink-human);
+  transform: rotate(45deg);
+}
+.compact-note {
+  display: block;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+.compact-note a {
+  color: var(--focus);
+}

@@ -41,6 +41,8 @@
           <option value="assignee">Assignee</option>
           <option value="priority">Priority</option>
           <option value="parent">Parent</option>
+          <option value="initiative">Initiative</option>
+          <option value="epic">Epic</option>
         </select>
       </label>
       <label class="check"><input type="checkbox" [checked]="showCanceled()" (change)="showCanceled.set($any($event.target).checked)" /> Canceled</label>
@@ -60,13 +62,28 @@
 
     @for (r of rows(); track r.key) {
       @if (lane() !== 'none') {
-        <h2 class="lane" [class.agent]="r.agent">
-          @if (lane() === 'assignee' && r.key) {
-            <ka-avatar [actor]="r.key" [size]="16" />
-          }
-          <span>{{ r.label }}</span>
-          <span class="n">{{ r.count }}</span>
-        </h2>
+        @if (r.container; as c) {
+          <h2 class="lane container">
+            <a class="lane-link" [routerLink]="[]" [queryParams]="{ peek: c.id }" queryParamsHandling="merge" [title]="'Open ' + c.ref">
+              <span class="dot" [attr.data-cat]="live.category(c)"></span>
+              <span class="id">{{ c.id }}</span>
+              <span class="lane-title">{{ r.label }}</span>
+            </a>
+            <span class="lane-status">{{ c.status | status }}</span>
+            @if (r.progress; as p) {
+              <ka-progress [value]="p" />
+            }
+            <span class="n">{{ r.count }} {{ r.count === 1 ? 'card' : 'cards' }} here</span>
+          </h2>
+        } @else {
+          <h2 class="lane" [class.agent]="r.agent">
+            @if (lane() === 'assignee' && r.key) {
+              <ka-avatar [actor]="r.key" [size]="16" />
+            }
+            <span>{{ r.label }}</span>
+            <span class="n">{{ r.count }}</span>
+          </h2>
+        }
       }
       <div class="cols">
         @for (c of r.columns; track c.status; let ci = $index) {

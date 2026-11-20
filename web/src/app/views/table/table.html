@@ -13,6 +13,8 @@
           <option value="priority">Priority</option>
           <option value="kind">Kind</option>
           <option value="parent">Parent</option>
+          <option value="initiative">Initiative</option>
+          <option value="epic">Epic</option>
         </select>
       </label>
       <button type="button" class="btn small" (click)="openColumns($event)" aria-haspopup="dialog">Columns</button>
@@ -45,9 +47,22 @@
               @if (group() === 'assignee' && s.key) {
                 <ka-avatar [actor]="s.key" [size]="16" />
               }
-              <span class="glabel" [attr.data-p]="group() === 'priority' ? s.key : null">{{ s.label || '—' }}</span>
+              @if (s.container; as c) {
+                <span class="dot" [attr.data-cat]="cat(c)" [title]="c.status"></span>
+                <span class="id">{{ c.id }}</span>
+                <span class="glabel ctitle">{{ c.title }}</span>
+                <span class="n">{{ c.status | status }}</span>
+              } @else {
+                <span class="glabel" [attr.data-p]="group() === 'priority' ? s.key : null">{{ s.label || '—' }}</span>
+              }
               <span class="n">{{ s.total }}</span>
             </button>
+            @if (s.container; as c) {
+              @if (progress().get(c.id); as p) {
+                <ka-progress [value]="p" />
+              }
+              <button type="button" class="btn quiet small" (click)="open(c)">Open</button>
+            }
           </div>
         }
         @if (!isCollapsed(s)) {
@@ -69,12 +84,22 @@
                       <span class="id">{{ t.id }}</span>
                     }
                     @case ('title') {
-                      <span class="title">
-                        @if (t.blocked && t.status !== 'blocked') {
-                          <span class="tag blocked">blocked</span>
-                        }
-                        {{ t.title }}
-                      </span>
+                      @if (isContainer(t.kind)) {
+                        <span class="container-title">
+                          <span class="ckind">{{ t.kind | kind }}</span>
+                          <span class="title ell">{{ t.title }}</span>
+                          @if (progress().get(t.id); as p) {
+                            <ka-progress [value]="p" />
+                          }
+                        </span>
+                      } @else {
+                        <span class="title">
+                          @if (t.blocked && t.status !== 'blocked') {
+                            <span class="tag blocked">blocked</span>
+                          }
+                          {{ t.title }}
+                        </span>
+                      }
                     }
                     @case ('status') {
                       <button type="button" class="ebtn" (click)="editCell($event, t, c)"><span class="dot" [attr.data-cat]="cat(t)"></span>{{ t.status | status }}</button>
@@ -113,6 +138,16 @@
                     }
                     @case ('parent') {
                       <span class="id">{{ t.parent }}</span>
+                    }
+                    @case ('initiative') {
+                      @if (ancestry().get(t.id)?.initiative; as a) {
+                        <span class="ell" [title]="a + ' ' + (live.tickets().get(a)?.title ?? '')"><span class="id">{{ a }}</span> {{ live.tickets().get(a)?.title }}</span>
+                      }
+                    }
+                    @case ('epic') {
+                      @if (ancestry().get(t.id)?.epic; as a) {
+                        <span class="ell" [title]="a + ' ' + (live.tickets().get(a)?.title ?? '')"><span class="id">{{ a }}</span> {{ live.tickets().get(a)?.title }}</span>
+                      }
                     }
                     @case ('owner') {
                       @if (t.owner) {

@@ -1,4 +1,4 @@
-import { DestroyRef, Injectable, effect, inject, signal } from '@angular/core';
+import { DestroyRef, Injectable, computed, effect, inject, signal } from '@angular/core';
 import { Api, ApiError, Summary, WriteOut } from './api/api';
 import { Live } from './live';
 import { Toasts } from './ui/toast';
@@ -40,6 +40,12 @@ export class Actions {
   readonly closing = signal<Closing | null>(null);
   /** The create dialog: open with optional defaults. */
   readonly creating = signal<Partial<CreateTicket> | null>(null);
+  /** The convert-a-label dialog: open with an optional project and label. */
+  readonly fromLabel = signal<{ project?: string; label?: string } | null>(null);
+  /** A view's own modal dialog is open (its name), so global shortcuts stand back. */
+  readonly modal = signal('');
+  /** Any dialog is open: single-key shortcuts must not fire behind it. */
+  readonly dialogOpen = computed(() => !!(this.closing() || this.creating() || this.fromLabel() || this.modal()));
   /** The project the open view is narrowed to ('' for none): the create dialog's default. */
   readonly viewProject = signal('');
   private viewOwner: object | null = null;
@@ -174,10 +180,24 @@ export class Actions {
     return !!out;
   }
 
-  async create(t: CreateTicket): Promise<string | null> {
-    const out = await this.run('Could not create the ticket', async () => (await this.api.post<{ created: { id: string }[] }>('/tickets', t)).body);
-    const id = (out as any)?.created?.[0]?.id ?? (out as any)?.id ?? null;
+  /**
+   * Create a ticket, throwing the API's error instead of toasting it, so a
+   * dialog can show it in place (hierarchy_invalid, containers_unguarded).
+   */
+  async createOrThrow(t: CreateTicket): Promise<string> {
+    const out = (await this.api.post<{ created: { id: string }[]; push_error?: string }>('/tickets', t)).body;
+    if (out?.push_error) this.toasts.show(`Saved locally; push failed: ${out.push_error}`, 'error', 'ka sync retries; the change is committed');
+    const id = out?.created?.[0]?.id ?? '';
     if (id) this.toasts.show(`Created ${id}`);
     return id;
+  }
+
+  /** Raise a store's requires_ka (ka store require); true when it now requires version. */
+  async requireKa(store: string, version: string): Promise<boolean> {
+    const out = await this.run(`Could not raise ${store}'s requirement`, async () =>
+      (await this.api.post<{ changed: boolean; to: string }>(`/stores/${encodeURIComponent(store)}/require`, { version })).body,
+    );
+    if (out) this.toasts.show(out.changed ? `${store} now requires ka ${out.to}` : `${store} already requires ka ${out.to}`);
+    return !!out;
   }
 }
