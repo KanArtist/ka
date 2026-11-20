@@ -284,7 +284,7 @@ func (s *Service) slugProjects() (map[*Store]map[string]bool, error) {
 			continue
 		}
 		if ks := s.ix.ks[pi.Store]; ks == nil || ks.File == nil || !kaspec.VersionAtLeastRelease(ks.File.RequiresKa, kaspec.SlugsMinKa) {
-			return nil, Errf(CodeInvalid, "once every client of the store runs ka "+kaspec.SlugsMinKa+" or newer, add `requires_ka: "+kaspec.SlugsMinKa+"` to its .ka/store.yml, commit and push, then run this again",
+			return nil, Errf(CodeInvalid, requireHint(kaspec.SlugsMinKa)+", then run this again",
 				"store %s does not require ka %s, so clients older than that would fail to read the slugs", pi.Store.Name, kaspec.SlugsMinKa)
 		}
 		if out[pi.Store] == nil {

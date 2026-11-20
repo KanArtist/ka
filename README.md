@@ -124,6 +124,7 @@ ka config explain [KEY]              # effective config and the file that set ea
 ka project move KEY --to STORE       # re-home a project; IDs stay the same
 ka project rename KEY --key NEW --prefix P   # new key and ID prefix; references follow
 ka store set-url NAME URL            # a store's repository moved; keeps the clone
+ka store require 1.3.0               # raise requires_ka once every client has upgraded
 ka hooks install                     # pre-commit: ka fmt --staged && ka check --staged
 ka daemon / ka daemon status / ka daemon stop   # REST API on 127.0.0.1:7711
 ka token create --actor NAME         # API tokens for a remote daemon (docs/operations.md)

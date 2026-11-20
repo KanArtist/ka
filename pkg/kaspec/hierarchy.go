@@ -110,7 +110,7 @@ func (c *checker) hierarchy() {
 	for _, s := range c.w.Stores {
 		if id := unguarded[s]; id != "" {
 			c.diags = append(c.diags, diag("containers_unguarded", s.p(".ka/store.yml"), 0,
-				"add `requires_ka: "+ContainersMinKa+"` to .ka/store.yml once every client runs ka "+ContainersMinKa+" or newer",
+				"once every client runs ka "+ContainersMinKa+" or newer, run `ka store require "+ContainersMinKa+"` (or add `requires_ka: "+ContainersMinKa+"` to .ka/store.yml)",
 				"%s is %s, but the store does not require ka %s; older ka cannot read initiatives and epics", id, KindPhrase(all[id].te.Ticket.Kind), ContainersMinKa))
 		}
 	}

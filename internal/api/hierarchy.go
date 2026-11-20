@@ -19,6 +19,17 @@ func (s *Server) hierarchyRoutes() {
 			out, err := s.svc.Tree(engine.TreeIn{ID: in.ID, Project: in.Project, Depth: in.Depth, HideClosed: in.HideClosed})
 			return &body[*engine.TreeOut]{out}, err
 		})
+	reg(s, post("requireKa", "/stores/{name}/require", "Raise a store's requires_ka; never lowers it (ka store require)", "workspace"),
+		func(ctx context.Context, in *struct {
+			CallerHeaders
+			Name string `path:"name" doc:"The store's workspace name."`
+			Body struct {
+				Version string `json:"version" minLength:"1" doc:"The oldest ka release that may use the store, such as 1.3.0."`
+			}
+		}) (*body[*engine.RequireOut], error) {
+			out, err := s.svc.RequireKa(ctx, s.caller(in.CallerHeaders), in.Name, in.Body.Version)
+			return &body[*engine.RequireOut]{out}, err
+		})
 	reg(s, post("initiativeFromLabel", "/initiatives/from-label", "Turn a label into an initiative over the tickets carrying it (ka initiative from-label)", "tickets"),
 		func(ctx context.Context, in *struct {
 			CallerHeaders

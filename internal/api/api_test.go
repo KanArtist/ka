@@ -256,7 +256,7 @@ func TestEveryServiceMethodHasAnEndpoint(t *testing.T) {
 		"Sync": "sync", "ResolveLink": "resolveLink", "Validate": "check", "ReplaceTicket": "replaceTicketSource", "Fix": "fix", "FixWith": "fix",
 		"WorkspaceInfo": "getWorkspace", "Stores": "listStores", "Boards": "listBoards", "Actors": "listActors", "Kick": "gitHook", "Activity": "getActivity", "Commit": "getCommit",
 		"ConfigExplain": "explainConfig", "MoveProject": "moveProject", "RenameProject": "renameProject", "SaveBoard": "saveBoard", "Docs": "listDocs", "RestorePreserved": "restorePreserved", "Doc": "getDoc", "DeleteBoard": "deleteBoard",
-		"Tree": "getTree", "InitiativeFromLabel": "initiativeFromLabel",
+		"Tree": "getTree", "InitiativeFromLabel": "initiativeFromLabel", "RequireKa": "requireKa",
 	}
 	ops := map[string]bool{}
 	for _, item := range New(nil, Options{}).OpenAPI().Paths {

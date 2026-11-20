@@ -154,8 +154,9 @@ ka before 1.2.0 rejects a ticket with a slug, so turn slugs on for a store in th
 
 1. Upgrade every client of the store (every machine, CI job and action that runs `ka`) to 1.2.0 or
    newer.
-2. Add `requires_ka: 1.2.0` to the store's `.ka/store.yml`, commit and push. Any client still older
-   than that now stops with an explanation instead of failing on individual tickets.
+2. Run `ka store require 1.2.0` (it sets `requires_ka: 1.2.0` in the store's `.ka/store.yml`,
+   commits and pushes). Any client still older than that now stops with an explanation instead of
+   failing on individual tickets.
 3. Set `slugs: true` in the config, commit and push.
 4. Run `ka fix --slugs` once to give existing tickets a slug derived from their titles (one commit
    per store). It refuses while step 2 is missing.
@@ -199,7 +200,10 @@ Create them with `ka new --kind initiative` and `ka new --kind epic --parent <in
   instead (once); tickets with any other parent are reported and left alone. The label is removed
   from converted tickets unless `--keep-label`. It is one `create` and one `update` per ticket,
   pushed once, so it replays like any other write, and running it again only picks up tickets
-  labelled since.
+  labelled since. It syncs the store before it looks for the initiative, so a second clone
+  converting the same label later reuses the first one's initiative; two clones converting in the
+  same moment can still each create one (move the tickets with `ka edit --set parent=...` and cancel
+  the spare).
 
 The orchestration loop: `ka_tree` the initiative → pick an epic → workers call `ka_next
 within=<epic>` → when the epic's rollup is complete, the orchestrator closes it with
@@ -208,9 +212,9 @@ within=<epic>` → when the epic's rollup is complete, the orchestrator closes i
 ka before 1.3.0 rejects the container kinds (`unknown_kind`), so they are guarded like slugs: the
 engine refuses to create the first container (or change a ticket's kind to one) in a store whose
 `.ka/store.yml` does not set `requires_ka: 1.3.0` or newer (`containers_unguarded`, telling you to
-add it once every client runs 1.3.0), and `ka check` warns (`containers_unguarded`) about a store
-that has containers without it. There is no command that raises `requires_ka`; edit `store.yml`,
-commit and push. A project that removes the two kinds from its `kinds` has no containers.
+run `ka store require 1.3.0` once every client runs 1.3.0), and `ka check` warns
+(`containers_unguarded`) about a store that has containers without it. A project that removes the
+two kinds from its `kinds` has no containers.
 
 ## Version requirements
 
@@ -221,6 +225,12 @@ requirement, so an older ka never reads or rewrites data it does not understand.
 the remote raised it stays committed locally and reports why it was not pushed. Development builds
 (versions with a `-` suffix) are never refused. `ka check` and `ka doctor` report it as
 `ka_outdated`.
+
+`ka store require VERSION [--store NAME]` (`POST /api/v1/stores/{name}/require`) raises a store's
+`requires_ka` to VERSION: one commit to `.ka/store.yml`, pushed like other writes. It never lowers
+the requirement and refuses a version newer than the running ka. Run it only once every client of
+the store runs that version. `ka init` does not set `requires_ka`: a new store may still be shared
+with clients on older releases, so raising it stays a deliberate step.
 
 ## The index
 

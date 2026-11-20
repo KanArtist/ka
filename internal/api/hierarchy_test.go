@@ -8,8 +8,18 @@ import (
 
 func TestTreeAndFromLabel(t *testing.T) {
 	testkit.GitEnv(t)
-	r := testkit.NewRemote(t, map[string]string{".ka/store.yml": "spec: 1\nname: test\nrequires_ka: 1.3.0\n"})
+	r := testkit.NewRemote(t, nil)
 	c := serve(t, testkit.Service(t, r.Clone()))
+
+	if res := c.do("POST", "/api/v1/tickets", map[string]any{"title": "GDPR", "kind": "initiative"}); res.status != 422 || str(res.m, "code") != "containers_unguarded" {
+		t.Fatalf("unguarded: %d %s", res.status, res.raw)
+	}
+	if res := c.ok("POST", "/api/v1/stores/test/require", map[string]any{"version": "1.3.0"}); res.m["changed"] != true || res.m["pushed"] != true {
+		t.Fatalf("require: %s", res.raw)
+	}
+	if res := c.do("POST", "/api/v1/stores/test/require", map[string]any{"version": "1.2.0"}); res.status != 422 {
+		t.Fatalf("lowering: %d %s", res.status, res.raw)
+	}
 
 	c.ok("POST", "/api/v1/tickets/batch", map[string]any{"tickets": []map[string]any{
 		{"title": "Port the installer", "labels": []string{"windows"}, "status": "ready"},

@@ -20,11 +20,24 @@ func TestCLIInitiatives(t *testing.T) {
 	testkit.Git(t, dir, "commit", "-qm", "init")
 
 	// Without requires_ka the first container is refused, with the fix.
-	if r := ka(t, dir, "new", "-t", "GDPR", "--kind", "initiative"); r.code != 1 || !strings.Contains(r.err, "containers_unguarded") || !strings.Contains(r.err, "requires_ka: 1.3.0") {
+	if r := ka(t, dir, "new", "-t", "GDPR", "--kind", "initiative"); r.code != 1 || !strings.Contains(r.err, "containers_unguarded") || !strings.Contains(r.err, "ka store require 1.3.0") {
 		t.Fatalf("unguarded: %+v", r)
 	}
-	os.WriteFile(filepath.Join(dir, ".ka", "store.yml"), []byte("spec: 1\nname: tickets\nrequires_ka: 1.3.0\n"), 0o644)
-	testkit.Git(t, dir, "commit", "-qam", "require ka 1.3.0")
+	if r := ka(t, dir, "store", "require", "1.3.0"); r.code != 0 || !strings.Contains(r.out, "now requires ka 1.3.0") {
+		t.Fatalf("store require: %+v", r)
+	}
+	if r := ka(t, dir, "store", "require", "1.2.0"); r.code != 1 || !strings.Contains(r.err, "never lowered") {
+		t.Fatalf("store require lower: %+v", r)
+	}
+	if r := ka(t, dir, "store", "require", "1.3.0"); r.code != 0 || !strings.Contains(r.out, "(already)") {
+		t.Fatalf("store require again: %+v", r)
+	}
+	if raw, _ := os.ReadFile(filepath.Join(dir, ".ka", "store.yml")); !strings.Contains(string(raw), "requires_ka: 1.3.0\n") {
+		t.Fatalf("store.yml:\n%s", raw)
+	}
+	if r := ka(t, dir, "check"); r.code != 0 {
+		t.Fatalf("check after require: %+v", r)
+	}
 
 	newID := func(args ...string) string {
 		t.Helper()

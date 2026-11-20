@@ -74,6 +74,22 @@ func (s *Service) InitiativeFromLabel(ctx context.Context, c Caller, in FromLabe
 	defer s.writeMu.Unlock()
 	s.ix.catchUp()
 
+	// Sync first, so an initiative another clone created for this label is
+	// reused rather than duplicated. Two clones converting in the same
+	// moment can still both create one; ka check does not flag that, and the
+	// later run's tickets can be moved with ka edit --set parent=...
+	s.ix.mu.RLock()
+	pi, err := s.resolveProject(in.Project)
+	s.ix.mu.RUnlock()
+	if err != nil {
+		return nil, err
+	}
+	if !in.DryRun && s.mayPush(pi.Store) {
+		if remote, _ := pi.Store.upstream(ctx); remote != "" {
+			pi.Store.Sync(ctx, s.hooks(pi.Store)) // offline: plan from what we have
+		}
+	}
+
 	s.ix.mu.RLock()
 	pi, out, plan, err := s.planFromLabel(c, in, label, title)
 	s.ix.mu.RUnlock()

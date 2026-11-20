@@ -71,7 +71,7 @@ func init() {
 		{"hooks", "install [--force] | uninstall | status", "a git pre-commit hook running ka fmt --staged and ka check --staged", cmdHooks, false},
 		{"fix", "[--dry-run]", "repair data (timestamps, actor aliases, formatting); one commit per kind", cmdFix, false},
 		{"doctor", "[--fix]", "check git, merge driver, attributes and clone health", cmdDoctor, false},
-		{"store", "ls | add URL|PATH [--name N] [--branch B] | set-url NAME URL [--name NEW] | rm NAME", "manage the stores in your workspace", cmdStore, false},
+		{"store", "ls | add URL|PATH [--name N] [--branch B] | set-url NAME URL [--name NEW] | rm NAME | require VERSION [--store NAME]", "manage the stores in your workspace; require raises a store's requires_ka", cmdStore, false},
 		{"workspace", "", "show the resolved workspace", cmdWorkspace, false},
 		{"config", "explain [--project KEY] [KEY]", "show effective config and the layer that set each value", cmdConfig, false},
 		{"project", "move KEY --to STORE [--dry-run] | rename KEY [--key NEW] [--prefix P] [--keep-former-prefix]", "move a project to another store, or rename its key and ID prefix", cmdProject, false},

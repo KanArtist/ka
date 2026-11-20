@@ -12,7 +12,7 @@ func TestContainersNeedRequiresKa(t *testing.T) {
 	a, _ := e.clone()
 	c := agent("claude")
 	_, err := a.Create(ctx, c, []CreateIn{{Title: "GDPR", Kind: "initiative"}})
-	if !IsCode(err, CodeContainersUnguarded) || !strings.Contains(AsError(err).Fix, "requires_ka: 1.3.0") {
+	if !IsCode(err, CodeContainersUnguarded) || !strings.Contains(AsError(err).Fix, "ka store require 1.3.0") {
 		t.Fatalf("initiative in an unguarded store: %v", err)
 	}
 	id := must[*CreateOut](t)(a.Create(ctx, c, []CreateIn{{Title: "Work"}})).Created[0].ID

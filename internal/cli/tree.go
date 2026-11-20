@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"flag"
 	"fmt"
 
 	"github.com/KanArtist/ka/internal/engine"
@@ -69,4 +70,36 @@ func cmdInitiative(ctx context.Context, x *IO, args []string) int {
 		return 1
 	}
 	return code
+}
+
+// storeRequire is ka store require VERSION [--store NAME].
+func storeRequire(ctx context.Context, x *IO, c *common, fl *flag.FlagSet, store string, pos []string) int {
+	if len(pos) != 1 {
+		return usageErr(x, fl, "store require needs a version, such as 1.3.0")
+	}
+	svc, caller, err := open(ctx, x, c)
+	if err != nil {
+		return fail(x, c, err)
+	}
+	out, err := svc.RequireKa(ctx, caller, store, pos[0])
+	if err != nil {
+		return fail(x, c, err)
+	}
+	text := fmt.Sprintf("store %s requires ka %s (already)", out.Store, out.To)
+	if out.Changed {
+		text = fmt.Sprintf("store %s now requires ka %s", out.Store, out.To)
+		if out.From != "" {
+			text += " (was " + out.From + ")"
+		}
+		switch {
+		case out.Local:
+		case out.Pushed:
+			text += ", pushed"
+		case out.PushNote != "":
+			text += ", NOT pushed (" + out.PushNote + ")"
+		default:
+			text += ", committed locally"
+		}
+	}
+	return emit(x, c, out, text)
 }

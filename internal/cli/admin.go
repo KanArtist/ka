@@ -418,9 +418,10 @@ func isBareRepo(dir string) bool {
 }
 
 func cmdStore(ctx context.Context, x *IO, args []string) int {
-	fl, c := newFlags("store", "ls | add URL|PATH [--name N] [--branch B] | set-url NAME URL [--name NEW] | rm NAME", x)
+	fl, c := newFlags("store", "ls | add URL|PATH [--name N] [--branch B] | set-url NAME URL [--name NEW] | rm NAME | require VERSION [--store NAME]", x)
 	name := fl.String("name", "", "store name")
 	branch := fl.String("branch", "", "branch (for orphan-branch stores)")
+	storeName := fl.String("store", "", "require: the store (default: the only writable one)")
 	sub, args := subcommand(fl, args)
 	pos, err := parse(fl, args)
 	if err != nil {
@@ -428,6 +429,9 @@ func cmdStore(ctx context.Context, x *IO, args []string) int {
 	}
 	if sub == "" || sub == "ls" {
 		return cmdWorkspace(ctx, x, args)
+	}
+	if sub == "require" {
+		return storeRequire(ctx, x, c, fl, *storeName, pos)
 	}
 	pos = append([]string{sub}, pos...)
 	path := c.workspace

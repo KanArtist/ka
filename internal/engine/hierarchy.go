@@ -55,7 +55,7 @@ func (e ixEnv) containersGuard() error {
 }
 
 func unguardedErr(store string) *Error {
-	return Errf(CodeContainersUnguarded, "once every client of the store runs ka "+kaspec.ContainersMinKa+" or newer, add `requires_ka: "+kaspec.ContainersMinKa+"` to its .ka/store.yml, commit and push, then try again",
+	return Errf(CodeContainersUnguarded, requireHint(kaspec.ContainersMinKa)+", then try again",
 		"store %s does not require ka %s, so older clients would fail to read initiatives and epics", store, kaspec.ContainersMinKa)
 }
 

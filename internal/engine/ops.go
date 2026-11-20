@@ -707,6 +707,6 @@ func lev(a, b string) int {
 }
 
 func slugsOff() error {
-	return Errf(CodeInvalid, "turn slugs on with `slugs: true` in the project's config, after every client of the store runs ka "+kaspec.SlugsMinKa+" or newer and the store sets requires_ka (spec §4.3)",
+	return Errf(CodeInvalid, "turn slugs on with `slugs: true` in the project's config, after every client of the store runs ka "+kaspec.SlugsMinKa+" or newer and the store sets requires_ka (`ka store require "+kaspec.SlugsMinKa+"`, spec §4.3)",
 		"this project does not store slugs yet")
 }

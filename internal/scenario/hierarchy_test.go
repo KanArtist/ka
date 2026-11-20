@@ -139,14 +139,20 @@ func TestInitiativeFromLabelReplay(t *testing.T) {
 	}
 	late := seedTickets(t, b, engine.CreateIn{Title: "Records of processing", Labels: []string{"gdpr"}})[0]
 
-	// Alice converts without having seen that: her operations replay.
+	// Alice converts offline, without having seen that; when she syncs, her
+	// create and update operations replay onto Bob's changes.
+	a.NoPush = true
 	out, err := a.InitiativeFromLabel(ctx, ca, engine.FromLabelIn{Label: "gdpr", Title: "GDPR"})
-	if err != nil || out.Error != nil || !out.Pushed {
+	if err != nil || out.Error != nil || out.Pushed {
 		t.Fatalf("from-label: %v %+v", err, out)
 	}
 	ini := out.Initiative.ID
 	if n := len(out.Tickets); n != 4 { // 2 free, 1 via the epic, the epic
 		t.Fatalf("report: %+v", out.Tickets)
+	}
+	a.NoPush = false
+	if so := a.Sync(ctx, true); len(so.Errors) > 0 || len(so.Preserved) > 0 {
+		t.Fatalf("replay: %+v", so)
 	}
 
 	b.Sync(ctx, true)
@@ -224,5 +230,34 @@ func TestTreeTokenBudget(t *testing.T) {
 		if got > tg.limit {
 			t.Errorf("%s: %d tokens, budget %d\n%s", tg.name, got, tg.limit, text)
 		}
+	}
+}
+
+// Two clones convert the same label one after the other, the second without
+// having synced: it syncs first and reuses the first one's initiative.
+func TestInitiativeFromLabelNoDuplicate(t *testing.T) {
+	testkit.GitEnv(t)
+	r := testkit.NewRemote(t, containersStore)
+	a := testkit.Service(t, r.Clone())
+	b := testkit.Service(t, r.Clone())
+	seedTickets(t, a, engine.CreateIn{Title: "Port the installer", Labels: []string{"windows"}})
+	b.Sync(ctx, true)
+	b.NoPush = true // b's ticket stays local until b converts
+	mine := seedTickets(t, b, engine.CreateIn{Title: "Path handling", Labels: []string{"windows"}})[0]
+
+	first, err := a.InitiativeFromLabel(ctx, a.CallerFor("alice", ""), engine.FromLabelIn{Label: "windows"})
+	if err != nil || !first.Created || !first.Pushed {
+		t.Fatalf("first: %v %+v", err, first)
+	}
+	b.NoPush = false
+	second, err := b.InitiativeFromLabel(ctx, b.CallerFor("bob", ""), engine.FromLabelIn{Label: "windows"})
+	if err != nil || second.Created || second.Initiative.ID != first.Initiative.ID || len(second.Tickets) != 1 || second.Tickets[0].ID != mine {
+		t.Fatalf("second: %v %+v", err, second)
+	}
+	if out, _ := b.Search(engine.SearchIn{Query: "is:initiative", All: true}); out.Total != 1 {
+		t.Fatalf("initiatives: %+v", out.Tickets)
+	}
+	if out, _ := b.Search(engine.SearchIn{Query: "initiative:" + first.Initiative.ID}); out.Total != 2 {
+		t.Fatalf("under the initiative: %+v", out.Tickets)
 	}
 }

@@ -294,7 +294,7 @@ func (c *checker) checkProject(s *Store, pr *Project) {
 			why = slugged + " has a slug"
 		}
 		c.diags = append(c.diags, diag("slugs_unguarded", s.p(".ka/store.yml"), 0,
-			"add `requires_ka: "+SlugsMinKa+"` to .ka/store.yml once every client runs ka "+SlugsMinKa+" or newer",
+			"once every client runs ka "+SlugsMinKa+" or newer, run `ka store require "+SlugsMinKa+"` (or add `requires_ka: "+SlugsMinKa+"` to .ka/store.yml)",
 			"%s, but the store does not require ka %s; older ka cannot read tickets with slugs", why, SlugsMinKa))
 	}
 }
