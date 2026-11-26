@@ -81,7 +81,7 @@ jobs:
         run: shellcheck install.sh
       - name: Install with the script
         run: |
-          KA_VERSION=1.3.0 KA_INSTALL_DIR="$RUNNER_TEMP/bin" sh install.sh
+          KA_VERSION=1.4.0 KA_INSTALL_DIR="$RUNNER_TEMP/bin" sh install.sh
           "$RUNNER_TEMP/bin/ka" version
       # In a checkout that is not on a tag, the script builds it with Go.
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7 (v7.1.0)
@@ -102,7 +102,7 @@ jobs:
       - name: Install a release with install.ps1
         shell: pwsh
         run: |
-          $env:KA_VERSION = '1.3.0'
+          $env:KA_VERSION = '1.4.0'
           $env:KA_INSTALL_DIR = "$env:RUNNER_TEMP\bin"
           ./install.ps1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
