@@ -43,6 +43,7 @@ type (
 	WriteOut     = engine.WriteOut
 	CommentIn    = engine.CommentIn
 	CheckIn      = engine.CheckIn
+	CheckItem    = engine.CheckItem
 	TransitionIn = engine.TransitionIn
 	ClaimOut     = engine.ClaimOut
 	NextIn       = engine.NextIn
@@ -51,6 +52,9 @@ type (
 
 	// Error is a structured ka error with a stable code.
 	Error = engine.Error
+
+	// InitOptions describes a new store (directory, name, first project and prefix).
+	InitOptions = engine.InitOptions
 )
 
 // Error codes callers commonly branch on.
@@ -70,6 +74,10 @@ func ParseWorkspaceFile(path string) (*WorkspaceFile, error) { return engine.Par
 
 // New builds a Service over an opened workspace (loading its index).
 func New(ctx context.Context, ws *Workspace) (*Service, error) { return engine.New(ctx, ws) }
+
+// InitStore creates a store (and git repo, if needed) in o.Dir and returns the files it
+// created; existing files are left alone.
+func InitStore(ctx context.Context, o InitOptions) ([]string, error) { return engine.InitStore(ctx, o) }
 
 // AsError returns err as a ka *Error, or nil.
 func AsError(err error) *Error { return engine.AsError(err) }
