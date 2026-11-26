@@ -23,7 +23,10 @@ var TicketKeys = []string{
 type Claim struct {
 	By      string `json:"by"`
 	Session string `json:"session,omitempty"`
-	At      string `json:"at"`
+	// Authority names an external system that owns this claim (e.g. "syre"). ka clients
+	// show such claims read-only: they never treat them as stale and don't steal them.
+	Authority string `json:"authority,omitempty"`
+	At        string `json:"at"`
 }
 
 // AcceptanceItem is one acceptance criterion.
@@ -117,13 +120,14 @@ func ParseTicket(path string, data []byte) (*Ticket, []Diagnostic) {
 	t.Owner = r.strRe("owner", ActorRe, "")
 	if c := r.get("claim"); c != nil {
 		if c.Kind != MapNode {
-			r.bad("claim", "", "must be a mapping with by, at and optionally session")
+			r.bad("claim", "", "must be a mapping with by, at and optionally session and authority")
 		} else {
 			cr := newFieldReader(path, c)
 			t.Claim = &Claim{
-				By:      cr.strRe("by", ActorRe, ""),
-				Session: cr.strRe("session", sessionRe, ""),
-				At:      cr.strRe("at", TimestampRe, "timestamps are RFC 3339 UTC with seconds, e.g. 2026-11-07T13:07:22Z"),
+				By:        cr.strRe("by", ActorRe, ""),
+				Session:   cr.strRe("session", sessionRe, ""),
+				Authority: cr.strRe("authority", AuthorityRe, "authorities are lower-case names such as syre (letters, digits, hyphens; at most 32)"),
+				At:        cr.strRe("at", TimestampRe, "timestamps are RFC 3339 UTC with seconds, e.g. 2026-11-07T13:07:22Z"),
 			}
 			if t.Claim.By == "" && cr.get("by") == nil {
 				cr.diags = append(cr.diags, diag("missing_field", path, c.Line, "", "claim.by is required"))
@@ -131,7 +135,7 @@ func ParseTicket(path string, data []byte) (*Ticket, []Diagnostic) {
 			if t.Claim.At == "" && cr.get("at") == nil {
 				cr.diags = append(cr.diags, diag("missing_field", path, c.Line, "", "claim.at is required"))
 			}
-			cr.unknown([]string{"by", "session", "at"})
+			cr.unknown([]string{"by", "session", "authority", "at"})
 			r.diags = append(r.diags, prefixKey("claim.", cr.diags)...)
 		}
 	}
@@ -249,7 +253,7 @@ func FormatTicket(t *Ticket) []byte {
 		{"owner", t.Owner},
 	}
 	if t.Claim != nil {
-		fm = append(fm, KV{"claim", []KV{{"by", t.Claim.By}, {"session", t.Claim.Session}, {"at", rawOrEmpty(t.Claim.At)}}})
+		fm = append(fm, KV{"claim", []KV{{"by", t.Claim.By}, {"session", t.Claim.Session}, {"authority", t.Claim.Authority}, {"at", rawOrEmpty(t.Claim.At)}}})
 	}
 	fm = append(fm,
 		KV{"parent", t.Parent},

@@ -546,6 +546,9 @@
           "at": {
             "type": "string"
           },
+          "authority": {
+            "type": "string"
+          },
           "by": {
             "type": "string"
           },

@@ -348,7 +348,7 @@ func (c *checker) checkTicket(s *Store, pr *Project, cfg *Config, te *TicketEntr
 			add(diag("invalid_field_value", tp, v.Line, "", "fields.%s: %v", name, err))
 		}
 	}
-	if t.Claim != nil && !c.opt.Now.IsZero() && cfg.ClaimsStaleAfter > 0 {
+	if t.Claim != nil && t.Claim.Authority == "" && !c.opt.Now.IsZero() && cfg.ClaimsStaleAfter > 0 {
 		if at, err := time.Parse(time.RFC3339, t.Claim.At); err == nil && c.opt.Now.Sub(at) > cfg.ClaimsStaleAfter {
 			add(diag("stale_claim", tp, ln("claim"), "release it, or re-claim to refresh", "claim by %s is older than %s", t.Claim.By, cfg.ClaimsStaleAfter))
 		}

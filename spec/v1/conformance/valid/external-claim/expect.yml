@@ -1,0 +1,3 @@
+description: "A claim owned by an external system (claim.authority): valid, canonical, and never reported as stale."
+stores:
+  - store

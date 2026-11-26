@@ -935,6 +935,7 @@ export interface components {
         };
         Claim: {
             at: string;
+            authority?: string;
             by: string;
             stale?: boolean;
         };

@@ -190,7 +190,7 @@ Frontmatter keys, in canonical order. **R** marks required fields. Unknown keys 
 | `labels` | list of strings | Single-line, at most 64 characters, no commas. Restricted to `labels.known` when `labels.closed` is true. |
 | `assignee` | actor | Who is doing the work now (may be an agent). |
 | `owner` | actor | The accountable human. |
-| `claim` | mapping | `by` (actor, **R**), `at` (timestamp, **R**), `session` (string, optional). Present only while claimed. |
+| `claim` | mapping | `by` (actor, **R**), `at` (timestamp, **R**), `session` (string, optional), `authority` (lower-case system name such as `syre`, optional: the claim is managed by that external system). Present only while claimed. |
 | `parent` | ID | Parent ticket: a sub-issue's ticket, an epic or an initiative (§4.5). Children are derived. |
 | `blocked_by` | list of IDs | Tickets that must finish first. `blocks` is derived. |
 | `related` | list of IDs | Related tickets. Stored once, on the ticket that declares it. |
@@ -638,6 +638,9 @@ An agent or human without `ka` can produce valid data:
    characters. Never edit an existing comment.
 3. **Claim:** set `claim` (`by`, `at`) and `assignee`, commit, and push before starting work. If
    the push is rejected, `git pull --rebase` and check whether someone else claimed it first.
+   A claim with `authority` belongs to that external system (for example Syre, which leases
+   tickets to its daemons): treat it as read-only. Never steal it, even when it looks stale,
+   and don't release it unless a human explicitly forces it.
 4. **Always** `git pull --rebase`; never create merge commits.
 5. Run `ka check` (or let CI run it), and `ka fmt` to canonicalize.
 

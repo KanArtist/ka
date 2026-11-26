@@ -21,6 +21,9 @@ type Caller struct {
 	Actor      string // bsant or agent/claude-code
 	OnBehalfOf string // the human an agent works for
 	Session    string
+	// Authority names the external system the caller acts for (e.g. "syre"). Claims it
+	// takes carry the authority, so other ka clients treat them as read-only.
+	Authority string
 }
 
 // Service is the operation and query layer shared by the CLI, MCP and REST.
@@ -215,9 +218,10 @@ type Summary struct {
 
 // Claim is a claim as reported to callers.
 type Claim struct {
-	By    string `json:"by"`
-	At    string `json:"at"`
-	Stale bool   `json:"stale,omitempty"`
+	By        string `json:"by"`
+	At        string `json:"at"`
+	Stale     bool   `json:"stale,omitempty"`
+	Authority string `json:"authority,omitempty"` // external system managing the claim (read-only here)
 }
 
 func (s *Service) summary(v view, r *Rec) Summary {
@@ -225,7 +229,7 @@ func (s *Service) summary(v view, r *Rec) Summary {
 	sm := Summary{ID: r.ID, Ref: r.Ref(), Title: t.Title, Status: t.Status, Priority: t.Priority, Kind: t.Kind, Labels: t.Labels,
 		Assignee: t.Assignee, Parent: t.Parent, Blocked: v.isBlocked(r), Project: r.Project.Key, Updated: t.Updated}
 	if t.Claim != nil {
-		sm.Claim = &Claim{By: t.Claim.By, At: t.Claim.At, Stale: v.stale(r)}
+		sm.Claim = &Claim{By: t.Claim.By, At: t.Claim.At, Stale: v.stale(r), Authority: t.Claim.Authority}
 	}
 	if n := len(t.Acceptance); n > 0 {
 		d := 0
@@ -637,6 +641,9 @@ func (s *Service) storeOf(id *string) (*Store, *ProjectInfo, error) {
 
 func stamp(o *Op, c Caller, at string) *Op {
 	o.Actor, o.OnBehalfOf, o.Session, o.At = c.Actor, c.OnBehalfOf, c.Session, at
+	if o.Op == "claim" || o.Op == "release" {
+		o.Authority = c.Authority
+	}
 	return o
 }
 

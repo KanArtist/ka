@@ -8,6 +8,7 @@ This is how milestone M1 implements PRD §8–§11 and §14. The on-disk format 
 | Package | Role |
 |---|---|
 | `pkg/kaspec` | The spec library from M0: parse, canonical format, config layering, validation. |
+| `pkg/kaservice` | The service API (`internal/engine`'s `Service`, workspace opening, request/response types) re-exported for programs that embed ka, such as Syre's hub. |
 | `internal/gitx` | Runs the system `git` (2.40+), non-interactively. |
 | `internal/engine` | Workspace discovery, the in-memory index, the query language, operations, sync and replay, the merge driver, `ka fix`, and the service API shared by every interface. |
 | `internal/render` | Compact text renderings used by both the CLI and MCP. |
