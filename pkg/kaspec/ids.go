@@ -26,6 +26,8 @@ var (
 	HumanRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
 	// AgentRe matches an agent actor handle.
 	AgentRe = regexp.MustCompile(`^agent/[a-z0-9][a-z0-9._-]{0,63}$`)
+	// AuthorityRe matches the name of an external system that owns a claim.
+	AuthorityRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
 	// TimestampRe matches the canonical timestamp form: RFC 3339, UTC, whole seconds.
 	TimestampRe = regexp.MustCompile(`^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])T([01]\d|2[0-3]):[0-5]\d:[0-5]\dZ$`)
 	// DateRe matches a calendar date.

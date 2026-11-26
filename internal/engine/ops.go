@@ -40,6 +40,9 @@ type Op struct {
 	// Takeover (claim) is the session of the same actor whose claim this
 	// one knowingly replaces: an agent that restarted with a new session.
 	Takeover string `json:"takeover,omitempty"`
+	// Authority (claim, release) is the external system the actor acts for; it is
+	// recorded on the claim and must match to change an authority-held claim.
+	Authority string `json:"authority,omitempty"`
 
 	Comment     *kaspec.Comment `json:"comment,omitempty"` // comment, transition (resolution)
 	CommentName string          `json:"comment_name,omitempty"`
@@ -188,7 +191,11 @@ func apply(env applyEnv, o *Op) ([]change, string, error) {
 			err = checkContainers(env, t, t.Kind != oldKind)
 		}
 	case "claim":
-		if t.Claim != nil && claimedAgainst(t.Claim, o) {
+		if t.Claim != nil && t.Claim.Authority != "" && t.Claim.Authority != o.Authority {
+			return nil, "", Errf(CodeClaimLost, "it is managed by "+t.Claim.Authority+"; work on it there, or pick another ticket (ka_next)", "%s is claimed by %s via %s", o.ID, t.Claim.By, t.Claim.Authority).
+				With("holder", t.Claim.By).With("authority", t.Claim.Authority).With("since", t.Claim.At)
+		}
+		if t.Claim != nil && t.Claim.Authority == "" && claimedAgainst(t.Claim, o) {
 			stale := claimStale(t.Claim, cfg, o.At)
 			if !(stale && o.Steal) {
 				holder := t.Claim.By
@@ -206,7 +213,7 @@ func apply(env applyEnv, o *Op) ([]change, string, error) {
 		if cat := category(cfg, t.Status); cat == "completed" || cat == "canceled" {
 			return nil, "", Errf("ticket_closed", "reopen it first with ka_transition", "%s is %s", o.ID, t.Status)
 		}
-		t.Claim = &kaspec.Claim{By: o.Actor, Session: o.Session, At: o.At}
+		t.Claim = &kaspec.Claim{By: o.Actor, Session: o.Session, Authority: o.Authority, At: o.At}
 		t.Assignee = o.Actor
 		if o.Status != "" {
 			t.Status = o.Status
@@ -216,7 +223,10 @@ func apply(env applyEnv, o *Op) ([]change, string, error) {
 		if t.Claim == nil {
 			return nil, "", Errf(CodeNotClaimed, "", "%s is not claimed", o.ID)
 		}
-		if t.Claim.By != o.Actor && !o.Steal {
+		if t.Claim.Authority != "" && t.Claim.Authority != o.Authority && !o.Steal {
+			return nil, "", Errf(CodeNotYourClaim, "it is managed by "+t.Claim.Authority+"; release it there, or pass force to override", "%s is claimed by %s via %s", o.ID, t.Claim.By, t.Claim.Authority).With("holder", t.Claim.By).With("authority", t.Claim.Authority)
+		}
+		if t.Claim.Authority == "" && t.Claim.By != o.Actor && !o.Steal {
 			return nil, "", Errf(CodeNotYourClaim, "only the holder can release; pass force to override", "%s is claimed by %s", o.ID, t.Claim.By).With("holder", t.Claim.By)
 		}
 		if o.Status != "" && closedCategory(category(cfg, o.Status)) {
@@ -577,7 +587,8 @@ func category(cfg *kaspec.Config, status string) string {
 }
 
 func claimStale(c *kaspec.Claim, cfg *kaspec.Config, now string) bool {
-	if c == nil || cfg.ClaimsStaleAfter <= 0 {
+	// An external authority keeps its own claims alive; they are never stale here.
+	if c == nil || c.Authority != "" || cfg.ClaimsStaleAfter <= 0 {
 		return false
 	}
 	at, err1 := parseTS(c.At)

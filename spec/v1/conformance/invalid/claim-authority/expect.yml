@@ -1,0 +1,5 @@
+description: "claim.authority must be a lower-case system name."
+stores:
+  - store
+expect:
+  - invalid_value store/projects/jk/tickets/JK-7QK3M/ticket.md
